@@ -1,6 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 
 import { Sidebar } from "./components/Sidebar";
+import { AdminPage } from "./pages/AdminPage";
 import { BriefPage } from "./pages/BriefPage";
 import { FindingDetailPage } from "./pages/FindingDetailPage";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -16,6 +17,7 @@ export function App() {
           <Route path="/findings/:id" element={<FindingDetailPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </main>
     </div>

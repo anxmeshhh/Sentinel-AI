@@ -1,6 +1,8 @@
 from celery import Celery
+from celery.signals import setup_logging
 
 from app.core.config import get_settings
+from app.core.logging import configure_logging
 
 _settings = get_settings()
 
@@ -32,3 +34,15 @@ celery_app.conf.beat_schedule = {
         "schedule": _settings.ingestion_poll_interval_seconds,
     },
 }
+
+
+@setup_logging.connect
+def _use_sentinel_logging(**kwargs) -> None:
+    """Celery normally installs its own plain-text logging on worker/beat
+    startup, which would produce log lines with a different shape than the
+    API process's and wouldn't land in LOG_FILE_PATH for the admin panel.
+    Connecting to this signal tells Celery "don't set up logging yourself" -
+    it hands control to `configure_logging()` instead, so worker/beat share
+    the exact same structured pipeline as the API.
+    """
+    configure_logging()

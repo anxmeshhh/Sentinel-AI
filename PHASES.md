@@ -120,6 +120,34 @@ and the risky `main` merge), and once through the full `docker compose` stack (b
 beat, redis, frontend all in containers, backend reaching your host MySQL via
 `host.docker.internal`). Both produced correct, real Groq-generated findings and a correct brief.
 
+### Addendum: Admin & Observability panel
+
+Added after initial Phase 1 completion, at your request, to actually *see* what the system is
+doing rather than just trusting it. This is an **operator surface, not part of the customer-facing
+IA** (`IA.md` has no "Admin" page under any workspace) — it's for whoever runs the Sentinel
+instance itself, styled with a visually distinct nav group ("Operator", blue dot) so it doesn't
+blend into the product pages above it.
+
+- **`GET /admin/stats`** — live counts: connections, signals, findings, briefs, and a breakdown of
+  run outcomes (success/partial/failed/running).
+- **`GET /admin/runs`** — every `agent_runs` row, joined with its connection label and finding
+  count, so you can see exactly when each run happened, how long it took, and what (if anything)
+  went wrong (`node_errors`/`error`).
+- **`GET /admin/logs`** — tails the structured JSONL log file. This required a real fix: Celery
+  workers/beat were never actually running our structured-logging setup — only the API process
+  was (`configure_logging()` was only called from `main.py`'s lifespan). Fixed by hooking Celery's
+  `setup_logging` signal (`core/celery_app.py`) so worker and beat processes install the exact same
+  structlog pipeline instead of Celery's own plain-text logging. Logs now also persist to a
+  rotating file (`backend/logs/sentinel.jsonl`, gitignored) in addition to stdout, both rendered
+  through the same `structlog.stdlib.ProcessorFormatter` so the two outputs can never drift apart.
+- Frontend `AdminPage.tsx`: stat tiles, a runs table, and a polling (5s, toggleable) log viewer —
+  all real data, no mocking.
+
+**Security note carried forward, not resolved here:** this panel has zero access control right now
+because Phase 1 has no auth at all. Once Phase 2 lands real RBAC, this must move behind the Super
+Admin role (`IA.md` §3) before Sentinel has more than one trusted operator — leaving it open in a
+multi-tenant world would leak every workspace's logs and run history to any logged-in user.
+
 ### Known gaps (deliberately deferred, not oversights)
 
 - **No real GitHub PAT tested yet** — ingestion logic is unit-tested and code-reviewed against the

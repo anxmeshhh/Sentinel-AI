@@ -1,11 +1,17 @@
 from datetime import datetime, timezone
 
+from sqlalchemy import desc
+
 from app.models.agent_run import AgentRun, RunStatus, TriggeredBy
 from app.repositories.base import WorkspaceScopedRepository
 
 
 class AgentRunRepository(WorkspaceScopedRepository[AgentRun]):
     model = AgentRun
+
+    def list_recent(self, limit: int = 50) -> list[AgentRun]:
+        rows = self._scoped().order_by(desc(AgentRun.started_at)).limit(limit)
+        return list(self.session.execute(rows).scalars().all())
 
     def start(self, *, connection_id, triggered_by: TriggeredBy) -> AgentRun:
         run = AgentRun(

@@ -38,6 +38,44 @@ export interface BriefSummary {
   narrative: string;
 }
 
+export interface AgentRun {
+  id: string;
+  connection_id: string | null;
+  connection_label: string | null;
+  status: "running" | "success" | "partial" | "failed";
+  triggered_by: "schedule" | "manual";
+  started_at: string;
+  finished_at: string | null;
+  duration_seconds: number | null;
+  node_errors: Record<string, string>;
+  error: string | null;
+  finding_count: number;
+}
+
+export interface LogLine {
+  timestamp: string | null;
+  level: string | null;
+  logger: string | null;
+  event: string | null;
+  run_id: string | null;
+  workspace_id: string | null;
+  agent: string | null;
+  connection_id: string | null;
+  raw: Record<string, unknown>;
+}
+
+export interface SystemStats {
+  connections: number;
+  signals: number;
+  findings: number;
+  briefs: number;
+  runs_total: number;
+  runs_success: number;
+  runs_partial: number;
+  runs_failed: number;
+  runs_running: number;
+}
+
 export type Severity = "crit" | "warn" | "watch";
 
 export function severityBand(severity: number): Severity {

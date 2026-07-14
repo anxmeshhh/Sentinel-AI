@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import briefs, connections, findings, runs
+from app.api.routes import admin, briefs, connections, findings, runs
 from app.core.logging import configure_logging, get_logger
 
 logger = get_logger("sentinel.api")
@@ -33,6 +33,7 @@ app.include_router(connections.router)
 app.include_router(runs.router)
 app.include_router(briefs.router)
 app.include_router(findings.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")

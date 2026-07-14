@@ -11,6 +11,10 @@ node_modules/
 dist/
 build/
 .vite/
+*.tsbuildinfo
+
+# Celery
+celerybeat-schedule*
 
 # Env / secrets
 .env

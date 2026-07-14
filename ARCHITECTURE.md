@@ -1,6 +1,9 @@
 # Sentinel AI — Architecture & Strategy
 
-**Status:** Draft v1, covers MVP (Phase 1) with extension points for Phases 2–4.
+**Status:** v1.1 — implementation underway for Phase 1. Updated from v1 to reflect two decisions
+made after the original draft: the database is **MySQL**, not Postgres (§2, §3), and the data
+model now bakes in workspace scoping + RBAC shape from row one, per `IA.md` §6's note that this
+needed to happen before backend code was written.
 
 ---
 
@@ -19,8 +22,9 @@
                      └───────────────────┬─────────────────────────┘
                                          ▼
                      ┌─────────────────────────────────────────────┐
-                     │                 Postgres                      │
-                     │  signals | findings | briefs | connections    │
+                     │                   MySQL                       │
+                     │ workspaces | connections | signals | findings │
+                     │  | briefs | agent_runs                        │
                      └───────────────────┬─────────────────────────┘
                                          ▼
                      ┌─────────────────────────────────────────────┐
@@ -51,38 +55,58 @@ with?) and keeps the synthesis logic (severity ranking, cross-agent correlation)
 |--------|-----------|
 | **FastAPI** | Async-native, typed, minimal ceremony for a data/agent-heavy backend. Good fit for both the REST API and the Celery task definitions living in the same codebase. |
 | **Celery + Redis** | Ingestion (polling GitHub) and agent runs are background jobs on a schedule, not request/response work. Celery Beat gives cron-like scheduling; Redis is both the broker and, later, a place to cache expensive intermediate signals. |
-| **Postgres** | Findings/briefs are structured, relational, and need to be queried/joined (e.g., "all findings referencing PR #123") — not a good fit for a pure document store. JSONB columns handle the semi-structured evidence payloads. |
+| **MySQL** | Findings/briefs are structured, relational, and need to be queried/joined (e.g., "all findings referencing PR #123") — not a good fit for a pure document store. Chosen over Postgres to match the operator's existing MySQL setup; the ORM layer uses SQLAlchemy's backend-agnostic `Uuid`/`JSON` types rather than Postgres-only `UUID`/`JSONB`/`ARRAY`, so semi-structured evidence payloads still work, just without JSONB's containment-query features (not needed — nothing queries *inside* a payload at the DB level, it's always read whole). |
 | **LangGraph** | The product shape *is* a graph: N specialist agents feed one synthesis agent, and Phase 2 adds cross-agent edges (Project Agent's findings modify how Executive Agent weighs Engineering Agent's findings). LangGraph models this explicitly as a graph with shared state, rather than hand-rolling orchestration logic. It's LLM-provider-agnostic, so swapping Groq for another provider later doesn't require re-architecting. |
-| **Groq (Llama models via `langchain-groq`)** | Only LLM credential currently available; also a genuine fit — Groq's inference speed matters because the Executive Agent's job is to synthesize on a schedule across potentially many agents' worth of findings, and fast, cheap inference keeps that loop tight. Provider is abstracted behind a single `llm.py` client so switching to Claude/OpenAI later is a one-file change. |
+| **Groq (`openai/gpt-oss-120b`, via the official `groq` SDK)** | Only LLM credential currently available; also a genuine fit — Groq's inference speed matters because the Executive Agent's job is to synthesize on a schedule across potentially many agents' worth of findings, and fast, cheap inference keeps that loop tight. The SDK call is isolated in a single `agents/llm.py` client with zero LangChain coupling, so switching model/provider later is a one-file change; LangGraph (above) handles orchestration independently of which LLM SDK is behind it. |
 | **React + Vite + Tailwind** | Standard, fast-to-build dashboard stack; no need for Next.js SSR since this is an authenticated internal dashboard, not a marketing site — Vite keeps the dev loop simple. |
 | **Docker Compose (local), single-tenant config** | MVP targets pilot users self-hosting or you hosting one instance per pilot, not multi-tenant SaaS — see PRD §10. Keeps auth/billing complexity out of the MVP critical path. |
 
-## 3. Data Model (MVP)
+## 3. Data Model
 
 ```
+workspaces                   -- Personal | Team | Organization (IA.md §1-2)
+  id, name, slug, kind
+
+memberships                  -- RBAC: who has what role in which workspace (IA.md §3)
+  id, workspace_id, user_id, role (super_admin|org_admin|team_manager|employee|guest)
+
 connections
-  id, provider (github), org, repo, encrypted_token, last_synced_at
+  id, workspace_id, provider (github), org, repo, encrypted_token, last_synced_at
 
 signals                      -- raw, normalized facts from integrations
-  id, connection_id, type (pr_opened|pr_merged|review_submitted|commit|issue),
-  external_id, actor, payload (jsonb), occurred_at, ingested_at
+  id, workspace_id, connection_id, type (pr_opened|pr_merged|review_submitted|commit|issue),
+  external_id, actor, payload (json), occurred_at, ingested_at
+  unique (connection_id, type, external_id)   -- makes ingestion idempotent/resumable
+
+agent_runs                   -- one LangGraph execution; the correlation id for logs/traces
+  id, workspace_id, connection_id, status (running|success|partial|failed),
+  triggered_by (schedule|manual), started_at, finished_at, node_errors (json), error
 
 findings                     -- output of a specialist agent
-  id, agent (engineering|executive|...), type, severity (0-1), confidence (0-1),
-  summary, root_cause, suggested_action, evidence (jsonb: signal ids / links),
-  run_id, created_at
+  id, workspace_id, run_id, agent (engineering|executive|...), type,
+  severity (0-1), confidence (0-1), summary, root_cause, suggested_action,
+  evidence (json: signal ids / links), created_at
 
 briefs                       -- output of the Executive Agent
-  id, run_id, generated_at, top_findings (ordered array of finding ids),
-  narrative (text)
-
-agent_runs
-  id, started_at, finished_at, status, triggered_by (schedule|manual)
+  id, workspace_id, run_id, generated_at, top_finding_ids (json array of finding ids),
+  narrative (text), data_freshness (json: per-agent staleness/failure notes)
 ```
 
 Design intent: **signals are immutable facts, findings are agent opinions, briefs are the
 synthesized opinion-of-opinions.** This three-layer split is what makes the system explainable —
 you can always walk a brief → its findings → the signals that produced them.
+
+**Every workspace-owned table carries `workspace_id`, and every read/write goes through a
+`WorkspaceScopedRepository`** (`app/repositories/base.py`) bound to one workspace at construction
+time — routes and agents never issue a raw query against these tables, so it is structurally
+impossible to forget the tenant filter and leak data across workspaces. Phase 1 only ever
+constructs one workspace and one repository scope per request, but the same repository class is
+what Phase 2's real multi-tenant RBAC runs on — no rewrite, just more callers.
+
+**`agent_runs.id` (`run_id`) and `workspace_id` are the two ids the whole observability and
+security story hang off.** Every structured log line, every Finding, and every Brief carries both,
+so a finding that looks wrong can be traced: log line → `run_id` → the exact LangGraph run → the
+exact signals it read (see `app/core/logging.py`'s `bind_run_context`).
 
 ## 4. Agent Contract
 
@@ -133,14 +157,38 @@ fan-out/fan-in graph from day one so Phase 2/3 agents are additive (new node + o
 
 ## 7. Deployment Topology (MVP)
 
-Local/dev: `docker-compose.yml` running Postgres, Redis, FastAPI (`uvicorn`), Celery worker,
+Local/dev: `docker-compose.yml` running MySQL, Redis, FastAPI (`uvicorn`), Celery worker,
 Celery beat, and the Vite dev server.
 
 Pilot hosting: same compose stack on a single small VM per pilot (or a shared instance with
 connection-scoped data if you're comfortable with that trust boundary for friendly pilots) —
 deliberately not multi-tenant infrastructure yet, per PRD scope.
 
-## 8. Extension Points (so Phase 2+ doesn't require rework)
+## 8. Security & Observability (implemented in Phase 1, not deferred)
+
+These were flagged as production-readiness requirements before implementation started; they're
+built into the scaffold from the first commit rather than bolted on later.
+
+- **Tenant isolation**: `WorkspaceScopedRepository` (§3) — no route or agent can query a
+  workspace-owned table without going through a workspace-bound repository.
+- **Credentials encrypted at rest**: `app/core/security.py` — Fernet encryption for
+  `connections.encrypted_token`; the key lives only in the deployment's env/secret store.
+- **Structured, correlated logging**: `app/core/logging.py` — every log line is JSON and carries
+  `run_id`/`workspace_id`/`agent` via `bind_run_context`; sensitive keys (tokens, API keys) are
+  redacted by a processor, not by convention.
+- **Idempotent ingestion**: the `(connection_id, type, external_id)` unique constraint on `signals`
+  + `INSERT ... ON DUPLICATE KEY UPDATE` means a retried poll can never duplicate data.
+- **Metadata-only GitHub client**: `app/integrations/github_client.py` never requests diff/patch
+  bodies — enforced in the client, not just the prompt (§6, and the LLM data boundary is treated as
+  a security control, not a privacy nicety).
+- **Rate-limit-aware, retrying HTTP client**: the GitHub client backs off before hitting GitHub's
+  rate limit floor and retries transient failures with exponential backoff, rather than crashing
+  an ingestion run.
+- **Partial failure as a first-class run state**: `agent_runs.status` includes `partial`, with
+  `node_errors` recording which LangGraph node failed — one agent's failure doesn't take down the
+  whole brief, and the brief can say "engineering data is stale" instead of silently going quiet.
+
+## 9. Extension Points (so Phase 2+ doesn't require rework)
 
 - New integration = new client in `integrations/` + new row type(s) in `signals.type`.
 - New specialist agent = new class implementing the `Agent` protocol + one new LangGraph node/edge.

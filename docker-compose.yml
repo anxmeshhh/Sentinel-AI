@@ -1,0 +1,61 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # MySQL is NOT containerized here - this project uses the developer's
+  # existing local MySQL server (host.docker.internal:3306). See
+  # .env.example for the expected DATABASE_URL and README for the one-time
+  # `CREATE DATABASE sentinel` / `CREATE USER` setup.
+
+  backend: &backend-service
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # host.docker.internal reaches the developer's native MySQL from inside
+      # the container; override DB_USER/DB_PASSWORD in .env if yours differ.
+      DATABASE_URL: mysql+pymysql://${DB_USER:-sentinel}:${DB_PASSWORD:-sentinel}@host.docker.internal:3306/sentinel
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  worker:
+    <<: *backend-service
+    ports: []
+    command: celery -A app.core.celery_app.celery_app worker --loglevel=info -Q ingestion,agents
+
+  beat:
+    <<: *backend-service
+    ports: []
+    command: celery -A app.core.celery_app.celery_app beat --loglevel=info
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000

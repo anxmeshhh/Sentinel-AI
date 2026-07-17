@@ -168,25 +168,84 @@ least one finding the repo owner independently confirms is accurate.
 
 ---
 
-## Phase 1.5 — Personal Workspace
+## Phase 1.5 — Personal Workspace ✅ Built and smoke-tested
 
 **Objective:** prove Sentinel works for an individual with no team behind them — the "for
 themselves as well" case from your IA brief, on the smallest possible surface.
 
-**IA surface that goes live:** Personal Workspace (`IA.md` §2.2) — Dashboard, AI Assistant,
-Timeline, Integrations (personal-account scope), Notifications, Profile. Tasks/Calendar/Insights
-can stay stubbed until real signal sources justify them (see open question below).
+**IA surface that went live:** Personal Workspace (`IA.md` §2.2) — Dashboard (reused from Phase 1,
+now workspace-aware) and AI Assistant. Timeline, Integrations (personal-account scope beyond
+GitHub), Notifications, Profile, Tasks/Calendar/Insights are still deliberately stubbed — see Known
+gaps below, they need Gmail/Calendar (your explicit next step) to mean anything real.
 
-| Step | Deliverable | Notes |
+| Step | Deliverable | Status |
 |---|---|---|
-| 1.5.1 | Data model: `users`, `workspaces`, `memberships` | Shaped for the full RBAC model now (per `IA.md` §6 architectural note) even though only one implicit role exists until Phase 2 |
-| 1.5.2 | Personal-scope GitHub connection | Same client as Phase 1, re-pointed at a user's own account instead of an org repo |
-| 1.5.3 | Personal Dashboard | Engineering + Executive agents re-scoped to one person's activity |
-| 1.5.4 | AI Assistant (chat) | The one place a chat interface is primary — scoped to the user's own data, explicitly secondary to the pushed brief per `PRD.md` principle #1 |
-| 1.5.5 | Workspace switcher (UI) | Minimal version: Personal only for now, structured so Team/Org tabs slot in without rework (per the IA explorer artifact) |
+| 1.5.1 | Data model: `users`, `workspaces`, `memberships` | ✅ |
+| 1.5.2 | Personal-scope GitHub connection | Deferred — reuses the same `Connection`/GitHub client Phase 1 already has, no code change needed; not yet exercised with a real personal-account token |
+| 1.5.3 | Personal Dashboard | ✅ — same `BriefPage`/`HistoryPage`/`SettingsPage` components as Phase 1, now genuinely workspace-scoped instead of hardcoded to one workspace |
+| 1.5.4 | AI Assistant (chat) | ✅ |
+| 1.5.5 | Workspace switcher (UI) | ✅ — real Personal ⇄ Organization switching, not a mockup |
+
+### What actually got built (technical notes)
+
+**The core proof point:** Phase 1's `WorkspaceScopedRepository` design (every query bound to one
+`workspace_id`) meant adding a second, real workspace required zero changes to any repository,
+agent, or existing route — only three things needed to change: how a workspace gets *resolved* per
+request, plus two genuinely new features (the switcher and the assistant).
+
+- **`users` table**, minimal (`id`, `email`, `name`, no password yet) — real FK from
+  `memberships.user_id`, which was previously just a bare UUID with no backing table.
+- **`core/bootstrap.py`** now provisions *two* workspaces for the single implicit Phase-1 user
+  (Personal + the original Organization), each with a real `Membership` row — not a placeholder,
+  an actual second tenant that proves the architecture generalizes.
+- **`GET /workspaces`** lists both; **`get_workspace_id`** (`api/deps.py`) now reads an
+  `X-Workspace-Id` header and validates the workspace exists, falling back to the original default
+  Organization workspace when the header is absent — every Phase 1 API caller kept working
+  unchanged.
+- **Frontend**: `WorkspaceContext` fetches the workspace list once, persists the active selection
+  in `localStorage`, and `api/client.ts` attaches `X-Workspace-Id` to every request from a
+  module-level variable — no existing page's code had to change to become workspace-aware. Sidebar
+  nav is now genuinely conditional: `AI Assistant` only appears when the Personal workspace is
+  active, matching `IA.md`'s "which agents/pages appear depends on the active workspace" rule for
+  real instead of just in the earlier IA-explorer mockup.
+- **AI Assistant**: `POST /assistant/chat` grounds every answer in the active workspace's latest
+  brief + findings only, with an explicit system-prompt instruction to say "I don't have that
+  information yet" rather than invent an answer — this is the same anti-hallucination discipline
+  the Engineering Agent uses (real evidence in, narrated out), applied to a conversational surface.
+  Added `LLMClient.complete_text()` alongside the existing `complete_json()`, since forcing JSON
+  mode on a human-facing chat reply would be wrong.
+- **Verified workspace isolation for real, not just by code review:** asked the assistant the same
+  question against the Organization workspace (which has a real brief) and the Personal workspace
+  (empty) — got a correctly grounded answer citing the real finding for Org, and an honest "no data
+  yet" for Personal. No data leaked across the boundary.
+- **Real bug fixed along the way:** Alembic's autogenerate rendered the custom `UTCDateTime` type
+  (added during Phase 1's timezone bugfix) as an unimported class reference
+  (`app.models.base.UTCDateTime()`) the first time a *new* column used it — would have raised
+  `NameError` on `alembic upgrade`. Fixed with a `render_item` hook in `alembic/env.py` so it always
+  renders as the portable `sa.DateTime(timezone=True)` instead, for every future migration, not
+  just this one.
+- **Infra note:** at your request, local dev moved off Docker Compose entirely — backend, worker,
+  beat, and the frontend dev server all run natively now (`.venv` + `npm run dev`) against your
+  already-running local MySQL and Redis. `docker-compose.yml` is left in the repo as an alternative,
+  not removed, in case it's useful again later (e.g. for a non-dev deployment).
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **No real personal GitHub token tested** — same caveat as Phase 1's org connection; the smoke
+  test reused Phase 1's seeded-signal approach rather than a live personal-account PAT.
+- **Tasks/Calendar/Insights are not built** — as flagged when this phase was planned, these need
+  Gmail/Calendar integration to mean anything; that's explicitly your next step after this.
+- **Still no real login** — the "two workspaces for one implicit user" model is correct scaffolding
+  for Phase 2's real accounts, but there's still no signup/session/password anywhere. Switching
+  workspaces today is a UI preference, not an access-control boundary.
+- **Assistant has no persisted chat history** — conversation lives only in frontend state; refreshing
+  the page clears it. Fine for Phase 1.5, worth a `chat_messages` table if usage shows people want
+  history back.
 
 **Exit criteria:** a solo user (no team, no org) can connect their own GitHub account and receive a
-personal daily brief through the same pipeline used in Phase 1.
+personal daily brief through the same pipeline used in Phase 1. *(Structurally proven — Personal
+workspace runs the identical pipeline as Organization — but not yet exercised with a real personal
+GitHub account; the architecture is what was being validated here, and it held.)*
 
 **⏸ Wait for signal before Phase 2.**
 

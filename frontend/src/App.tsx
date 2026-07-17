@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 
 import { Sidebar } from "./components/Sidebar";
 import { AdminPage } from "./pages/AdminPage";
+import { AssistantPage } from "./pages/AssistantPage";
 import { BriefPage } from "./pages/BriefPage";
 import { FindingDetailPage } from "./pages/FindingDetailPage";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -18,6 +19,7 @@ export function App() {
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/assistant" element={<AssistantPage />} />
         </Routes>
       </main>
     </div>

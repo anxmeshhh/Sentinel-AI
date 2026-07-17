@@ -8,11 +8,22 @@ export class ApiError extends Error {
   }
 }
 
+// Module-level rather than passed per-call: every existing page already
+// calls `api.get(...)`/`api.post(...)` without a workspace argument, and
+// making the workspace switcher work shouldn't mean touching every call
+// site. WorkspaceProvider calls setActiveWorkspaceId() whenever the user
+// switches, and every subsequent request picks it up automatically.
+let activeWorkspaceId: string | null = null;
+
+export function setActiveWorkspaceId(id: string | null): void {
+  activeWorkspaceId = id;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (activeWorkspaceId) headers["X-Workspace-Id"] = activeWorkspaceId;
+
+  const res = await fetch(`${BASE_URL}${path}`, { headers, ...init });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
     throw new ApiError(res.status, body.detail ?? `Request failed: ${res.status}`);

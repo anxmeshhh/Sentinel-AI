@@ -57,3 +57,16 @@ class LLMClient:
                 logger.warning("llm_json_parse_failed", attempt=attempt, error=str(exc))
 
         raise LLMError(f"LLM did not return valid JSON after {max_retries + 1} attempts") from last_err
+
+    def complete_text(self, *, system: str, messages: list[dict[str, str]], temperature: float = 0.3) -> str:
+        """Free-form conversational completion - used by the AI Assistant
+        (Phase 1.5), not the agents. Agents always use complete_json, because
+        their output is machine-parsed; the assistant's output is read
+        directly by a human, so forcing JSON mode here would be wrong.
+        """
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "system", "content": system}, *messages],
+            temperature=temperature,
+        )
+        return response.choices[0].message.content or ""

@@ -1,9 +1,10 @@
 """Workspace + Membership.
 
-Phase 1 only ever exercises a single implicit Organization workspace with one
-admin membership - but the shape supports Personal/Team/Organization and the
-full RBAC role set from day one (see IA.md SS3, SS6) so Phase 1.5/2 are additive
-rows, not a schema migration.
+Phase 1 only ever exercised a single implicit Organization workspace with one
+admin membership. Phase 1.5 adds a second, real Personal Workspace per user -
+the shape has supported Personal/Team/Organization and the full RBAC role set
+from day one (see IA.md SS3, SS6), so this is an additive row via
+core/bootstrap.py, not a schema migration.
 """
 
 import enum
@@ -43,7 +44,7 @@ class Membership(Base, UUIDPk, TimestampMixin):
     __tablename__ = "memberships"
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     role: Mapped[Role] = mapped_column(Enum(Role, name="membership_role"), nullable=False)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="memberships")

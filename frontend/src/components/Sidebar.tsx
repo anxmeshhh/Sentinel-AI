@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 
+import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/WorkspaceContext";
 
 // Operator-only surface (see IA.md - this isn't part of the customer IA).
@@ -8,7 +9,14 @@ const OPERATOR_NAV = [{ to: "/admin", label: "Admin & Observability" }];
 
 export function Sidebar() {
   const { workspaces, active, setActiveId, loading } = useWorkspace();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  function handleLogout() {
+    logout();
+    navigate("/login");
+  }
 
   const workspaceNav = [
     { to: "/", label: "Today's Brief", end: true },
@@ -72,7 +80,22 @@ export function Sidebar() {
           ))}
         </nav>
 
-        <div className="mt-auto px-1 text-[11.5px] text-ink-faint">Sentinel AI &middot; Phase 1.6</div>
+        <div className="mt-auto flex items-center gap-2.5 border-t border-border px-1 pt-4">
+          <div className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-surface-2 text-[11px] font-semibold uppercase text-ink-dim">
+            {user?.name?.[0] ?? "?"}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[12.5px] font-medium text-ink">{user?.name}</div>
+            <div className="truncate text-[11px] text-ink-faint">{user?.email}</div>
+          </div>
+          <button
+            onClick={handleLogout}
+            aria-label="Log out"
+            className="flex-none text-[11.5px] text-ink-faint underline underline-offset-2 hover:text-ink"
+          >
+            Log out
+          </button>
+        </div>
       </aside>
     </>
   );

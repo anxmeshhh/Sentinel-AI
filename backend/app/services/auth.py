@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.auth import hash_secret, verify_secret
+from app.core.bootstrap import provision_personal_workspace_for_user
 from app.core.config import get_settings
 from app.core.email import get_email_sender
 from app.models.otp_code import OtpCode, OtpPurpose
@@ -76,6 +77,13 @@ def find_or_create_oauth_user(session: Session, *, provider: str, sub: str, emai
 
     session.commit()
     session.refresh(user)
+
+    # Idempotent (checks for an existing workspace first) - always called
+    # rather than gated on "is this a brand new user," so a user who created
+    # a password account but never finished OTP verification, then signs in
+    # with Google/Microsoft using the same email, still ends up with one.
+    provision_personal_workspace_for_user(session, user)
+
     return user
 
 
@@ -127,3 +135,6 @@ def verify_otp(session: Session, *, user: User, purpose: OtpPurpose, code: str) 
     if purpose == OtpPurpose.EMAIL_VERIFY:
         user.email_verified = True
     session.commit()
+
+    if purpose == OtpPurpose.EMAIL_VERIFY:
+        provision_personal_workspace_for_user(session, user)

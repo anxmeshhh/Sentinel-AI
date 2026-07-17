@@ -298,19 +298,72 @@ yet wired into workspace resolution or any existing route — see Known gaps.
   wrong password correctly 401s → duplicate signup correctly rejected → passwordless login-OTP
   request → both OAuth routes correctly 501 when unconfigured.
 
+### Known gaps at the time (closed in Phase 1.7 below, right after)
+
+- ~~Not wired into `get_workspace_id`~~, ~~no frontend login/signup pages~~ — both closed in Phase
+  1.7.
+- **OAuth round-trip still unexercised** — the code path is complete and the "not configured" path
+  is verified, but nobody has actually clicked through a real Google/Microsoft consent screen
+  against this code yet, since that needs your registered app credentials. Still open.
+
+---
+
+## Phase 1.7 — Auth Wired Into the App ✅ Built and smoke-tested
+
+**Objective:** close Phase 1.6's two biggest gaps in the same session, at your request — a
+standalone auth system nobody could actually use isn't worth much. Sign up → land in your own real
+(empty) Personal workspace → use the whole app as yourself, for real.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 1.7.1 | Auto-provision a Personal workspace per real user | ✅ |
+| 1.7.2 | `get_workspace_id`/`GET /workspaces` require real auth + membership check | ✅ |
+| 1.7.3 | Frontend `AuthContext`, Login/Signup/OAuth-callback pages | ✅ |
+| 1.7.4 | Protected routes, `Authorization` header wiring, logout | ✅ |
+
+### What actually got built (technical notes)
+
+- **`core/bootstrap.py` rewritten, not extended** — the old anonymous-single-implicit-user
+  functions (`get_or_create_default_workspace`, `get_or_create_default_user`,
+  `get_or_create_personal_workspace`) are gone entirely, not left as dead code. The one function
+  left, `provision_personal_workspace_for_user(session, user)`, is idempotent and keyed to a real
+  `User` — called right after OTP-verified signup and on every OAuth login (safe either way, since
+  it's a no-op after the first call).
+- **`get_workspace_id` (`api/deps.py`) now requires `get_current_user`** — no anonymous fallback
+  left. A `X-Workspace-Id` header is checked against the caller's actual `Membership` rows, not
+  just "does this workspace id exist" — returns 404 (not 403) for a workspace that exists but isn't
+  the caller's, so a valid-looking id can't be used to probe for other tenants' existence. No
+  header defaults to the caller's own Personal workspace.
+- **This is a real, verified breaking change, on purpose**: every route that used to work
+  unauthenticated (briefs, connections, admin, assistant, workspaces) now 401s without a token.
+  Confirmed directly rather than assumed.
+- **Frontend**: `AuthContext` (JWT persisted in `localStorage`, loads `/auth/me` on mount),
+  `WorkspaceProvider` now waits for `AuthContext` to resolve before fetching `/workspaces` (it
+  needs a token to succeed) and clears its state on logout so a stale workspace list can never
+  flash for the next account. `LoginPage` (password or OTP), `SignupPage` (signup → OTP-verify
+  step), `OAuthCallbackPage` (reads the token from the URL fragment the backend redirects to),
+  `App.tsx`'s `RequireAuth` wrapper redirects to `/login` when there's no valid session. Sidebar
+  shows the logged-in user and a logout control.
+- **Verified end-to-end with a brand-new real account, not the bootstrap one**: signed up
+  `real-user@example.com` → read the OTP from `docker compose logs backend` → verified → got a
+  session token → `/workspaces` returned exactly one fresh, uniquely-slugged Personal workspace →
+  confirmed it's genuinely empty (`/briefs/latest` 404s honestly) → **confirmed cross-tenant
+  isolation directly**: this new user's token against the *old* demo workspace's id correctly
+  returns 404, not the old seeded data → created a real connection under the new account, listed
+  it back, checked `/admin/stats` — all correctly scoped to the new user's own workspace.
+
 ### Known gaps (deliberately deferred, not oversights)
 
-- **Not wired into `get_workspace_id`** — see above. Today, having a valid JWT proves who you are,
-  but every route still resolves to the Phase 1 bootstrap workspace regardless of who's asking.
-- **No workspace CRUD/invites yet** — `IA.md` v2 §2.2/§2.3 (create workspace wizard, join via
-  invite link, onboarding steps) don't exist as routes. This account system has nowhere to attach
-  a *created* workspace yet, only the two bootstrap ones.
-- **No frontend login/signup pages** — this phase was backend-only by request; the API is fully
-  testable via `/docs` or curl, but there's no `Login`/`Signup`/`/auth/callback` page in the React
-  app yet.
-- **OAuth round-trip unexercised** — the code path is complete and the "not configured" path is
-  verified, but nobody has actually clicked through a real Google/Microsoft consent screen against
-  this code yet, since that needs your registered app credentials.
+- **No role differentiation yet** — every membership is still created with the same role
+  (`ORG_ADMIN`); "authenticated" and "authorized to do X specifically" aren't distinguished yet.
+  That's Phase 2's RBAC-enforcement step, now that there's a real user to check a role *against*.
+- **No workspace CRUD/invites yet** — a user can't create an "Acme Corporation"-style workspace or
+  invite anyone into it; they only ever have their one auto-provisioned Personal workspace. Still
+  Phase 2.
+- **Old demo/seeded data is now permanently unreachable** — it belonged to the anonymous bootstrap
+  account, which no real login can ever authenticate as. Not a bug — this *is* what real tenant
+  isolation means — but worth knowing before wondering where a previous test brief went.
+- **OAuth round-trip still unexercised** — same as above, needs your registered app credentials.
 
 **⏸ Wait for signal before Phase 2.**
 

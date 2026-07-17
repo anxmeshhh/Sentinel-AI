@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 import { api, setActiveWorkspaceId } from "../api/client";
+import { useAuth } from "./AuthContext";
 
 export interface Workspace {
   id: string;
@@ -22,11 +23,25 @@ const STORAGE_KEY = "sentinel.activeWorkspaceId";
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const { user, loading: authLoading } = useAuth();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeId, setActiveIdState] = useState<string | null>(localStorage.getItem(STORAGE_KEY));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // GET /workspaces requires auth - wait for AuthProvider to resolve, and
+    // only fetch once actually logged in. Logging out clears local state
+    // too, so a stale workspace list never briefly shows for the next user.
+    if (authLoading) return;
+    if (!user) {
+      setWorkspaces([]);
+      setActiveIdState(null);
+      setActiveWorkspaceId(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
     api
       .get<Workspace[]>("/workspaces")
       .then((list) => {
@@ -38,7 +53,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user, authLoading]);
 
   function setActiveId(id: string) {
     setActiveIdState(id);

@@ -3,13 +3,14 @@ from collections.abc import Generator
 
 from fastapi import Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.auth import InvalidTokenError, decode_access_token
-from app.core.bootstrap import get_or_create_default_workspace
+from app.core.bootstrap import provision_personal_workspace_for_user
 from app.db.session import SessionLocal
 from app.models.user import User
-from app.models.workspace import Workspace
+from app.models.workspace import Membership
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -22,41 +23,10 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-def get_workspace_id(
-    session: Session = Depends(get_db),
-    x_workspace_id: str | None = Header(default=None),
-) -> uuid.UUID:
-    """Phase 1.5: the frontend's workspace switcher sends `X-Workspace-Id` for
-    whichever workspace (Personal/Organization) is active; falls back to the
-    original default Organization workspace if the header is absent, so
-    every Phase 1 caller keeps working unchanged.
-
-    Still no real authorization check here - Phase 2's RBAC is what makes
-    this "does this user actually have access to this workspace" instead of
-    "does this workspace id exist at all." Tracked in PHASES.md.
-    """
-    if x_workspace_id:
-        try:
-            workspace_uuid = uuid.UUID(x_workspace_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="X-Workspace-Id must be a valid UUID")
-        if session.get(Workspace, workspace_uuid) is None:
-            raise HTTPException(status_code=404, detail="Workspace not found")
-        return workspace_uuid
-
-    return get_or_create_default_workspace(session).id
-
-
 def get_current_user(
     session: Session = Depends(get_db),
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> User:
-    """Standalone for now - not yet required by any existing route (those
-    still resolve through get_workspace_id's implicit-user model). This is
-    the seam real per-route auth enforcement hangs off once workspace CRUD
-    and RBAC (IA.md v2 §8.2) actually need "who is asking," not just
-    "which workspace." /auth/me is the first real consumer.
-    """
     if credentials is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
@@ -68,3 +38,31 @@ def get_current_user(
     if user is None:
         raise HTTPException(status_code=401, detail="User no longer exists")
     return user
+
+
+def get_workspace_id(
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    x_workspace_id: str | None = Header(default=None),
+) -> uuid.UUID:
+    """Phase 1.6: real auth required (get_current_user) - the anonymous
+    bootstrap-workspace fallback from Phase 1/1.5 is gone. The frontend's
+    workspace switcher sends `X-Workspace-Id` for whichever workspace is
+    active; membership is checked, not just existence, so one user can never
+    address another's workspace by guessing its id. No header defaults to
+    the caller's own Personal workspace.
+    """
+    if x_workspace_id:
+        try:
+            workspace_uuid = uuid.UUID(x_workspace_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="X-Workspace-Id must be a valid UUID")
+        membership = session.execute(
+            select(Membership).where(Membership.workspace_id == workspace_uuid, Membership.user_id == user.id)
+        ).scalar_one_or_none()
+        if membership is None:
+            # 404, not 403 - don't confirm the workspace exists to a non-member.
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        return workspace_uuid
+
+    return provision_personal_workspace_for_user(session, user).id

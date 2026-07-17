@@ -82,6 +82,23 @@ A fixed sequence, each step skippable/revisitable later from Workspace Settings:
 7. Sentinel begins analyzing authorized workspace data — this is the moment ingestion + the AI
    Agents actually turn on for this workspace; everything before this step is configuration only.
 
+### 2.4 Teams Are Channels: the Join Model
+
+Explicit decision, made when this got planned for real: **a Team *is* Sentinel's Discord-channel
+equivalent**, not a separate concept. A Workspace is a server; each Team inside it is a channel.
+This isn't a new entity on top of §1's model — it's naming what was already there.
+
+- **Open by default**: any Workspace member can see and join any Team in that workspace without an
+  invite, the way public Discord channels work. Private/invite-only Teams are a future exception,
+  not the default.
+- **Invites exist at two scopes**: a **Workspace invite link** ("join Acme Corporation," no Team
+  assignment yet) and a **Team invite link** ("join Acme Corporation, land directly in Backend
+  Team") — both are the same underlying invite object, a Team invite is just a Workspace invite
+  with a `team_id` set. Accepting either always creates the Workspace `Membership`; a Team-scoped
+  one additionally creates the `TeamMembership`.
+- **Creating a Team** requires being a Workspace member (any role, for now — no Owner-only
+  restriction at MVP, since gating that meaningfully needs Phase 2's real RBAC enforcement anyway).
+
 ## 3. Full Sitemap
 
 ### 3.1 Public + Sentinel Home

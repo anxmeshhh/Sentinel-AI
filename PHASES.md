@@ -378,20 +378,40 @@ actually exist and are actually enforced. Superseded from "Team Workspace" (v1 f
 their own (`IA.md` v2 §8.1).
 
 **IA surface that goes live:** `IA.md` v2 §2.2/§2.3 (create/join workspace, onboarding wizard),
-§3.4/§3.5 (Team page, Project page), and real enforcement of the v2 §4 role set (Owner/Admin,
-Executive, Manager, Team Lead, Member, Guest — Super Admin still reserved for the operator-only
-Admin panel per its existing note).
+§2.4 (Teams-are-channels join model), §3.4/§3.5 (Team page, Project page), and real enforcement of
+the v2 §4 role set (Owner/Admin, Executive, Manager, Team Lead, Member, Guest — Super Admin still
+reserved for the operator-only Admin panel per its existing note).
+
+### Phase 2a — The Discord Core Loop (build this first)
+
+Create a workspace → create a channel (Team) → invite someone → they join. This is the concrete,
+sequenced slice that makes Sentinel actually feel like the Discord-style product it's meant to be,
+before any of Phase 2's other work.
 
 | Step | Deliverable | Notes |
 |---|---|---|
-| 2.1 | `POST /workspaces` (create), invite + accept-invite endpoints | Wires Phase 1.6's real accounts to real, user-created workspaces instead of the two bootstrap ones |
-| 2.2 | `Team` and `Project` models | New tables — `Finding`/`Signal` gain optional `team_id`/`project_id` so Team/Project pages can show scoped Intelligence |
-| 2.3 | Role enforcement | Every route checks the requesting user's role via `get_current_user`, per `IA.md` v2 §4's permission matrix — the first point `get_workspace_id` actually means "is this user authorized," not just "does this id exist" |
-| 2.4 | Jira and/or Linear integration client | Sprint/board metadata: tickets, status, assignee, due dates |
-| 2.5 | Project Agent | Sprint burndown reasoning, deadline-slip prediction |
-| 2.6 | Executive Agent upgrade | Consumes multiple agents' findings; produces compound findings (engineering bottleneck + velocity drop → "Sprint at risk") |
-| 2.7 | Frontend: login/signup pages, workspace creation wizard, Team/Project pages | First frontend surface for everything built in Phase 1.6 |
-| 2.8 | Brief delivery beyond dashboard | Slack and/or email push of the daily brief |
+| 2a.1 | `POST /workspaces` (create) | Creator becomes Owner/Admin (`Role.ORG_ADMIN` for now). Unblocks making a real "Acme Corporation," not just the auto-provisioned Personal workspace. |
+| 2a.2 | `Team` model + `TeamMembership` | New tables. A Team belongs to one Workspace; `TeamMembership` is a simple join (no per-team role yet — role still lives on the Workspace `Membership`, per `IA.md` v2 §2.4). |
+| 2a.3 | `POST /workspaces/{id}/teams` (create), `GET /workspaces/{id}/teams` (list) | Any Workspace member can create a Team; every Workspace member can see every Team in it (open by default, §2.4). |
+| 2a.4 | `POST /teams/{id}/join`, `POST /teams/{id}/leave` | The actual "join a channel" action — no invite needed, since Teams are open by default within a Workspace you already belong to. |
+| 2a.5 | `WorkspaceInvite` model | `token` (unguessable), `workspace_id`, `team_id` (nullable — null means workspace-level only), `role`, `expires_at`, `max_uses`/`used_count`. A Team invite is just a Workspace invite with `team_id` set. |
+| 2a.6 | `POST /workspaces/{id}/invites`, `POST /teams/{id}/invites`, `GET /invites/{token}` (preview), `POST /invites/{token}/accept` | Preview endpoint is what lets the join page show "You're invited to Acme Corporation / Backend Team" before the user commits. |
+| 2a.7 | Frontend: Create Workspace flow, Team/channel rail in the sidebar (second-level nav once inside a workspace), Create Team, Invite modal (generate link + copy button), Join-via-link page | The actual Discord-shaped UI: workspace icon rail → channel list → invite people |
+
+**Exit criteria:** you can create a second workspace from the UI, create a channel in it, generate
+an invite link, and have a second account join it and see the channel — the full loop, no curl
+required.
+
+### Phase 2b — Everything else already scoped for Phase 2
+
+| Step | Deliverable | Notes |
+|---|---|---|
+| 2b.1 | `Project` model | `Finding`/`Signal` gain optional `team_id`/`project_id` so Team/Project pages (`IA.md` v2 §3.4/§3.5) can show scoped Intelligence |
+| 2b.2 | Role enforcement | Every route checks the requesting user's role via `get_current_user`, per `IA.md` v2 §4's permission matrix — the first point being a Workspace member means different things per role, not just "member or not" |
+| 2b.3 | Jira and/or Linear integration client | Sprint/board metadata: tickets, status, assignee, due dates |
+| 2b.4 | Project Agent | Sprint burndown reasoning, deadline-slip prediction |
+| 2b.5 | Executive Agent upgrade | Consumes multiple agents' findings; produces compound findings (engineering bottleneck + velocity drop → "Sprint at risk") |
+| 2b.6 | Brief delivery beyond dashboard | Slack and/or email push of the daily brief |
 
 **Exit criteria (from `ROADMAP.md`):** at least one compound finding a pilot user says they
 wouldn't have caught themselves, surfaced at least a day before they would have caught it manually

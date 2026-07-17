@@ -16,6 +16,7 @@ interface WorkspaceContextValue {
   active: Workspace | null;
   setActiveId: (id: string) => void;
   loading: boolean;
+  refresh: () => Promise<Workspace[]>;
 }
 
 const STORAGE_KEY = "sentinel.activeWorkspaceId";
@@ -27,6 +28,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeId, setActiveIdState] = useState<string | null>(localStorage.getItem(STORAGE_KEY));
   const [loading, setLoading] = useState(true);
+
+  async function refresh(): Promise<Workspace[]> {
+    const list = await api.get<Workspace[]>("/workspaces");
+    setWorkspaces(list);
+    return list;
+  }
 
   useEffect(() => {
     // GET /workspaces requires auth - wait for AuthProvider to resolve, and
@@ -42,10 +49,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
 
     setLoading(true);
-    api
-      .get<Workspace[]>("/workspaces")
+    refresh()
       .then((list) => {
-        setWorkspaces(list);
         const stillValid = list.some((w) => w.id === activeId);
         const initial = stillValid ? activeId! : (list[0]?.id ?? null);
         setActiveIdState(initial);
@@ -64,7 +69,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const active = useMemo(() => workspaces.find((w) => w.id === activeId) ?? null, [workspaces, activeId]);
 
   return (
-    <WorkspaceContext.Provider value={{ workspaces, active, setActiveId, loading }}>
+    <WorkspaceContext.Provider value={{ workspaces, active, setActiveId, loading, refresh }}>
       {children}
     </WorkspaceContext.Provider>
   );

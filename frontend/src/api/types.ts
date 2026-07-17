@@ -76,6 +76,37 @@ export interface SystemStats {
   runs_running: number;
 }
 
+export interface Team {
+  id: string;
+  workspace_id: string;
+  name: string;
+  slug: string;
+  member_count: number;
+  is_member: boolean;
+}
+
+export interface Invite {
+  token: string;
+  workspace_id: string;
+  team_id: string | null;
+  expires_at: string | null;
+  max_uses: number | null;
+  used_count: number;
+}
+
+export interface InviteAcceptResult {
+  workspace_id: string;
+  team_id: string | null;
+}
+
+export interface InvitePreview {
+  workspace_name: string;
+  team_name: string | null;
+  invited_by_name: string;
+  valid: boolean;
+  reason_invalid: string | null;
+}
+
 export type Severity = "crit" | "warn" | "watch";
 
 export function severityBand(severity: number): Severity {

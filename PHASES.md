@@ -382,26 +382,67 @@ their own (`IA.md` v2 §8.1).
 the v2 §4 role set (Owner/Admin, Executive, Manager, Team Lead, Member, Guest — Super Admin still
 reserved for the operator-only Admin panel per its existing note).
 
-### Phase 2a — The Discord Core Loop (build this first)
+### Phase 2a — The Discord Core Loop ✅ Built and tested
 
 Create a workspace → create a channel (Team) → invite someone → they join. This is the concrete,
-sequenced slice that makes Sentinel actually feel like the Discord-style product it's meant to be,
-before any of Phase 2's other work.
+sequenced slice that makes Sentinel actually feel like the Discord-style product it's meant to be.
 
-| Step | Deliverable | Notes |
+| Step | Deliverable | Status |
 |---|---|---|
-| 2a.1 | `POST /workspaces` (create) | Creator becomes Owner/Admin (`Role.ORG_ADMIN` for now). Unblocks making a real "Acme Corporation," not just the auto-provisioned Personal workspace. |
-| 2a.2 | `Team` model + `TeamMembership` | New tables. A Team belongs to one Workspace; `TeamMembership` is a simple join (no per-team role yet — role still lives on the Workspace `Membership`, per `IA.md` v2 §2.4). |
-| 2a.3 | `POST /workspaces/{id}/teams` (create), `GET /workspaces/{id}/teams` (list) | Any Workspace member can create a Team; every Workspace member can see every Team in it (open by default, §2.4). |
-| 2a.4 | `POST /teams/{id}/join`, `POST /teams/{id}/leave` | The actual "join a channel" action — no invite needed, since Teams are open by default within a Workspace you already belong to. |
-| 2a.5 | `WorkspaceInvite` model | `token` (unguessable), `workspace_id`, `team_id` (nullable — null means workspace-level only), `role`, `expires_at`, `max_uses`/`used_count`. A Team invite is just a Workspace invite with `team_id` set. |
-| 2a.6 | `POST /workspaces/{id}/invites`, `POST /teams/{id}/invites`, `GET /invites/{token}` (preview), `POST /invites/{token}/accept` | Preview endpoint is what lets the join page show "You're invited to Acme Corporation / Backend Team" before the user commits. |
-| 2a.7 | Frontend: Create Workspace flow, Team/channel rail in the sidebar (second-level nav once inside a workspace), Create Team, Invite modal (generate link + copy button), Join-via-link page | The actual Discord-shaped UI: workspace icon rail → channel list → invite people |
-| 2a.8 | Onboarding step 1, "Connect Integrations" (`IA.md` v2 §2.3) | Ships with **GitHub only** — Gmail/Calendar/Meet/Zoom show as real, visible, "coming soon" tiles in the same step, not hidden, so the onboarding shape is right from day one even though only one source is wired. Phase 2c (below) is what activates the rest. |
+| 2a.1 | `POST /workspaces` (create) | ✅ |
+| 2a.2 | `Team` model + `TeamMembership` | ✅ |
+| 2a.3 | `POST/GET /workspaces/{id}/teams` | ✅ |
+| 2a.4 | `POST /teams/{id}/join`, `/leave` | ✅ |
+| 2a.5 | `WorkspaceInvite` model | ✅ |
+| 2a.6 | Invite create/preview/accept endpoints | ✅ |
+| 2a.7 | Frontend: Create Workspace, channel rail, Create Team, Invite modal, Join page | ✅ |
+| 2a.8 | Onboarding "Connect Integrations" (GitHub live, others coming-soon) | ✅ |
+
+### What actually got built (technical notes)
+
+- **`require_workspace_membership`** extracted as a shared auth primitive (`api/deps.py`) — both
+  the header-based `get_workspace_id` (existing pages) and the new path-based Team/Invite routes
+  use the same check, same 404-not-403 discipline (a workspace that exists but isn't yours doesn't
+  confirm its existence).
+- **Team creation auto-joins the creator** — you don't create a channel and then have to separately
+  join it, matching how Discord actually behaves.
+- **One invite model covers both scopes**: `WorkspaceInvite.team_id` nullable — a team invite
+  literally *is* a workspace invite with that one field set, exactly as planned in `IA.md` v2 §2.4,
+  not a second model.
+- **Invite preview is deliberately public** (`GET /invites/{token}`, no auth) — you can see "X
+  invited you to Acme Corporation / #Backend Team" before signing up, the way Discord shows a
+  server preview pre-join. Accepting requires auth.
+- **Frontend `next` redirect param** added to Login/Signup so the invite flow survives a
+  login/signup round-trip: click an invite link while logged out → prompted to sign in or create an
+  account → land back on the same invite → accept. `WorkspaceContext` gained a `refresh()` so a
+  newly-joined workspace shows up immediately without a full page reload.
+- **Verified the complete loop end-to-end with two real accounts**, not mocked: created "Acme
+  Corporation," created "Backend Team" (creator auto-joined, `member_count=1`), generated both a
+  workspace-level and a team-level invite, previewed the team invite unauthenticated, signed up a
+  second real account, confirmed they started with only their own Personal workspace, accepted the
+  invite, confirmed they now saw Acme Corporation *and* were a Backend Team member
+  (`member_count` went 1→2), then had that second account freely create a third team ("Frontend
+  Team") with zero invite needed (open-by-default), and confirmed the first account could see it
+  unjoined (`is_member: false`) — every claim in `IA.md` v2 §2.4 checked against real behavior, not
+  assumed from the code.
+- Confirmed all of the above **survived a full container rebuild** — workspaces, teams, and
+  memberships are all in MySQL, not in-memory state.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **No team-level roles** — `TeamMembership` is a plain join; access differentiation still only
+  happens at the Workspace `Membership.role` level. Matches `IA.md` v2 §2.4's explicit MVP choice.
+- **No invite revocation UI** — invites never expire/max-out unless you pass those fields via the
+  API directly; the frontend's "Generate invite link" always creates an unlimited, non-expiring one.
+- **No Team page content** — clicking into a channel today is just join/leave/invite in the rail;
+  the actual Team page (Overview/Projects/Work/Members/Activity/Insights, `IA.md` v2 §3.4) needs
+  Phase 2b's `Project` model and `team_id`-scoped Findings first.
+- **Role enforcement still doesn't exist** — every Workspace member can create/invite/manage
+  equally regardless of role. Phase 2b.2.
 
 **Exit criteria:** you can create a second workspace from the UI, create a channel in it, generate
 an invite link, and have a second account join it and see the channel — the full loop, no curl
-required.
+required. **Met** — verified via the API directly; not yet click-tested in a real browser by you.
 
 ### Phase 2b — Everything else already scoped for Phase 2
 

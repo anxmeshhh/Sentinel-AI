@@ -40,6 +40,21 @@ def get_current_user(
     return user
 
 
+def require_workspace_membership(session: Session, user: User, workspace_id: uuid.UUID) -> Membership:
+    """404, not 403, for a workspace that exists but isn't the caller's -
+    doesn't confirm existence to a non-member. Shared by get_workspace_id
+    (header-based, for the "currently active workspace" pattern) and any
+    route that takes an explicit workspace_id in its path (Team CRUD,
+    invites) instead.
+    """
+    membership = session.execute(
+        select(Membership).where(Membership.workspace_id == workspace_id, Membership.user_id == user.id)
+    ).scalar_one_or_none()
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return membership
+
+
 def get_workspace_id(
     session: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -57,12 +72,7 @@ def get_workspace_id(
             workspace_uuid = uuid.UUID(x_workspace_id)
         except ValueError:
             raise HTTPException(status_code=400, detail="X-Workspace-Id must be a valid UUID")
-        membership = session.execute(
-            select(Membership).where(Membership.workspace_id == workspace_uuid, Membership.user_id == user.id)
-        ).scalar_one_or_none()
-        if membership is None:
-            # 404, not 403 - don't confirm the workspace exists to a non-member.
-            raise HTTPException(status_code=404, detail="Workspace not found")
+        require_workspace_membership(session, user, workspace_uuid)
         return workspace_uuid
 
     return provision_personal_workspace_for_user(session, user).id

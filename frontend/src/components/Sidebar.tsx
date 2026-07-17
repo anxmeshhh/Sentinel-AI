@@ -2,16 +2,29 @@ import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
+import { useTeams } from "../context/TeamContext";
 import { useWorkspace } from "../context/WorkspaceContext";
+import type { Workspace } from "../context/WorkspaceContext";
+import { CreateTeamModal } from "./CreateTeamModal";
+import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
+import { InviteModal } from "./InviteModal";
 
 // Operator-only surface (see IA.md - this isn't part of the customer IA).
 const OPERATOR_NAV = [{ to: "/admin", label: "Admin & Observability" }];
+
+type ModalState =
+  | null
+  | { type: "create-workspace" }
+  | { type: "create-team" }
+  | { type: "invite-workspace" }
+  | { type: "invite-team"; teamId: string; teamName: string };
 
 export function Sidebar() {
   const { workspaces, active, setActiveId, loading } = useWorkspace();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [modal, setModal] = useState<ModalState>(null);
 
   function handleLogout() {
     logout();
@@ -47,7 +60,7 @@ export function Sidebar() {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-72 flex-none flex-col gap-8 border-r border-border bg-surface p-6 transition-transform duration-200 md:sticky md:top-0 md:z-auto md:w-64 md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-72 flex-none flex-col gap-7 overflow-y-auto border-r border-border bg-surface p-6 transition-transform duration-200 md:sticky md:top-0 md:z-auto md:w-64 md:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -64,7 +77,13 @@ export function Sidebar() {
           </button>
         </div>
 
-        <WorkspaceSwitcher workspaces={workspaces} active={active} onChange={setActiveId} loading={loading} />
+        <WorkspaceSwitcher
+          workspaces={workspaces}
+          active={active}
+          onChange={setActiveId}
+          loading={loading}
+          onCreateNew={() => setModal({ type: "create-workspace" })}
+        />
 
         <nav className="flex flex-col gap-1">
           <div className="px-2.5 pb-2 text-[10.5px] uppercase tracking-[0.14em] text-ink-faint">Workspace</div>
@@ -72,6 +91,14 @@ export function Sidebar() {
             <NavItem key={item.to} to={item.to} end={item.end} label={item.label} onNavigate={() => setMobileOpen(false)} />
           ))}
         </nav>
+
+        {active && active.kind !== "personal" && (
+          <ChannelRail
+            onCreateTeam={() => setModal({ type: "create-team" })}
+            onInviteWorkspace={() => setModal({ type: "invite-workspace" })}
+            onInviteTeam={(teamId, teamName) => setModal({ type: "invite-team", teamId, teamName })}
+          />
+        )}
 
         <nav className="flex flex-col gap-1">
           <div className="px-2.5 pb-2 text-[10.5px] uppercase tracking-[0.14em] text-ink-faint">Operator</div>
@@ -97,6 +124,17 @@ export function Sidebar() {
           </button>
         </div>
       </aside>
+
+      {modal?.type === "create-workspace" && (
+        <CreateWorkspaceModal onClose={() => setModal(null)} onCreated={(w) => setActiveId(w.id)} />
+      )}
+      {modal?.type === "create-team" && <CreateTeamModal onClose={() => setModal(null)} />}
+      {modal?.type === "invite-workspace" && active && (
+        <InviteModal scope={{ type: "workspace", id: active.id }} label={active.name} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "invite-team" && (
+        <InviteModal scope={{ type: "team", id: modal.teamId }} label={`#${modal.teamName}`} onClose={() => setModal(null)} />
+      )}
     </>
   );
 }
@@ -117,11 +155,13 @@ function WorkspaceSwitcher({
   active,
   onChange,
   loading,
+  onCreateNew,
 }: {
-  workspaces: { id: string; name: string; kind: string }[];
-  active: { id: string; name: string; kind: string } | null;
+  workspaces: Workspace[];
+  active: Workspace | null;
   onChange: (id: string) => void;
   loading: boolean;
+  onCreateNew: () => void;
 }) {
   if (loading) {
     return <div className="h-[52px] animate-pulse border border-border bg-surface-2" />;
@@ -145,6 +185,72 @@ function WorkspaceSwitcher({
           </button>
         );
       })}
+      <button
+        onClick={onCreateNew}
+        className="flex items-center gap-2 px-3 py-2 text-left text-[12.5px] text-ink-faint hover:bg-surface-2 hover:text-ink"
+      >
+        <span className="text-[14px] leading-none">+</span> Create or join a workspace
+      </button>
+    </div>
+  );
+}
+
+function ChannelRail({
+  onCreateTeam,
+  onInviteWorkspace,
+  onInviteTeam,
+}: {
+  onCreateTeam: () => void;
+  onInviteWorkspace: () => void;
+  onInviteTeam: (teamId: string, teamName: string) => void;
+}) {
+  const { teams, loading, join, leave } = useTeams();
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between px-2.5 pb-2">
+        <span className="text-[10.5px] uppercase tracking-[0.14em] text-ink-faint">Channels</span>
+        <button onClick={onInviteWorkspace} className="text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink">
+          Invite
+        </button>
+      </div>
+
+      {loading && <div className="h-8 animate-pulse bg-surface-2" />}
+
+      {!loading &&
+        teams.map((team) => (
+          <div key={team.id} className="group flex items-center gap-1.5 px-2.5 py-1.5">
+            <span className="text-ink-faint">#</span>
+            <span className={`flex-1 truncate text-[13px] ${team.is_member ? "text-ink" : "text-ink-dim"}`}>{team.name}</span>
+            <span className="text-[10.5px] text-ink-faint">{team.member_count}</span>
+            {team.is_member ? (
+              <button
+                onClick={() => leave(team.id)}
+                className="hidden text-[11px] text-ink-faint underline underline-offset-2 hover:text-crit group-hover:inline"
+              >
+                Leave
+              </button>
+            ) : (
+              <button onClick={() => join(team.id)} className="text-[11px] font-medium text-ink-dim underline underline-offset-2 hover:text-ink">
+                Join
+              </button>
+            )}
+            <button
+              onClick={() => onInviteTeam(team.id, team.name)}
+              className="hidden text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink group-hover:inline"
+              aria-label={`Invite people to ${team.name}`}
+            >
+              Invite
+            </button>
+          </div>
+        ))}
+
+      <button
+        onClick={onCreateTeam}
+        className="flex items-center gap-2 px-2.5 py-1.5 text-left text-[12.5px] text-ink-faint hover:text-ink"
+      >
+        <span className="text-[14px] leading-none">+</span> Create channel
+      </button>
     </div>
   );
 }

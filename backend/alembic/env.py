@@ -7,7 +7,7 @@ from app.core.config import get_settings
 from app.models.base import Base, UTCDateTime
 
 # import every model module so Base.metadata is fully populated for autogenerate
-from app.models import agent_run, brief, connection, finding, otp_code, signal, user, workspace  # noqa: F401
+from app.models import agent_run, brief, connection, finding, invite, otp_code, signal, team, user, workspace  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

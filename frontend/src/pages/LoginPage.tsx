@@ -1,6 +1,6 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { ApiError } from "../api/client";
 import { AuthLayout, ErrorText, FieldLabel, inputClass, primaryButtonClass } from "../components/AuthLayout";
@@ -12,6 +12,8 @@ type Mode = "password" | "otp-request" | "otp-verify";
 export function LoginPage() {
   const { login, requestOtp, verifyOtp } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const next = searchParams.get("next") || "/";
 
   const [mode, setMode] = useState<Mode>("password");
   const [email, setEmail] = useState("");
@@ -26,7 +28,7 @@ export function LoginPage() {
     setError(null);
     try {
       await login(email, password);
-      navigate("/");
+      navigate(next);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");
     } finally {
@@ -54,7 +56,7 @@ export function LoginPage() {
     setError(null);
     try {
       await verifyOtp(email, "login", code);
-      navigate("/");
+      navigate(next);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");
     } finally {
@@ -69,7 +71,7 @@ export function LoginPage() {
       footer={
         <>
           Don't have an account?{" "}
-          <Link to="/signup" className="font-medium text-ink underline underline-offset-2">
+          <Link to={`/signup?next=${encodeURIComponent(next)}`} className="font-medium text-ink underline underline-offset-2">
             Sign up
           </Link>
         </>

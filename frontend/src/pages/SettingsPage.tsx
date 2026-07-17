@@ -4,6 +4,14 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Connection } from "../api/types";
 
+const INTEGRATIONS = [
+  { name: "GitHub", desc: "PRs, commits, issues, reviews", available: true },
+  { name: "Gmail", desc: "Threads, participants, timestamps — metadata only", available: false },
+  { name: "Google Calendar", desc: "Meetings, attendees, duration", available: false },
+  { name: "Google Meet", desc: "Meeting metadata via Calendar", available: false },
+  { name: "Zoom", desc: "Meeting metadata", available: false },
+];
+
 const AGENTS = [
   { name: "Engineering", desc: "GitHub bottlenecks, hotspots, inactive contributors, risky deploys", tag: "PHASE 1", on: true },
   { name: "Executive", desc: "Synthesizes every agent's findings into the daily brief", tag: "ALWAYS ON", on: true },
@@ -57,7 +65,33 @@ export function SettingsPage() {
         Control what Sentinel watches and which agents are allowed to run.
       </p>
 
-      <SectionLabel>Connections</SectionLabel>
+      <SectionLabel>Integrations</SectionLabel>
+      <div className="mb-8 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        {INTEGRATIONS.map((integration) => (
+          <div
+            key={integration.name}
+            className={`flex items-start justify-between gap-3 border p-3.5 ${
+              integration.available ? "border-border bg-surface" : "border-border/60 bg-surface/50"
+            }`}
+          >
+            <div>
+              <div className={`text-[13px] font-semibold ${integration.available ? "text-ink" : "text-ink-faint"}`}>
+                {integration.name}
+              </div>
+              <div className="mt-0.5 text-[11.5px] text-ink-faint">{integration.desc}</div>
+            </div>
+            <span
+              className={`flex-none whitespace-nowrap rounded-full border px-2 py-[3px] text-[10px] font-medium uppercase tracking-wide ${
+                integration.available ? "border-good/40 text-good" : "border-border text-ink-faint"
+              }`}
+            >
+              {integration.available ? "Available" : "Coming soon"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <SectionLabel>Connected Repositories</SectionLabel>
       <div className="mb-3 rounded-md border border-border bg-surface">
         {connections.length === 0 ? (
           <p className="p-4 text-[13px] text-ink-dim">No repository connected yet.</p>

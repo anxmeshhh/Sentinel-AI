@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api.routes import admin, assistant, auth, briefs, connections, findings, runs, workspaces
+from app.api.routes import admin, assistant, auth, briefs, connections, findings, invites, runs, teams, workspaces
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 
@@ -44,6 +44,8 @@ app.include_router(briefs.router)
 app.include_router(findings.router)
 app.include_router(admin.router)
 app.include_router(workspaces.router)
+app.include_router(teams.router)
+app.include_router(invites.router)
 app.include_router(assistant.router)
 
 

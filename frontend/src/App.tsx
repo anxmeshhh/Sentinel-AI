@@ -8,6 +8,7 @@ import { AssistantPage } from "./pages/AssistantPage";
 import { BriefPage } from "./pages/BriefPage";
 import { FindingDetailPage } from "./pages/FindingDetailPage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { JoinInvitePage } from "./pages/JoinInvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -37,6 +38,7 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/auth/callback" element={<OAuthCallbackPage />} />
+      <Route path="/invite/:token" element={<JoinInvitePage />} />
 
       <Route path="/" element={<RequireAuth><BriefPage /></RequireAuth>} />
       <Route path="/findings/:id" element={<RequireAuth><FindingDetailPage /></RequireAuth>} />

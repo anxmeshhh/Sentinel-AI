@@ -1,6 +1,6 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { ApiError } from "../api/client";
 import { AuthLayout, ErrorText, FieldLabel, inputClass, primaryButtonClass } from "../components/AuthLayout";
@@ -10,6 +10,8 @@ import { useAuth } from "../context/AuthContext";
 export function SignupPage() {
   const { signup, verifyOtp } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const next = searchParams.get("next") || "/";
 
   const [step, setStep] = useState<"signup" | "verify">("signup");
   const [email, setEmail] = useState("");
@@ -39,7 +41,7 @@ export function SignupPage() {
     setError(null);
     try {
       await verifyOtp(email, "email_verify", code);
-      navigate("/");
+      navigate(next);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");
     } finally {
@@ -83,7 +85,7 @@ export function SignupPage() {
       footer={
         <>
           Already have an account?{" "}
-          <Link to="/login" className="font-medium text-ink underline underline-offset-2">
+          <Link to={`/login?next=${encodeURIComponent(next)}`} className="font-medium text-ink underline underline-offset-2">
             Sign in
           </Link>
         </>

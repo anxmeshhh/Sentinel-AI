@@ -247,28 +247,102 @@ personal daily brief through the same pipeline used in Phase 1. *(Structurally p
 workspace runs the identical pipeline as Organization — but not yet exercised with a real personal
 GitHub account; the architecture is what was being validated here, and it held.)*
 
+---
+
+## Phase 1.6 — Auth Foundation ✅ Built and smoke-tested
+
+**Objective:** replace `core/bootstrap.py`'s single implicit user with real accounts — the true
+prerequisite named in `IA.md` v2 §8.2 for everything else in the Discord-style workspace model
+(workspace creation, invites, roles are all meaningless without a real account to attach them to).
+
+**IA surface this enables:** `IA.md` v2 §2.1's signup/login (Google, Microsoft, Email), still not
+yet wired into workspace resolution or any existing route — see Known gaps.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 1.6.1 | Password auth: signup, login, hashing | ✅ |
+| 1.6.2 | OTP: email verification + passwordless login | ✅ |
+| 1.6.3 | Google + Microsoft OAuth (conditionally active) | ✅ code complete, not yet exercised — needs real client id/secret in `.env` |
+| 1.6.4 | Session JWT + `get_current_user` dependency | ✅ |
+
+### What actually got built (technical notes)
+
+- **`users` table extended**: `hashed_password` (nullable — OAuth-only users never set one),
+  `email_verified`, `google_sub`/`microsoft_sub` (the provider's stable subject id, matched instead
+  of email since email can change at the provider but the subject id never does).
+- **New `otp_codes` table**: only the bcrypt hash of each code is stored, same discipline as
+  passwords — a DB read never reveals a usable code. Capped attempts (`otp_max_attempts`) and a
+  short expiry (`otp_expire_minutes`) bound brute-force guessing of a 6-digit code.
+- **`core/email.py`**: a real `EmailSender` abstraction, not a stub — defaults to
+  `ConsoleEmailSender` (logs the OTP instead of sending it), so signup/login work correctly with
+  *zero* configuration. Verified for real: signed up, read the OTP out of `docker compose logs
+  backend`, submitted it, got a valid session token back. Switching to real delivery later is
+  `EMAIL_PROVIDER=smtp` + filling in `SMTP_*` in `.env` — no code changes.
+- **OAuth (`core/oauth.py`)**: Google and Microsoft clients are only registered if their client
+  id/secret are actually set — the app runs fine with neither configured, and hitting
+  `/auth/{provider}/login` before then returns a clear 501 rather than crashing. Verified this
+  graceful-absence path for real; the actual OAuth round-trip needs you to register an app in
+  Google Cloud Console / Azure Portal and drop the client id/secret into `.env` (redirect URIs
+  documented there) — that's the one piece only you can do.
+- **Sessions are stateless JWT** (`core/auth.py`), sent as `Authorization: Bearer <token>`, not a
+  cookie — consistent with the header-based pattern `X-Workspace-Id` already established, and
+  simplest to test directly via curl/Swagger without CORS-credential complexity.
+- **Deliberately not wired into any existing route yet.** `get_current_user` (`api/deps.py`) is a
+  complete, working, standalone dependency — but `get_workspace_id` still resolves through the
+  Phase 1 implicit-user bootstrap, unchanged. Rewiring every existing route to require real login
+  is real work with real risk of breaking what's currently working; it's the explicit next step
+  (`IA.md` v2 §8.2 point 4: role enforcement), not bundled into this pass.
+- **Verified end-to-end for real, 11 separate HTTP checks**, not just unit tests: signup → OTP
+  logged to console → wrong code rejected → correct code verified (flips `email_verified`, issues a
+  token) → `/auth/me` authenticated → `/auth/me` with no token correctly 401s → password login →
+  wrong password correctly 401s → duplicate signup correctly rejected → passwordless login-OTP
+  request → both OAuth routes correctly 501 when unconfigured.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **Not wired into `get_workspace_id`** — see above. Today, having a valid JWT proves who you are,
+  but every route still resolves to the Phase 1 bootstrap workspace regardless of who's asking.
+- **No workspace CRUD/invites yet** — `IA.md` v2 §2.2/§2.3 (create workspace wizard, join via
+  invite link, onboarding steps) don't exist as routes. This account system has nowhere to attach
+  a *created* workspace yet, only the two bootstrap ones.
+- **No frontend login/signup pages** — this phase was backend-only by request; the API is fully
+  testable via `/docs` or curl, but there's no `Login`/`Signup`/`/auth/callback` page in the React
+  app yet.
+- **OAuth round-trip unexercised** — the code path is complete and the "not configured" path is
+  verified, but nobody has actually clicked through a real Google/Microsoft consent screen against
+  this code yet, since that needs your registered app credentials.
+
 **⏸ Wait for signal before Phase 2.**
 
 ---
 
-## Phase 2 — Team Workspace + Project Agent + RBAC
+## Phase 2 — Workspace CRUD, Teams, Projects, RBAC Enforcement
 
 **Objective:** the first real demonstration of the core thesis — connecting dots *across* tools —
-plus the first point where multiple users and roles actually exist.
+plus the first point where multiple users, real workspaces (not bootstrap-seeded ones), and roles
+actually exist and are actually enforced. Superseded from "Team Workspace" (v1 framing) to this by
+`IA.md` v2 — Teams and Projects are now entities living inside a Workspace, not workspace kinds of
+their own (`IA.md` v2 §8.1).
 
-**IA surface that goes live:** Team Workspace (`IA.md` §2.3); first real roles — Org Admin, Team
-Manager, Employee (Guest and Super Admin still deferred).
+**IA surface that goes live:** `IA.md` v2 §2.2/§2.3 (create/join workspace, onboarding wizard),
+§3.4/§3.5 (Team page, Project page), and real enforcement of the v2 §4 role set (Owner/Admin,
+Executive, Manager, Team Lead, Member, Guest — Super Admin still reserved for the operator-only
+Admin panel per its existing note).
 
 | Step | Deliverable | Notes |
 |---|---|---|
-| 2.1 | Jira and/or Linear integration client | Sprint/board metadata: tickets, status, assignee, due dates |
-| 2.2 | Project Agent | Sprint burndown reasoning, deadline-slip prediction |
-| 2.3 | Executive Agent upgrade | Consumes multiple agents' findings; produces compound findings (engineering bottleneck + velocity drop → "Sprint at risk") |
-| 2.4 | RBAC | Role column on `memberships`; permission checks per `IA.md` §3 matrix; Team Workspace pages (Dashboard, Members, Projects, Sprint Board, Reports) |
-| 2.5 | Brief delivery beyond dashboard | Slack and/or email push of the daily brief |
+| 2.1 | `POST /workspaces` (create), invite + accept-invite endpoints | Wires Phase 1.6's real accounts to real, user-created workspaces instead of the two bootstrap ones |
+| 2.2 | `Team` and `Project` models | New tables — `Finding`/`Signal` gain optional `team_id`/`project_id` so Team/Project pages can show scoped Intelligence |
+| 2.3 | Role enforcement | Every route checks the requesting user's role via `get_current_user`, per `IA.md` v2 §4's permission matrix — the first point `get_workspace_id` actually means "is this user authorized," not just "does this id exist" |
+| 2.4 | Jira and/or Linear integration client | Sprint/board metadata: tickets, status, assignee, due dates |
+| 2.5 | Project Agent | Sprint burndown reasoning, deadline-slip prediction |
+| 2.6 | Executive Agent upgrade | Consumes multiple agents' findings; produces compound findings (engineering bottleneck + velocity drop → "Sprint at risk") |
+| 2.7 | Frontend: login/signup pages, workspace creation wizard, Team/Project pages | First frontend surface for everything built in Phase 1.6 |
+| 2.8 | Brief delivery beyond dashboard | Slack and/or email push of the daily brief |
 
 **Exit criteria (from `ROADMAP.md`):** at least one compound finding a pilot user says they
-wouldn't have caught themselves, surfaced at least a day before they would have caught it manually.
+wouldn't have caught themselves, surfaced at least a day before they would have caught it manually
+— now on a workspace the pilot user actually created and invited teammates into, not a seeded one.
 
 **⏸ Wait for signal before Phase 3.**
 

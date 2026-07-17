@@ -1,222 +1,273 @@
 # Sentinel AI — Information Architecture
 
-**Status:** Draft v1 — target end-state IA. See §6 for how this reconciles with the phased MVP in `ROADMAP.md`.
+**Status:** v2 — target end-state IA, revised from v1 to the Discord-server workspace model. See §8
+for what changed from v1 and why, and how this reconciles with what's actually been built
+(`PHASES.md`).
 
 ---
 
-## 1. Design Model: Workspaces, Not Pages
+## 1. Design Model: One Account, Many Workspaces
 
-Sentinel is navigated the way Linear, Notion, and GitHub are: a **workspace switcher** at the top
-of the shell determines what the surrounding navigation, dashboards, and agent findings are
-*scoped to*. The same page type (a Dashboard, an Agent Center, a Reports page) exists in multiple
-workspaces, but shows different data and different peers depending on which workspace is active.
-
-Every user always has exactly one **Personal Workspace**. They additionally belong to zero or more
-**Team Workspaces** and, if their company has onboarded Sentinel org-wide, one **Organization
-Workspace**. This is what makes Sentinel work "not only for the company but for themselves as
-well" — an individual with no team can still get a personal AI assistant and daily brief; a
-company that adopts it org-wide layers Team and Organization workspaces on top of the same
-underlying account.
+Sentinel works the way Discord or Slack does, not the way a single-tenant SaaS dashboard does: a
+user has **one global account**, and can belong to **any number of Workspaces** — created, joined
+by invitation, or (for exactly one) auto-provisioned as their private space.
 
 ```
-Sentinel
-├── Public (no auth)
-├── Personal Workspace          — always present, one per user
-├── Team Workspace(s)           — zero or more, one per team the user belongs to
-├── Organization Workspace      — present once a company has onboarded org-wide
-├── Agent Center                — cross-cutting, scoped to whichever workspace is active
-├── Analytics                   — cross-cutting, scoped to whichever workspace is active
-├── Integrations                — cross-cutting, scoped to whichever workspace is active
-├── Notifications                — cross-cutting, scoped to whichever workspace is active
-└── Settings                     — Personal settings + Organization settings
+USER ACCOUNT
+│
+├── Personal Space        — auto-created, private, always exists, kind=personal
+├── Acme Corporation       — created or joined, kind=organization
+├── Webnify                — created or joined, kind=organization
+└── College Team           — created or joined, kind=organization
 ```
 
-## 2. Full Sitemap
+**Every Workspace — Personal Space included — has the identical page structure** (§3.2). Personal
+Space isn't a structurally different thing from Acme Corporation; it's a Workspace with one member
+(you) and, until you add some, zero Teams and Projects. This is the single biggest simplification
+over v1, which had three *structurally different* page sets for Personal/Team/Organization. One
+page set, reused everywhere, just with different data and different peers — same principle v1 had
+for the Agent page contract, now applied to the Workspace itself.
 
-### 2.1 Public (no login)
+**Teams and Projects are no longer workspace-level peers — they live inside a Workspace**, as
+first-class entities with their own membership and their own pages (§3.4, §3.5):
+
+```
+WORKSPACE (e.g. Acme Corporation)
+│
+├── Members                     — everyone with access to this workspace
+├── Teams                       — Backend, Frontend, AI, DevOps, ...
+│     └── Team Members          — a user can be on multiple teams
+├── Projects                    — Payment System, Internal Tools, ...
+│     ├── Assigned Team(s)
+│     └── Assigned Member(s)
+├── Strategic Initiatives       — a named grouping of multiple Projects
+├── Integrations                — GitHub, Jira, Slack, Notion, Calendar, ... (workspace-scoped)
+└── Sentinel Intelligence       — the AI Agents' findings, scoped to this workspace
+```
+
+A user can belong to multiple Workspaces, multiple Teams within a Workspace, and multiple Projects
+within a Workspace — all independently.
+
+## 2. Auth & Onboarding Flows
+
+### 2.1 Sign up / Login
+
+Google · Microsoft · Email — all land in the same place post-auth: **Sentinel Home** (§3.1), the
+global, workspace-agnostic screen showing the account's Workspace list and the workspace switcher.
+
+### 2.2 New account → first decision
+
+Two options, always both available (not mutually exclusive over time — an account can do both):
+
+- **Create a Workspace** — the creator becomes **Workspace Owner/Admin** (§4). Creation is a short
+  wizard: name, logo, organization type, industry, team size, primary use cases (e.g. "Project
+  Intelligence," "Engineering Visibility," "Risk Detection," "Team Coordination") — these inputs
+  don't just decorate the workspace, they set sensible defaults for which AI Agents are
+  pre-enabled and which Integrations are suggested first.
+- **Join a Workspace** — via an invitation link. Login/signup if not already authenticated → view
+  the invitation ("X has invited you to join Acme Corporation") → Accept → the workspace appears
+  in the switcher, and the invite determined the joining user's initial Role, Team(s), and Project
+  access.
+
+### 2.3 Workspace onboarding (Owner/Admin only, right after creation)
+
+A fixed sequence, each step skippable/revisitable later from Workspace Settings:
+
+1. Connect Integrations (GitHub, Jira, Slack, Notion, Google Calendar, ...)
+2. Invite Members
+3. Assign Roles
+4. Create or import Teams
+5. Create or import Projects
+6. Assign Members and Teams to Projects
+7. Sentinel begins analyzing authorized workspace data — this is the moment ingestion + the AI
+   Agents actually turn on for this workspace; everything before this step is configuration only.
+
+## 3. Full Sitemap
+
+### 3.1 Public + Sentinel Home
 
 | Page | Purpose |
 |------|---------|
-| Home | Positioning, the "digital COO" pitch |
-| Features | The 10-agent story, by workspace type |
-| Pricing | Personal / Team / Organization tiers |
-| Documentation | Setup guides, integration docs, agent reference |
-| Blog | Findings-driven content marketing (real anonymized brief examples) |
-| Contact | Sales/support contact |
-| Login / Sign Up | Auth entry points |
+| Home / Features / Pricing / Documentation / Blog / Contact | Public marketing, unchanged from v1 |
+| Login / Sign Up | Google, Microsoft, or Email |
+| **Sentinel Home** *(new in v2)* | Post-auth landing: the account's Workspace list, workspace switcher, "Create / Join Workspace" entry point — this is the "Discord app before you click into a server" screen. Not itself scoped to any workspace. |
 
-### 2.2 Personal Workspace
+### 3.2 Inside a Workspace (the one page set, used by every workspace)
 
 | Page | Purpose |
 |------|---------|
-| Dashboard | AI-generated personal overview — today's brief, scoped to you |
-| Tasks | AI-prioritized tasks and to-dos, pulled from connected tools |
-| Calendar | Meetings, deadlines, schedule |
-| Insights | Personal productivity trends and AI observations |
-| AI Assistant | Chat surface — the one place a chat UI is primary, scoped to your own data |
-| Timeline | Daily activity history, chronological |
-| Integrations | Connect GitHub, Gmail, Calendar, Notion, etc. (personal-account scope) |
-| Notifications | AI alerts and reminders |
-| Profile | Personal settings |
+| Overview / Command Center | Workspace-wide health — replaces v1's separate "Executive Dashboard" and "Team Dashboard," now one page type reused at every scope |
+| **My Work** *(new in v2)* | The user's personal operational view **within this workspace**: tasks assigned to them, PRs needing attention, deadlines, meetings, blockers, notifications, and an AI-generated priority list. This replaces v1's Personal-Workspace-as-a-separate-thing — "My Work" is what a Personal Space's home page effectively *is*, but now available inside every workspace, not just a standalone Personal one. |
+| Projects | This workspace's project list |
+| Teams | This workspace's team list |
+| Intelligence | The Intelligence Feed (§5) — risks, bottlenecks, blocked work, cross-team dependencies, anomalies, recommended actions |
+| Alerts | Time-ordered notification stream, workspace-scoped |
+| Analytics | Productivity, project, and team performance trends |
+| Ask Sentinel | The AI copilot (renamed from v1's "AI Assistant" — same feature, same grounding discipline: answers only from data the *asking user* is authorized to see) |
+| AI Agents | Per-agent status/config — the v1 Agent Center, reframed around the DETECT→ACT pipeline (§5) |
+| Integrations | This workspace's connections |
+| Workspace Settings | Members, Roles, Permissions, Billing, the onboarding steps (§2.3), revisited |
 
-### 2.3 Team Workspace
+The visible subset of this list depends on the viewing user's Role (§4) — a Guest sees a tiny
+slice; an Owner sees all of it. Same principle as v1 §5's "RBAC is a lens over the same IA."
+
+### 3.3 Cross-cutting note: what happened to "Agent Center"
+
+v1 had a flat `Executive · Engineering · Project · Communication · Knowledge · Security · DevOps ·
+HR · Finance` list under "Agent Center." That page contract (Status, Findings, Recommendations,
+History, Confidence, Evidence) **still stands unchanged** — it's now reached via the workspace's
+**AI Agents** page instead of a separately-named top-level section, and each agent additionally
+declares its position in the DETECT→ACT pipeline (§5).
+
+### 3.4 Team page (opening a specific Team inside a Workspace)
 
 | Page | Purpose |
 |------|---------|
-| Team Dashboard | Overall team health |
-| Members | Team roster and workload |
-| Projects | Active projects |
-| Sprint Board | Sprint progress and risk |
-| Agent Center (team-scoped) | Status of agents running against this team's data |
-| Team Timeline | Team events |
-| Reports | Weekly/monthly summaries |
+| Overview | Team health snapshot |
+| Projects | This team's active projects |
+| Work | Open/blocked tasks for the team |
+| Members | Roster |
+| Activity | Recent team activity |
+| Insights | Team workload, progress, upcoming deadlines, team-level risks — the Engineering/Communication agents' output, scoped to this one team |
 
-### 2.4 Organization Workspace
+### 3.5 Project page (opening a specific Project inside a Workspace)
 
 | Page | Purpose |
 |------|---------|
-| Executive Dashboard | Company-wide health — the Executive Agent's primary surface |
-| Departments | Engineering, HR, Finance, etc. |
-| Projects | Cross-team project roll-up |
-| Teams | All teams in the org |
-| Employees | Org-wide people directory |
-| AI Insights | Org-wide findings roll-up |
-| Incident Center | Active incidents across departments |
-| Reports | Org-wide summaries |
-| Integrations | Org-wide connections (as opposed to personal-account connections) |
-| Audit Logs | Who did what, when — compliance surface |
-| Organization Settings | Org-wide configuration |
+| Overview | Project status |
+| Tasks | Task list |
+| Timeline | Schedule/milestones |
+| Team | Assigned team(s) and member(s) |
+| GitHub Activity | PRs, commits, reviews for this project's repo(s) |
+| Dependencies | Cross-project/cross-team dependencies |
+| Risks | Findings scoped to this project |
+| AI Insights | The pitch made concrete: instead of checking Jira → GitHub → Slack → Notion separately, this one page combines all of it — Sentinel's core "connect the dots" value proposition, at project granularity. |
 
-### 2.5 Agent Center (cross-cutting)
+## 4. RBAC Model (v2 — more granular than v1)
 
-One entry per agent; which agents appear depends on the active workspace (a Personal Workspace
-only ever shows Executive + Engineering + Knowledge, for example — Security/DevOps/Finance are
-meaningless without a team or org behind them).
-
-Executive · Engineering · Project · Communication · Knowledge · Security · DevOps · HR · Finance
-
-**Every agent page shares one contract**, so the pattern is learned once and reused nine times:
-
-| Block | Content |
-|-------|---------|
-| Status | Active/paused, last run time, data sources currently connected |
-| Findings | Current findings, ranked by severity × confidence |
-| Recommendations | Suggested actions tied to each finding |
-| History | Past findings and whether they were resolved, dismissed, or are still open |
-| Confidence | The score methodology, and the agent's accuracy trend over time (validates or erodes trust) |
-| Evidence | The raw signals behind every finding above — the explainability layer |
-
-### 2.6 Analytics (cross-cutting)
-
-Productivity · Project Analytics · Team Performance · AI Predictions · Trends
-
-Scoped like Agent Center: Personal shows your own trends, Team shows team performance, Org shows
-company-wide trends.
-
-### 2.7 Integrations (cross-cutting)
-
-GitHub · Jira · Linear · Slack · Notion · Google Workspace · Microsoft 365 · Zoom · Docker ·
-Kubernetes
-
-A connection made in the Personal Workspace (e.g., your own GitHub account) is distinct from one
-made in the Organization Workspace (e.g., the company's GitHub org) — same integration, different
-scope and credential.
-
-### 2.8 Notifications (cross-cutting)
-
-AI Alerts · Recommendations · Tasks · Mentions · Incident Updates
-
-### 2.9 Settings
-
-| Personal | Organization |
-|----------|--------------|
-| Profile | Members |
-| Security | Roles |
-| API Keys | Permissions |
-| Preferences | Billing |
-| | Workspaces |
-
-## 3. RBAC Model
+v1 had five roles. This splits "Org Admin" into **Owner/Admin** + **Executive**, and splits "Team
+Manager" into **Manager** + **Team Lead**, matching the workflow spec's org chart more precisely.
+Super Admin (platform-wide operator access) and Guest are carried over from v1 unchanged — the
+workflow spec didn't mention either, but both are still structurally necessary: Super Admin is
+exactly what the existing Admin & Observability panel (`PHASES.md` Phase 1 addendum) needs to be
+gated behind once this ships, and Guest is still the narrowest real-world tier (an external
+contractor, a client given one project's visibility).
 
 | Role | Scope | Can do |
 |------|-------|--------|
-| **Super Admin** | Platform-wide | Everything, including platform administration (cross-org, billing infra, feature flags) |
-| **Organization Admin** | One Organization | Everything in that org except platform administration |
-| **Team Manager** | One or more Teams | Team Dashboard, Members, Projects, Reports, Agent Center — for their own team(s) only |
-| **Employee** | Self + teams they belong to | Personal Dashboard, My Tasks, My Projects, AI Assistant, Calendar, Notifications; read-only visibility into their team's shared pages |
-| **Guest** | Explicitly assigned items only | Assigned Projects, Shared Reports, a limited AI Assistant, and a single standing AI suggestion — no dashboard, no org visibility |
+| **Super Admin** | Platform-wide | Everything, including platform administration across every workspace |
+| **Workspace Owner/Admin** | One Workspace | Manage the workspace, members, roles, integrations, AI Agent configuration; full workspace intelligence |
+| **Executive** | One Workspace | Command Center, Strategic Initiatives, workspace-wide Analytics, high-level Intelligence — read-heavy, cross-team, not workspace configuration |
+| **Manager** | Managed Teams/Projects | Their Teams' and Projects' intelligence, analytics, and work — narrower than Executive, broader than Team Lead |
+| **Team Lead** | Own Team | Their one Team's page (§3.4), its Projects, workload, risks |
+| **Member/Developer** | Self + their Teams/Projects | My Work, their Teams, their assigned Projects, Ask Sentinel, relevant Intelligence |
+| **Guest** | Explicitly assigned only | One or more assigned Projects, shared Reports, limited Ask Sentinel — no workspace-wide visibility |
 
 ### Permission matrix
 
-| Page / Section | Super Admin | Org Admin | Team Manager | Employee | Guest |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Personal Workspace | ✓ | ✓ | ✓ | ✓ | — |
-| Team Workspace (own team) | ✓ | ✓ | ✓ | Read | — |
-| Team Workspace (other teams) | ✓ | ✓ | — | — | — |
-| Organization Workspace | ✓ | ✓ | — | — | — |
-| Agent Center (personal-scoped) | ✓ | ✓ | ✓ | ✓ | — |
-| Agent Center (team/org-scoped) | ✓ | ✓ | Own team | Read (own team) | — |
-| Analytics (team/org) | ✓ | ✓ | Own team | — | — |
-| Audit Logs | ✓ | ✓ | — | — | — |
-| Organization Settings / Billing | ✓ | ✓ | — | — | — |
-| Platform Administration | ✓ | — | — | — | — |
-| Assigned project (explicit grant) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Page / Section | Super Admin | Owner/Admin | Executive | Manager | Team Lead | Member | Guest |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| My Work | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Overview / Command Center | ✓ | ✓ | ✓ | Read | Read (own team) | — | — |
+| Teams (own) | ✓ | ✓ | ✓ | ✓ | ✓ | Read | — |
+| Teams (other) | ✓ | ✓ | ✓ | Managed only | — | — | — |
+| Projects (assigned) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (explicit grant) |
+| Projects (all) | ✓ | ✓ | ✓ | Managed only | — | — | — |
+| Intelligence (workspace-wide) | ✓ | ✓ | ✓ | Managed scope | Own team | — | — |
+| Analytics | ✓ | ✓ | ✓ | Managed scope | Own team | — | — |
+| Ask Sentinel | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Limited |
+| AI Agents (config) | ✓ | ✓ | Read | — | — | — | — |
+| Integrations | ✓ | ✓ | Read | — | — | — | — |
+| Workspace Settings / Billing | ✓ | ✓ | — | — | — | — | — |
+| Platform Administration | ✓ | — | — | — | — | — | — |
 
-## 4. Navigation Model
+## 5. AI Agents: the DETECT → ACT pipeline
 
-- **Workspace switcher**, top-left of the app shell (à la Linear's team switcher / Slack's
-  workspace switcher): lists Personal + every Team the user belongs to + the Organization (if any),
-  and swaps the entire left sidebar's contents when changed.
-- **Left sidebar** contents are workspace-dependent (§2.2–2.4), but **Agent Center, Analytics,
-  Integrations, Notifications, and Settings always appear** in every workspace — their content is
-  simply re-scoped, not restructured, which is what lets a user's mental model transfer between
-  Personal and Team/Org without relearning navigation.
-- **URL scheme** (for the eventual frontend router):
+Every agent's work follows the same six-stage pipeline. This is the target design; **Phase 1's
+Engineering + Executive agents currently only implement the first four stages** (see reconciliation
+below) — read-only intelligence is the default, matching the workflow spec's own framing.
+
+```
+DETECT → ANALYZE → EXPLAIN → RECOMMEND → REQUEST APPROVAL → ACT
+```
+
+- **Detect / Analyze / Explain / Recommend** — this is everything Sentinel does today: deterministic
+  candidate detection, LLM-narrated root cause, a suggested action. No system state changes.
+- **Request Approval / Act** — an agent proposing to *change something in an external system* (e.g.
+  auto-reassign a reviewer, open a Jira ticket) first surfaces a request; a human with the right
+  Role approves or rejects it before anything executes. This was v1's "Beyond Phase 4: autonomous
+  actions, gated per opt-in" — same constraint, now named as two concrete pipeline stages instead
+  of a vague future bullet, so when the time comes there's a clear place to build it (an
+  `agent_actions` table with a `requested → approved/rejected → executed` status, mirroring how
+  `agent_runs` already tracks `running → success/partial/failed`).
+
+## 6. Navigation Model
+
+- **Sentinel Home** (§3.1) is the account-level landing screen — not itself a workspace.
+- **Workspace switcher**: every Workspace the account belongs to, plus a `[+] Create / Join
+  Workspace` entry. Selecting one swaps the entire app context — sidebar, Intelligence, Ask
+  Sentinel's grounding data, everything — the same "swap the whole shell" principle as v1, just
+  applied uniformly instead of only across three fixed kinds.
+- **URL scheme** (supersedes v1 §4's):
   ```
-  /                                    → public marketing
-  /login, /signup                      → auth
-  /app/personal/...                    → Personal Workspace
-  /app/team/:teamSlug/...              → Team Workspace
-  /app/org/:orgSlug/...                → Organization Workspace
-  /app/{scope}/{scopeId}/agents/:agentSlug   → Agent Center, scoped
-  /app/{scope}/{scopeId}/analytics/...       → Analytics, scoped
-  /app/{scope}/{scopeId}/settings/...        → Settings, scoped
+  /                                          → public marketing
+  /login, /signup                            → auth
+  /home                                      → Sentinel Home (workspace list/switcher)
+  /workspaces/new                            → Create Workspace wizard
+  /workspaces/join/:inviteToken              → Join Workspace flow
+  /w/:workspaceSlug/...                      → inside a workspace (Overview, My Work, Projects, Teams, Intelligence, Alerts, Analytics, Ask Sentinel, AI Agents, Integrations, Settings)
+  /w/:workspaceSlug/teams/:teamSlug/...      → Team page (§3.4)
+  /w/:workspaceSlug/projects/:projectSlug/...→ Project page (§3.5)
   ```
 
-## 5. Why This Shape
+## 7. Why This Shape
 
-- **One page contract for all 9 specialist agents** (§2.5 table) means building the 3rd agent's UI
-  is a data-binding exercise, not a design exercise — the Roadmap's agent-by-agent sequencing
-  (`ROADMAP.md`) produces a new Agent Center entry each time, not a new page type.
-- **Cross-cutting sections scoped by workspace** (rather than duplicated per workspace) keep the
-  nav from tripling in size as Team and Organization workspaces come online.
-- **RBAC is a lens over the same IA, not a separate IA per role** — a Guest and a Super Admin see
-  structurally the same kind of app, just with almost everything dimmed or hidden. This avoids
-  building five different UIs.
+- **One Workspace page set, not three** — a Personal Space and a 200-person org render the exact
+  same page types; only the data (and the Role lens, §4) differs. This is strictly simpler than v1
+  and was the main thing worth revising.
+- **Teams/Projects as entities, not workspace kinds** — lets a single workspace contain an
+  arbitrary number of each, matching how real orgs are actually shaped (v1's `WorkspaceKind.TEAM`
+  modeled a team *as if* it were its own workspace, which doesn't match "Backend Team lives inside
+  Acme Corporation").
+- **RBAC still a lens over one IA**, just a more granular lens now (§4) — the permission matrix
+  grew rows, not page types.
+- **The DETECT→ACT pipeline gives "autonomous actions" a concrete home** to be built into later,
+  instead of leaving it as an unshaped future bullet.
 
-## 6. Reconciling With the Phased MVP (`PRD.md` / `ROADMAP.md`)
+## 8. Reconciling With What's Actually Been Built
 
-This document describes the **full target IA**. It is broader than the current MVP scope on
-several axes the original PRD explicitly deferred: multi-tenancy, RBAC, and a personal (individual,
-non-org) use case were all listed under "beyond Phase 4." That's a real scope delta worth naming,
-not quietly absorbing.
+### 8.1 What changed from v1, and why
 
-**Recommendation — build this IA as a strict subset at each phase, so navigation is never
-rebuilt, only unhidden:**
+| v1 concept | v2 replacement | Why |
+|---|---|---|
+| Personal / Team / Organization as three structurally different workspace kinds | One Workspace page set, reused by every workspace (Personal Space included) | Simpler; matches the Discord-server model in the workflow spec directly |
+| `WorkspaceKind.TEAM` (a Team *as* a Workspace) | `Team` as a new entity living inside a Workspace | Matches how real orgs nest (Acme Corp → Backend Team), not how v1 flattened it |
+| "AI Assistant" | "Ask Sentinel" | Same feature, workflow spec's naming — a rename to apply next time that code is touched, not urgent on its own |
+| RBAC: 5 roles | RBAC: 7 roles (Owner/Admin and Executive split out; Manager and Team Lead split out) | Matches the workflow spec's org chart precisely |
+| "Beyond Phase 4: autonomous actions" (unshaped) | DETECT→ACT pipeline, concrete `agent_actions` state machine (§5) | Gives the eventual action-approval feature a real design instead of a placeholder |
 
-| Phase | What's live in this IA | What's still hidden |
-|-------|------------------------|----------------------|
-| **Phase 1 (current MVP)** | One implicit workspace (= one org, one admin user, no role picker yet). Sidebar: Dashboard (Today's Brief) + Agent Center (Engineering, Executive only) + Settings (Connections). This *is* the Organization Workspace nav from §2.4, with every other section not yet built simply absent from the sidebar. | Personal Workspace, Team Workspace, RBAC, remaining 7 agents |
-| **Phase 1.5** | Personal Workspace goes live — the same Engineering + Executive agent logic, re-scoped to one person's own connected GitHub account instead of a team's repo. This is the "for themselves as well" case, and validates the workspace-scoping model early, on the smallest possible surface. | Team Workspace, RBAC beyond a single implicit admin |
-| **Phase 2** | Team Workspace + Project Agent (per original Roadmap Phase 2) + first real RBAC roles (Org Admin, Team Manager, Employee) — this is when access control starts mattering, since Phase 1/1.5 only ever have one user. | Organization Workspace (departments, audit logs, exec dashboard), Guest role, remaining agents |
-| **Phase 3** | Communication + Knowledge agents (per original Roadmap Phase 3), Organization Workspace comes online (Executive Dashboard, Departments, Audit Logs). | DevOps/Security/Finance/HR agents, Guest role, Super Admin/platform tier |
-| **Phase 4** | DevOps, Security, Finance, HR Wellbeing agents (per original Roadmap Phase 4). | Guest role, Super Admin/platform tier, billing infra |
-| **Beyond Phase 4** | Guest role, Super Admin/platform administration, multi-tenant billing infra — unchanged from the original Roadmap's "Beyond Phase 4" section. | — |
+### 8.2 Good news: the current data model mostly already fits
 
-**Architectural consequence to flag now:** even though Phase 1 only exercises "one org, one admin,
-no roles," the data model should be shaped for workspaces/memberships/roles from the start
-(`users`, `workspaces`, `memberships` with a `role` column) rather than a flat single-tenant
-table — so Phase 2's RBAC is additive logic on an existing shape, not a schema rewrite. This is the
-same principle `ARCHITECTURE.md` already applies to the Agent/LangGraph contract; when
-implementation resumes, `ARCHITECTURE.md` §3 (Data Model) needs a pass to reflect this before any
-backend code is written, so Phase 1 doesn't build itself into a corner.
+Phase 1/1.5's `Workspace` + `Membership` tables (`ARCHITECTURE.md` §3) were already built as
+"however many workspaces, each with role-tagged memberships" — **not** hardcoded to one workspace
+per user. Proving that generality was the entire point of Phase 1.5 (`PHASES.md`). What's actually
+missing to build v2 for real:
+
+1. **Real auth** (Google/Microsoft/Email, sessions) — currently there is none; every request
+   resolves to one implicit user (`core/bootstrap.py`). This is the true prerequisite for
+   everything else in this document — workspace creation/invites/roles are all meaningless without
+   real accounts to attach them to.
+2. **Workspace CRUD + invites** — `POST /workspaces` (create), `POST /workspaces/:id/invites`,
+   `POST /invites/:token/accept` don't exist yet; today's two workspaces are bootstrap-seeded, not
+   user-created.
+3. **`Team` and `Project` models** — genuinely new tables, don't exist yet. `Finding`/`Signal`
+   already scope to `workspace_id`; they'll need an optional `team_id`/`project_id` to power the
+   Team and Project pages' scoped Intelligence.
+4. **Role enforcement** — the `Role` enum already has values close to v2's set (`ARCHITECTURE.md`
+   §3), but nothing currently *checks* role on any route. Real enforcement needs real auth (#1)
+   first.
+5. **Rename `WorkspaceKind.TEAM`'s role** — not urgent, but the enum value should stop being used
+   for "a team" once the real `Team` entity exists, to avoid two different things both being called
+   "team" in the schema.
+
+See `PHASES.md` for how this gets sequenced into actual build phases.

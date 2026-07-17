@@ -1,13 +1,13 @@
-"""Minimal identity model for Phase 1.5.
+"""Identity model, extended in the auth pass to support real signup/login:
+email+password, OTP-verified email, and Google/Microsoft OAuth.
 
-Deliberately no password/auth fields yet - Phase 1.5 only needs a real
-`users` row to hang a Personal Workspace off of (IA.md's "every user always
-has exactly one Personal Workspace"). Real login/session auth is Phase 2's
-RBAC territory (PHASES.md); until then, `core/bootstrap.py` resolves to a
-single default user, same pattern as the single default workspace in Phase 1.
+`hashed_password` is nullable because an OAuth-only user never sets one.
+`google_sub`/`microsoft_sub` are the provider's stable subject id (not the
+email) - the correct thing to match an OAuth login against, since a user's
+email at the provider can change but their subject id never does.
 """
 
-from sqlalchemy import String
+from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPk
@@ -18,3 +18,9 @@ class User(Base, UUIDPk, TimestampMixin):
 
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
+    microsoft_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)

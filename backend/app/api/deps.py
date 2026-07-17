@@ -2,11 +2,16 @@ import uuid
 from collections.abc import Generator
 
 from fastapi import Depends, Header, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.auth import InvalidTokenError, decode_access_token
 from app.core.bootstrap import get_or_create_default_workspace
 from app.db.session import SessionLocal
+from app.models.user import User
 from app.models.workspace import Workspace
+
+_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -40,3 +45,26 @@ def get_workspace_id(
         return workspace_uuid
 
     return get_or_create_default_workspace(session).id
+
+
+def get_current_user(
+    session: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> User:
+    """Standalone for now - not yet required by any existing route (those
+    still resolve through get_workspace_id's implicit-user model). This is
+    the seam real per-route auth enforcement hangs off once workspace CRUD
+    and RBAC (IA.md v2 §8.2) actually need "who is asking," not just
+    "which workspace." /auth/me is the first real consumer.
+    """
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        user_id = decode_access_token(credentials.credentials)
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    user = session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="User no longer exists")
+    return user

@@ -24,6 +24,38 @@ class Settings(BaseSettings):
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     token_encryption_key: str
 
+    # Auth - session/JWT signing key. Generate with:
+    #   python -c "import secrets; print(secrets.token_urlsafe(48))"
+    session_secret_key: str
+    access_token_expire_minutes: int = 60 * 24  # 24h
+
+    # Auth - OTP (email verification / passwordless login)
+    otp_expire_minutes: int = 10
+    otp_length: int = 6
+    otp_max_attempts: int = 5
+
+    # Auth - email delivery. "console" (default) logs the OTP instead of
+    # sending it - works with zero configuration. Switch to "smtp" once real
+    # SMTP credentials are added below.
+    email_provider: str = "console"
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str = "noreply@sentinel.local"
+
+    # Auth - OAuth (Google/Microsoft). Both optional: a provider's login
+    # route returns a clear "not configured" error until its client
+    # id/secret are set, rather than the app failing to start.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    microsoft_client_id: str | None = None
+    microsoft_client_secret: str | None = None
+
+    # Where OAuth callbacks redirect back to after issuing a session token.
+    frontend_base_url: str = "http://localhost:5173"
+    backend_base_url: str = "http://localhost:8000"
+
     # GitHub
     github_default_token: str | None = None
 

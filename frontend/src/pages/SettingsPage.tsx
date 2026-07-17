@@ -84,7 +84,7 @@ export function SettingsPage() {
       </div>
 
       <form onSubmit={handleConnect} className="mb-8 rounded-md border border-border bg-surface p-4">
-        <div className="mb-3 grid grid-cols-2 gap-3">
+        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <input
             required
             placeholder="org (e.g. northwind)"
@@ -112,7 +112,7 @@ export function SettingsPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-md bg-accent py-2.5 text-[13.5px] font-bold text-[#0E1013] disabled:opacity-50"
+          className="w-full rounded-md bg-accent py-2.5 text-[13.5px] font-bold text-ground disabled:opacity-50"
         >
           {submitting ? "Connecting…" : "Connect repository"}
         </button>

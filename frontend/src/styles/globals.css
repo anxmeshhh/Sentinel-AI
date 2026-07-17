@@ -12,6 +12,8 @@ body {
   @apply bg-ground text-ink font-sans antialiased;
   font-size: 14px;
   line-height: 1.55;
+  overflow-x: hidden;
+  font-variant-numeric: tabular-nums;
 }
 
 .tab-nums {

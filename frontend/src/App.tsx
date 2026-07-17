@@ -10,9 +10,9 @@ import { SettingsPage } from "./pages/SettingsPage";
 
 export function App() {
   return (
-    <div className="flex">
+    <div className="flex min-h-screen flex-col md:flex-row">
       <Sidebar />
-      <main className="min-w-0 flex-1 px-8 py-6 pb-16">
+      <main className="min-w-0 flex-1 px-4 py-6 pb-16 sm:px-6 md:px-10">
         <Routes>
           <Route path="/" element={<BriefPage />} />
           <Route path="/findings/:id" element={<FindingDetailPage />} />

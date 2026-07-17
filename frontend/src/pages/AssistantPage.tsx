@@ -40,7 +40,7 @@ export function AssistantPage() {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-6rem)] max-w-2xl flex-col">
+    <div className="mx-auto flex min-h-[70vh] max-w-2xl flex-col md:h-[calc(100dvh-6rem)] md:min-h-0">
       <div className="mb-8">
         <h1 className="mb-1.5 text-xl font-semibold text-balance">AI Assistant</h1>
         <p className="text-[13px] leading-relaxed text-ink-dim">
@@ -80,7 +80,7 @@ export function AssistantPage() {
         <button
           onClick={send}
           disabled={sending || !input.trim()}
-          className="rounded-lg bg-accent px-5 py-3 text-[13.5px] font-bold text-[#0E1013] disabled:opacity-50"
+          className="rounded-lg bg-accent px-5 py-3 text-[13.5px] font-bold text-ground disabled:opacity-50"
         >
           Send
         </button>

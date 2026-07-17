@@ -397,6 +397,7 @@ before any of Phase 2's other work.
 | 2a.5 | `WorkspaceInvite` model | `token` (unguessable), `workspace_id`, `team_id` (nullable — null means workspace-level only), `role`, `expires_at`, `max_uses`/`used_count`. A Team invite is just a Workspace invite with `team_id` set. |
 | 2a.6 | `POST /workspaces/{id}/invites`, `POST /teams/{id}/invites`, `GET /invites/{token}` (preview), `POST /invites/{token}/accept` | Preview endpoint is what lets the join page show "You're invited to Acme Corporation / Backend Team" before the user commits. |
 | 2a.7 | Frontend: Create Workspace flow, Team/channel rail in the sidebar (second-level nav once inside a workspace), Create Team, Invite modal (generate link + copy button), Join-via-link page | The actual Discord-shaped UI: workspace icon rail → channel list → invite people |
+| 2a.8 | Onboarding step 1, "Connect Integrations" (`IA.md` v2 §2.3) | Ships with **GitHub only** — Gmail/Calendar/Meet/Zoom show as real, visible, "coming soon" tiles in the same step, not hidden, so the onboarding shape is right from day one even though only one source is wired. Phase 2c (below) is what activates the rest. |
 
 **Exit criteria:** you can create a second workspace from the UI, create a channel in it, generate
 an invite link, and have a second account join it and see the channel — the full loop, no curl
@@ -416,6 +417,29 @@ required.
 **Exit criteria (from `ROADMAP.md`):** at least one compound finding a pilot user says they
 wouldn't have caught themselves, surfaced at least a day before they would have caught it manually
 — now on a workspace the pilot user actually created and invited teammates into, not a seeded one.
+
+### Phase 2c — Broaden Beyond Developers: Gmail, Calendar, Meet, Zoom
+
+**Objective:** the pitch was never "engineering tool" — it's an operational layer for anyone in the
+org. Right now everything that exists only serves the engineering-signal side (GitHub). This phase
+is what makes onboarding's "Connect Integrations" step (2a.8) actually mean something for a PM, an
+exec, or anyone whose work lives in email and meetings, not pull requests.
+
+Sequenced deliberately *after* Phase 2a (confirmed): the Discord-shaped workspace/channel/invite
+loop ships first as a complete, working thing, rather than leaving it half-done while integration
+breadth gets added.
+
+| Step | Deliverable | Notes |
+|---|---|---|
+| 2c.1 | Google OAuth scope upgrade | Phase 1.6's Google login OAuth only requested identity scopes (`openid email profile`). Reading Gmail/Calendar needs additional consent scopes (`gmail.readonly`, `calendar.readonly`) — same provider, a broader ask, re-consent required. |
+| 2c.2 | Gmail client + signals | Metadata only, same discipline as GitHub (PRD §7): subject lines, participants, timestamps, thread structure — never message bodies, matching "no source code to the LLM" applied to "no email content to the LLM." |
+| 2c.3 | Google Calendar client + signals | Meeting metadata: attendees, duration, title, recurrence — powers "meeting overload" signals or feeds the HR Wellbeing agent later (`ROADMAP.md` Phase 4), and populates the personal-workspace Calendar page stubbed since Phase 1.5. |
+| 2c.4 | Google Meet | Likely rides on Calendar's data (Meet links are calendar-event metadata) rather than a wholly separate integration — confirm this once Calendar's client exists, may not need its own OAuth app at all. |
+| 2c.5 | Zoom integration | Separate OAuth app (not Google's family) — meeting metadata: duration, participants, recurrence. |
+| 2c.6 | Onboarding step 1 goes live for real | The "coming soon" tiles from 2a.8 become real connect buttons, one per source as each ships — not all four have to land simultaneously. |
+
+**Exit criteria:** a non-engineering pilot user (someone whose primary tools are email/calendar, not
+GitHub) can connect at least one of these and get a finding that's actually about their work.
 
 **⏸ Wait for signal before Phase 3.**
 

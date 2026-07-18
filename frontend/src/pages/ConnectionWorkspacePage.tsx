@@ -5,7 +5,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Connection } from "../api/types";
 import { GoogleAICommand } from "../components/GoogleAICommand";
-import { CalendarIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
+import { CalendarIcon, DriveIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
 import { ServiceCard } from "../components/ServiceCard";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -71,7 +71,8 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
   const [connecting, setConnecting] = useState(false);
   const gmail = connections.find((c) => c.provider === "gmail");
   const googleCalendar = connections.find((c) => c.provider === "google_calendar");
-  const connectedCount = [gmail, googleCalendar].filter(Boolean).length;
+  const googleDrive = connections.find((c) => c.provider === "google_drive");
+  const connectedCount = [gmail, googleCalendar, googleDrive].filter(Boolean).length;
 
   async function handleConnect() {
     setConnecting(true);
@@ -89,14 +90,14 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
   }
 
   async function handleDisconnectAll() {
-    const ids = [gmail?.id, googleCalendar?.id].filter((id): id is string => Boolean(id));
+    const ids = [gmail?.id, googleCalendar?.id, googleDrive?.id].filter((id): id is string => Boolean(id));
     await Promise.all(ids.map((id) => api.delete(`/connections/${id}`)));
     onChanged();
   }
 
   return (
     <div>
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <ServiceCard
           icon={<MailIcon />}
           name="Gmail"
@@ -118,15 +119,24 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
         <ServiceCard
           icon={<MeetIcon />}
           name="Google Meet"
-          status={connectedCount > 0 ? "Available" : "Not connected"}
+          status={googleCalendar ? "Available" : "Not connected"}
           desc="Rides on Calendar — no separate connection needed"
-          connected={connectedCount > 0}
+          connected={Boolean(googleCalendar)}
           to={googleCalendar ? "/calendar" : undefined}
           disabled={!googleCalendar}
         />
+        <ServiceCard
+          icon={<DriveIcon />}
+          name="Google Drive"
+          status={googleDrive ? "Connected" : "Not connected"}
+          desc={googleDrive?.org ?? "File name, type, modified time — never file content"}
+          connected={Boolean(googleDrive)}
+          to={googleDrive ? "/drive" : undefined}
+          disabled={!googleDrive}
+        />
       </div>
 
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
         <button
           onClick={handleConnect}
           disabled={connecting}
@@ -144,12 +154,23 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
             Disconnect Calendar
           </button>
         )}
+        {googleDrive && (
+          <button onClick={() => handleDisconnect(googleDrive.id)} className="font-mono text-[11.5px] text-ink-faint underline underline-offset-2 hover:text-crit">
+            Disconnect Drive
+          </button>
+        )}
         {connectedCount > 0 && (
           <button onClick={handleDisconnectAll} className="font-mono text-[11.5px] text-crit underline underline-offset-2">
             Disconnect all
           </button>
         )}
       </div>
+
+      {googleDrive === undefined && (gmail || googleCalendar) && (
+        <p className="mb-4 text-[12px] text-watch">
+          Drive needs the newer Google connection scope — click "Reconnect Google" above to add it.
+        </p>
+      )}
 
       {connectedCount > 0 && (
         <div className="rounded-md border border-border bg-surface">

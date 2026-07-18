@@ -104,7 +104,7 @@ async def google_connect_callback(request: Request, session: Session = Depends(g
     )
 
     workspace_id = uuid.UUID(workspace_id_str)
-    for provider, label in [(Provider.GOOGLE_CALENDAR, "calendar"), (Provider.GMAIL, "gmail")]:
+    for provider, label in [(Provider.GOOGLE_CALENDAR, "calendar"), (Provider.GMAIL, "gmail"), (Provider.GOOGLE_DRIVE, "drive")]:
         existing = session.execute(
             select(Connection).where(
                 Connection.workspace_id == workspace_id, Connection.provider == provider, Connection.org == google_email

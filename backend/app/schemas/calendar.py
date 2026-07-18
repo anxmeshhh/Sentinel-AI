@@ -14,3 +14,21 @@ class CalendarEventOut(BaseModel):
     organizer: str | None
     has_meeting_link: bool
     url: str | None
+
+
+class CreateEventRequest(BaseModel):
+    title: str
+    start: datetime
+    end: datetime
+    attendee_emails: list[str] = []
+    create_meet_link: bool = False
+
+
+class CreateEventOut(BaseModel):
+    id: str
+    title: str
+    start: str | None
+    end: str | None
+    attendee_emails: list[str]
+    meet_link: str | None
+    url: str | None

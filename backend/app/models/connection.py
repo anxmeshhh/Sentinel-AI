@@ -12,6 +12,7 @@ class Provider(str, enum.Enum):
     GITHUB = "github"
     GOOGLE_CALENDAR = "google_calendar"
     GMAIL = "gmail"
+    GOOGLE_DRIVE = "google_drive"
 
 
 class Connection(Base, UUIDPk, TimestampMixin):

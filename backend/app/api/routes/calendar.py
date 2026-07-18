@@ -5,8 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_workspace_id
+from app.integrations.google_auth import get_valid_access_token
+from app.integrations.google_calendar_client import GoogleCalendarClient
+from app.models.connection import Provider
 from app.models.signal import Signal
-from app.schemas.calendar import CalendarEventOut
+from app.repositories.connections import ConnectionRepository
+from app.schemas.calendar import CalendarEventOut, CreateEventOut, CreateEventRequest
 from app.services.calendar_query import CALENDAR_RANGES, list_calendar, list_calendar_month, list_calendar_range
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
@@ -49,6 +53,34 @@ def get_calendar_month(
         raise HTTPException(status_code=400, detail="month must be 1-12")
     signals = list_calendar_month(session, workspace_id, year=year, month=month)
     return [_to_item(s) for s in signals]
+
+
+@router.post("/events", response_model=CreateEventOut, status_code=201)
+def create_event(
+    payload: CreateEventRequest,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+) -> CreateEventOut:
+    """Direct, immediate creation - no confirm-plan step, unlike the AI
+    Command's create_calendar_event tool. A manual form submission the user
+    filled out themselves already *is* the confirmation; the plan-preview
+    step exists specifically for actions an LLM inferred, not ones a human
+    typed into a form with their own hands.
+    """
+    connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GOOGLE_CALENDAR)
+    if connection is None:
+        raise HTTPException(status_code=404, detail="Google Calendar is not connected")
+
+    access_token = get_valid_access_token(session, connection)
+    with GoogleCalendarClient(access_token) as client:
+        result = client.create_event(
+            title=payload.title,
+            start=payload.start,
+            end=payload.end,
+            attendee_emails=payload.attendee_emails,
+            create_meet_link=payload.create_meet_link,
+        )
+    return CreateEventOut(**result)
 
 
 def _to_item(s: Signal) -> CalendarEventOut:

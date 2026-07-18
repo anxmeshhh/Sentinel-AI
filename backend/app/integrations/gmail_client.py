@@ -13,9 +13,11 @@ forward it - the message body, in any form, never reaches storage.
 """
 
 import base64
+import re
 import time
 from datetime import datetime, timezone
 
+import html2text
 import httpx
 import structlog
 
@@ -159,17 +161,26 @@ def _parse_date_header(value: str) -> datetime:
 
 
 def _extract_body(data: dict) -> str | None:
-    """Walk a full-format message's MIME tree for a readable body.
-    Prefers text/plain; falls back to text/html with tags stripped.
-    Truncated to MAX_BODY_CHARS before it ever leaves this function.
+    """Walk a full-format message's MIME tree for a readable body. Prefers
+    text/html, converted to markdown - not stripped to a flat paragraph, so
+    headings/bold/lists/links from the original email survive and the
+    result renders through the same Markdown component the AI Command reply
+    already uses. Falls back to text/plain only if there's no HTML part at
+    all: real-world "plain text alternative" parts are frequently
+    auto-generated garbage (confirmed on a real email - a marketing
+    template's text/plain part was literally raw, unstripped CSS, not a
+    genuine plain-text fallback), so text/plain is not actually the safer
+    default it looks like. Truncated to MAX_BODY_CHARS before it ever
+    leaves this function. This is pure MIME/HTML parsing - no LLM call
+    happens here.
     """
     payload = data.get("payload") or {}
+    html_body = _find_part(payload, "text/html")
+    if html_body is not None:
+        return _html_to_markdown(html_body)[:MAX_BODY_CHARS]
     plain = _find_part(payload, "text/plain")
     if plain is not None:
         return plain[:MAX_BODY_CHARS]
-    html = _find_part(payload, "text/html")
-    if html is not None:
-        return _strip_html(html)[:MAX_BODY_CHARS]
     return None
 
 
@@ -190,11 +201,28 @@ def _decode_base64url(data: str) -> str:
     return base64.urlsafe_b64decode(padded).decode("utf-8", errors="replace")
 
 
-def _strip_html(raw_html: str) -> str:
-    import html
-    import re
+def _html_to_markdown(raw_html: str) -> str:
+    """Deterministic HTML email -> markdown, no LLM involved. html2text
+    handles MIME-entity decoding (&nbsp; etc.) and structure (headings,
+    bold, lists, links) correctly on its own; the regex pass here only
+    removes what html2text doesn't know to drop - <style>/<script> blocks
+    (a naive HTML parser can otherwise leak raw CSS/JS into the output) and
+    HTML comments (frequently tracking-pixel or Outlook conditional cruft).
+    """
+    cleaned = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", raw_html, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(r"<!--.*?-->", "", cleaned, flags=re.DOTALL)
 
-    text = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", raw_html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = html.unescape(text)
-    return re.sub(r"\s+", " ", text).strip()
+    converter = html2text.HTML2Text()
+    converter.ignore_images = True
+    converter.ignore_tables = True  # most email HTML uses <table> purely for layout, not real tabular data
+    converter.bypass_tables = True
+    converter.body_width = 0  # don't hard-wrap - let the UI's own text wrapping handle it
+    converter.unicode_snob = True  # decode entities to real characters, not ascii approximations
+    converter.inline_links = True
+    converter.protect_links = True
+    text = converter.handle(cleaned)
+
+    # Collapse html2text's occasional runs of 3+ blank lines from empty
+    # table cells/tracking pixels down to a single paragraph break.
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()

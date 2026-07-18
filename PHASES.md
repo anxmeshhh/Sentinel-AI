@@ -872,6 +872,91 @@ data - Month view and the full click-through UX not yet exercised in a live brow
 
 ---
 
+### Phase 2h — Drive, Interactive Resource Links, Real Email Rendering, Split-Pane Reader ✅ Built and tested end-to-end
+
+**Objective:** four related fixes/additions to the Google Connection Workspace, all from real usage
+feedback (a real bad-rendering screenshot, not a hypothetical): add Drive as a fourth service, make
+every resource Sentinel surfaces a real clickable link out to its actual platform (never rendered
+inside Sentinel), fix HTML email parsing that was leaking raw CSS/entities into "Original Email",
+and replace the dropdown-style email reader with a real split-pane list+reader.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2h.1 | Google Drive added as a fourth service (OAuth scope + Provider enum + `GoogleDriveClient`) | ✅ |
+| 2h.2 | `search_drive` orchestrator tool + `GET /drive/search` for the new Drive page | ✅ |
+| 2h.3 | Every AI Command reply uses real markdown links to the actual resource, never a bare name | ✅ |
+| 2h.4 | HTML email parsing fixed: MIME-aware, deterministic, no LLM (`html2text`-based) | ✅ |
+| 2h.5 | Mail page rebuilt as split-pane (list left, dedicated reader right) | ✅ |
+| 2h.6 | Summarize is a separate, on-demand, collapsible action - original email is always the default | ✅ |
+| 2h.7 | Calendar gained an inline "+ Schedule" area (manual form + the existing AI Command, reused) | ✅ |
+
+### What actually got built (technical notes)
+
+- **A real, previously-invisible bug found and fixed mid-build**: the very email used to test the
+  HTML-parsing fix turned out to have a broken `text/plain` MIME part - a marketing template that
+  literally dumped its raw, unstripped CSS into the "plain text alternative" instead of real plain
+  text. The original priority ("prefer text/plain, it's already clean") was a bad assumption for
+  real-world mail; flipped to prefer `text/html` (converted via `html2text` to markdown) whenever
+  it exists, falling back to `text/plain` only when there's no HTML part at all. Verified against
+  the actual email from the bug report: raw CSS and `&nbsp;` gone, real heading/bold/list/link
+  markdown in their place.
+- **HTML→markdown conversion is a deliberate choice, not incidental**: converting to markdown
+  (rather than flattening to plain text, or rendering raw sanitized HTML) means the exact same
+  `Markdown` component already built for AI Command replies renders email bodies too - one renderer,
+  one set of link/bold/list/heading rules, used everywhere. `ignore_tables=True` was added after
+  testing showed email-builder layout tables (used for visual structure, not real tabular data)
+  otherwise leaked as messy `---|---` artifacts into the output.
+- **Resource links are real, not decorative**: every tool result (`search_emails`,
+  `list_calendar_events`, `search_drive`) now carries a genuine `url` field computed from real data
+  (a Gmail deep-link, Calendar's `htmlLink`, Drive's `webViewLink`) - never invented. The system
+  prompt requires the model to cite resources as real markdown links using those exact URLs. The
+  `Markdown` component was extended to render `[text](url)` as a real external link
+  (`target="_blank"`, `rel="noopener noreferrer"`). Verified: a real AI Command reply linked a real
+  email via `https://mail.google.com/mail/u/0/#all/{message_id}`.
+- **Mail's split-pane reader keeps thread-grouping**: clicking a multi-message thread opens a small
+  date-chip picker inside the reader pane (not a second dropdown) to pick which message to read;
+  clicking a single-message thread reads it directly - preserves the Gmail-style thread-count
+  grouping built earlier without a second, conflicting expand/collapse interaction pattern.
+- **Summarize is genuinely optional and cached**: opening an email calls `/mail/{id}/body` only
+  (zero LLM tokens); a separate, explicit "Summarize ✨" click calls `/mail/{id}/summary`, which
+  still reuses the `EmailSummary` cache built in Phase 2g - the original email is never replaced,
+  the summary renders in its own collapsible section alongside it.
+- **Manual event creation is a genuinely different code path from the AI Command's write tool** -
+  `POST /calendar/events` executes immediately, no confirm-plan step, because a human filling out a
+  form and clicking "Create" already *is* the confirmation; the plan-preview step exists
+  specifically for actions an LLM inferred on its own, not ones typed by hand. The Calendar page's
+  "Ask AI" tab reuses the existing `<GoogleAICommand />` component directly rather than duplicating
+  its streaming/confirm/execute logic a second time.
+- **Drive follows the exact same shape as everything else**: `drive.readonly` scope (least
+  privilege, no write), metadata/link-only results (never file content), a `build_drive_query()`
+  translating structured intent into Drive's native query syntax - the same pattern as
+  `build_gmail_query()` from Phase 2g, reused deliberately rather than reinvented.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **Existing Google connections need one more "Reconnect Google" click** before Drive search or
+  Calendar event creation will actually work - both need scopes (`drive.readonly`,
+  `calendar.events`) that older connections don't have yet. Confirmed this gracefully degrades
+  (the orchestrator returns a clear "Drive isn't connected" message rather than erroring) rather
+  than failing silently.
+- **No real write test was run against the live Calendar** - same restraint as Phase 2f: creating
+  a real event (even a harmless test one) needs the user's own reconnect and their own deliberate
+  click, not something to trigger unprompted on their real calendar.
+- **Split-pane Mail reader and the Calendar Month view still haven't been through a real browser
+  click-through** - verified at the API/service/type-check level, consistent with every other gap
+  noted in this file that says the same thing.
+- **Tracking-wrapped links inside HTML emails are left as-is** (e.g. an ESP's click-tracking
+  redirect URL) rather than resolved to their final destination - that's what the sender actually
+  embedded; rewriting it would be guessing, not fixing.
+
+**Exit criteria:** every resource in an AI Command reply is a real clickable link, not a bare name;
+opening an HTML email shows clean readable content instead of raw CSS; opening an email never
+costs an LLM call, summarizing does and only on request; Drive is searchable the same way Gmail
+and Calendar are. **All confirmed against real data except the two items above requiring the
+user's own reconnect/click-through.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

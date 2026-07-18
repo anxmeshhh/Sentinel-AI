@@ -36,6 +36,7 @@ export function Sidebar() {
     ...(active?.kind === "personal" ? [{ to: "/assistant", label: "AI Assistant", end: false }] : []),
     { to: "/mail", label: "Mail", end: false },
     { to: "/calendar", label: "Calendar", end: false },
+    { to: "/drive", label: "Drive", end: false },
     { to: "/history", label: "History", end: false },
     { to: "/settings", label: "Agents", end: false },
   ];

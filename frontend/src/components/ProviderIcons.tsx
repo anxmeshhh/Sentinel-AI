@@ -71,3 +71,13 @@ export function MailIcon() {
     </svg>
   );
 }
+
+export function DriveIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8.15 2.5 1.5 14l3.4 5.9 6.65-11.5z" fill="#0066DA" />
+      <path d="M15.85 2.5H8.15l6.65 11.5h7.7z" fill="#00AC47" />
+      <path d="M4.9 19.9h14.2l3.4-5.9H1.5z" fill="#FFBA00" />
+    </svg>
+  );
+}

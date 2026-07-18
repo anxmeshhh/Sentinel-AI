@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
-import type { Connection, MailAskResult, MailItem, MailSummary } from "../api/types";
+import type { Connection, MailAskResult, MailBody, MailItem, MailSummary } from "../api/types";
+import { Markdown } from "../components/Markdown";
 
 type Tab = { key: string; label: string; filter: string; category?: string };
 
@@ -30,10 +31,14 @@ export function MailPage() {
   const [loading, setLoading] = useState(true);
   const [askInput, setAskInput] = useState("");
   const [askMessage, setAskMessage] = useState<string | null>(null);
-  const [expandedThread, setExpandedThread] = useState<string | null>(null);
-  const [expandedMessageId, setExpandedMessageId] = useState<string | null>(null);
+
+  const [selectedThreadKey, setSelectedThreadKey] = useState<string | null>(null);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [mobileReaderOpen, setMobileReaderOpen] = useState(false);
+
+  const [bodies, setBodies] = useState<Record<string, MailBody | "loading" | "error">>({});
   const [summaries, setSummaries] = useState<Record<string, MailSummary | "loading" | "error">>({});
-  const [expandedOriginal, setExpandedOriginal] = useState<Record<string, boolean>>({});
+  const [summaryOpen, setSummaryOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     api.get<Connection[]>("/connections").then((conns) => {
@@ -51,8 +56,7 @@ export function MailPage() {
   }, [activeTab, connected]);
 
   // Gmail groups multiple messages in the same conversation under one row
-  // with a count badge - thread_id was already captured at ingestion but
-  // never surfaced. Same grouping here, client-side, off the flat list.
+  // with a count badge - same grouping here, off the flat list.
   const threads = useMemo<ThreadGroup[]>(() => {
     const byKey = new Map<string, MailItem[]>();
     for (const item of items) {
@@ -69,11 +73,15 @@ export function MailPage() {
     return groups;
   }, [items]);
 
+  const selectedGroup = threads.find((t) => t.key === selectedThreadKey) ?? null;
+  const selectedItem = selectedGroup?.messages.find((m) => m.id === selectedMessageId) ?? null;
+
   async function loadTab(tab: Tab) {
     setLoading(true);
     setAskMessage(null);
-    setExpandedThread(null);
-    setExpandedMessageId(null);
+    setSelectedThreadKey(null);
+    setSelectedMessageId(null);
+    setMobileReaderOpen(false);
     try {
       const qs = new URLSearchParams({ filter: tab.filter, limit: "30" });
       if (tab.category) qs.set("category", tab.category);
@@ -105,98 +113,44 @@ export function MailPage() {
     }
   }
 
+  async function fetchBody(item: MailItem) {
+    if (bodies[item.id]) return;
+    setBodies((b) => ({ ...b, [item.id]: "loading" }));
+    try {
+      const body = await api.get<MailBody>(`/mail/${item.id}/body`);
+      setBodies((b) => ({ ...b, [item.id]: body }));
+    } catch {
+      setBodies((b) => ({ ...b, [item.id]: "error" }));
+    }
+  }
+
   async function fetchSummary(item: MailItem) {
-    if (summaries[item.id]) return;
-    setSummaries((b) => ({ ...b, [item.id]: "loading" }));
+    const existing = summaries[item.id];
+    if (existing && existing !== "error") {
+      setSummaryOpen((o) => ({ ...o, [item.id]: true }));
+      return;
+    }
+    setSummaries((s) => ({ ...s, [item.id]: "loading" }));
     try {
       const summary = await api.get<MailSummary>(`/mail/${item.id}/summary`);
-      setSummaries((b) => ({ ...b, [item.id]: summary }));
+      setSummaries((s) => ({ ...s, [item.id]: summary }));
+      setSummaryOpen((o) => ({ ...o, [item.id]: true }));
     } catch {
-      setSummaries((b) => ({ ...b, [item.id]: "error" }));
+      setSummaries((s) => ({ ...s, [item.id]: "error" }));
     }
   }
 
-  function toggleThread(group: ThreadGroup) {
-    if (expandedThread === group.key) {
-      setExpandedThread(null);
-      return;
-    }
-    setExpandedThread(group.key);
-    // A single-message "thread" behaves like before: one click opens its summary.
-    // A real multi-message thread expands to a message list first.
-    if (group.messages.length === 1) {
-      setExpandedMessageId(group.messages[0].id);
-      void fetchSummary(group.messages[0]);
-    }
+  function selectThread(group: ThreadGroup) {
+    setSelectedThreadKey(group.key);
+    setMobileReaderOpen(true);
+    const first = group.messages[0];
+    setSelectedMessageId(first.id);
+    void fetchBody(first);
   }
 
-  function toggleMessage(item: MailItem) {
-    if (expandedMessageId === item.id) {
-      setExpandedMessageId(null);
-      return;
-    }
-    setExpandedMessageId(item.id);
-    void fetchSummary(item);
-  }
-
-  function renderSummary(id: string) {
-    const state = summaries[id];
-    if (state === "loading") {
-      return <p className="p-3.5 text-[12.5px] text-ink-dim">Fetching &amp; summarizing&hellip;</p>;
-    }
-    if (state === "error") {
-      return <p className="p-3.5 text-[12.5px] text-crit">Couldn't load this email.</p>;
-    }
-    if (!state) return null;
-
-    const showOriginal = Boolean(expandedOriginal[id]);
-    return (
-      <div className="p-3.5">
-        <div className="mb-3 border-b border-border pb-3">
-          <div className="text-[13.5px] font-semibold text-ink">{state.subject}</div>
-          <div className="mt-1 text-[11.5px] text-ink-faint">
-            <span className="text-ink-dim">From:</span> {state.sender}
-          </div>
-        </div>
-
-        <div className="mb-1 font-mono text-[10.5px] font-bold uppercase tracking-wide text-accent-text">AI Summary</div>
-        <p className="mb-3 text-[12.5px] leading-relaxed text-ink-dim">{state.summary}</p>
-
-        {state.key_points.length > 0 && (
-          <>
-            <div className="mb-1 font-mono text-[10.5px] font-bold uppercase tracking-wide text-ink-dim">Key Points</div>
-            <ul className="mb-3 list-disc space-y-1 pl-4 text-[12.5px] leading-relaxed text-ink-dim">
-              {state.key_points.map((p, i) => (
-                <li key={i}>{p}</li>
-              ))}
-            </ul>
-          </>
-        )}
-
-        {state.action_items.length > 0 && (
-          <>
-            <div className="mb-1 font-mono text-[10.5px] font-bold uppercase tracking-wide text-watch">Action Items</div>
-            <ul className="mb-3 list-disc space-y-1 pl-4 text-[12.5px] leading-relaxed text-ink">
-              {state.action_items.map((a, i) => (
-                <li key={i}>{a}</li>
-              ))}
-            </ul>
-          </>
-        )}
-
-        <button
-          onClick={() => setExpandedOriginal((o) => ({ ...o, [id]: !o[id] }))}
-          className="mb-2 font-mono text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink"
-        >
-          {showOriginal ? "Hide original email" : "Show original email"}
-        </button>
-        {showOriginal && (
-          <p className="whitespace-pre-wrap rounded-md border border-border bg-ground/50 p-3 text-[12px] leading-relaxed text-ink-dim">
-            {state.body_text ?? "(no readable body)"}
-          </p>
-        )}
-      </div>
-    );
+  function selectMessage(item: MailItem) {
+    setSelectedMessageId(item.id);
+    void fetchBody(item);
   }
 
   if (connected === false) {
@@ -211,124 +165,239 @@ export function MailPage() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div>
       <h1 className="mb-1 text-xl font-semibold text-balance">Mail</h1>
-      <p className="mb-6 text-[13px] text-ink-dim">
-        Subject, sender, and labels only for browsing — opening an email fetches its content live and
-        summarizes it (cached after the first time), never stored as raw text.
+      <p className="mb-5 text-[13px] text-ink-dim">
+        Click an email to read it — original content only, no AI call. Summarize is optional, on demand.
       </p>
 
-      <div className="mb-5 flex gap-2">
-        <input
-          value={askInput}
-          onChange={(e) => setAskInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleAsk()}
-          placeholder="Ask: what's in starred, show me spam, top 10…"
-          className="flex-1 rounded-md border border-border bg-surface px-3.5 py-2.5 text-[13px] outline-none focus:border-accent"
-        />
-        <button
-          onClick={handleAsk}
-          className="rounded-md border border-border bg-surface px-4 py-2.5 text-[12.5px] font-semibold text-ink-dim hover:border-accent hover:text-ink"
-        >
-          Ask
-        </button>
-      </div>
+      <div className="flex gap-4" style={{ height: "calc(100vh - 12rem)" }}>
+        <div className={`w-full flex-none overflow-y-auto lg:block lg:w-[360px] ${mobileReaderOpen ? "hidden" : "block"}`}>
+          <div className="mb-3 flex gap-2">
+            <input
+              value={askInput}
+              onChange={(e) => setAskInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAsk()}
+              placeholder="Ask: what's in starred, top 10…"
+              className="flex-1 rounded-md border border-border bg-surface px-3 py-2 text-[12.5px] outline-none focus:border-accent"
+            />
+            <button
+              onClick={handleAsk}
+              className="rounded-md border border-border bg-surface px-3 py-2 text-[11.5px] font-semibold text-ink-dim hover:border-accent hover:text-ink"
+            >
+              Ask
+            </button>
+          </div>
 
-      <div className="mb-5 flex flex-wrap gap-1.5">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab)}
-            className={`rounded-full border px-3 py-1.5 font-mono text-[11.5px] transition-colors ${
-              activeTab.key === tab.key
-                ? "border-accent bg-accent/15 text-accent-text"
-                : "border-border text-ink-faint hover:text-ink"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab)}
+                className={`rounded-full border px-2.5 py-1 font-mono text-[10.5px] transition-colors ${
+                  activeTab.key === tab.key
+                    ? "border-accent bg-accent/15 text-accent-text"
+                    : "border-border text-ink-faint hover:text-ink"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-      {askMessage && <p className="mb-4 text-[12.5px] text-watch">{askMessage}</p>}
+          {askMessage && <p className="mb-3 text-[12px] text-watch">{askMessage}</p>}
 
-      {loading ? (
-        <div className="text-ink-dim">Loading&hellip;</div>
-      ) : threads.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border p-8 text-center text-[13px] text-ink-faint">
-          Nothing here.
-        </div>
-      ) : (
-        <div className="rounded-md border border-border bg-surface">
-          {threads.map((group) => {
-            const latest = group.messages[0];
-            const isUnread = group.messages.some((m) => m.is_unread);
-            return (
-              <div key={group.key} className="border-b border-border last:border-b-0">
-                <button
-                  onClick={() => toggleThread(group)}
-                  className="flex w-full items-start gap-3 p-3.5 text-left hover:bg-surface-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      {latest.is_starred && <span className="text-watch">★</span>}
-                      <span className={`truncate text-[12px] ${isUnread ? "font-semibold text-ink" : "text-ink-faint"}`}>
-                        {latest.sender}
-                      </span>
-                      {group.messages.length > 1 && (
-                        <span className="flex-none rounded-full bg-surface-2 px-1.5 py-[1px] font-mono text-[10px] text-ink-dim">
-                          {group.messages.length}
+          {loading ? (
+            <div className="text-ink-dim">Loading&hellip;</div>
+          ) : threads.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border p-6 text-center text-[12.5px] text-ink-faint">
+              Nothing here.
+            </div>
+          ) : (
+            <div className="rounded-md border border-border bg-surface">
+              {threads.map((group) => {
+                const latest = group.messages[0];
+                const isUnread = group.messages.some((m) => m.is_unread);
+                const isSelected = group.key === selectedThreadKey;
+                return (
+                  <button
+                    key={group.key}
+                    onClick={() => selectThread(group)}
+                    className={`flex w-full items-start gap-2 border-b border-border p-3 text-left last:border-b-0 ${
+                      isSelected ? "bg-accent/10" : "hover:bg-surface-2"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        {latest.is_starred && <span className="text-watch">★</span>}
+                        <span className={`truncate text-[11.5px] ${isUnread ? "font-semibold text-ink" : "text-ink-faint"}`}>
+                          {latest.sender}
                         </span>
-                      )}
+                        {group.messages.length > 1 && (
+                          <span className="flex-none rounded-full bg-surface-2 px-1.5 py-[1px] font-mono text-[9.5px] text-ink-dim">
+                            {group.messages.length}
+                          </span>
+                        )}
+                      </div>
+                      <div className={`mt-0.5 truncate text-[12.5px] ${isUnread ? "font-semibold text-ink" : "text-ink-dim"}`}>
+                        {latest.subject}
+                      </div>
+                      <div className="mt-0.5 font-mono text-[10.5px] text-ink-faint">
+                        {new Date(latest.occurred_at).toLocaleDateString()}
+                      </div>
                     </div>
-                    <div className={`mt-0.5 truncate text-[13px] ${isUnread ? "font-semibold text-ink" : "text-ink-dim"}`}>
-                      {latest.subject}
-                    </div>
-                  </div>
-                  <div className="flex flex-none items-center gap-1.5">
-                    {latest.is_important && (
-                      <span className="rounded-full border border-crit/40 px-1.5 py-[1px] font-mono text-[9.5px] text-crit">
-                        IMPORTANT
-                      </span>
-                    )}
-                    {latest.is_spam && (
-                      <span className="rounded-full border border-border px-1.5 py-[1px] font-mono text-[9.5px] text-ink-faint">
-                        SPAM
-                      </span>
-                    )}
-                    <span className="whitespace-nowrap font-mono text-[11px] text-ink-faint">
-                      {new Date(latest.occurred_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                </button>
+                    {latest.is_important && <span className="flex-none text-crit">!</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-                {expandedThread === group.key && (
-                  <div className="border-t border-border bg-ground/50">
-                    {group.messages.length === 1
-                      ? renderSummary(latest.id)
-                      : group.messages.map((m) => (
-                          <div key={m.id} className="border-b border-border/60 last:border-b-0">
-                            <button
-                              onClick={() => toggleMessage(m)}
-                              className="flex w-full items-center justify-between gap-3 py-2 pl-8 pr-3.5 text-left hover:bg-surface-2/50"
-                            >
-                              <span className={`truncate text-[12px] ${m.is_unread ? "font-semibold text-ink" : "text-ink-faint"}`}>
-                                {m.subject}
-                              </span>
-                              <span className="flex-none font-mono text-[10.5px] text-ink-faint">
-                                {new Date(m.occurred_at).toLocaleString()}
-                              </span>
-                            </button>
-                            {expandedMessageId === m.id && renderSummary(m.id)}
-                          </div>
-                        ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        <div className={`min-w-0 flex-1 overflow-y-auto rounded-md border border-border bg-surface lg:block ${mobileReaderOpen ? "block" : "hidden"}`}>
+          {!selectedGroup || !selectedItem ? (
+            <div className="flex h-full items-center justify-center p-8 text-center text-[13px] text-ink-faint">
+              Select an email to read it.
+            </div>
+          ) : (
+            <EmailReader
+              group={selectedGroup}
+              selected={selectedItem}
+              onSelectMessage={selectMessage}
+              bodyState={bodies[selectedItem.id]}
+              summaryState={summaries[selectedItem.id]}
+              summaryIsOpen={Boolean(summaryOpen[selectedItem.id])}
+              onSummarize={() => fetchSummary(selectedItem)}
+              onToggleSummary={() => setSummaryOpen((o) => ({ ...o, [selectedItem.id]: !o[selectedItem.id] }))}
+              onBack={() => setMobileReaderOpen(false)}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmailReader({
+  group,
+  selected,
+  onSelectMessage,
+  bodyState,
+  summaryState,
+  summaryIsOpen,
+  onSummarize,
+  onToggleSummary,
+  onBack,
+}: {
+  group: ThreadGroup;
+  selected: MailItem;
+  onSelectMessage: (item: MailItem) => void;
+  bodyState: MailBody | "loading" | "error" | undefined;
+  summaryState: MailSummary | "loading" | "error" | undefined;
+  summaryIsOpen: boolean;
+  onSummarize: () => void;
+  onToggleSummary: () => void;
+  onBack: () => void;
+}) {
+  const summarizing = summaryState === "loading";
+
+  return (
+    <div>
+      <button onClick={onBack} className="border-b border-border px-4 py-2.5 font-mono text-[11px] text-ink-faint hover:text-ink lg:hidden">
+        &larr; Back to list
+      </button>
+
+      {group.messages.length > 1 && (
+        <div className="flex gap-1.5 overflow-x-auto border-b border-border p-2.5">
+          {group.messages.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => onSelectMessage(m)}
+              className={`flex-none whitespace-nowrap rounded-full border px-2.5 py-1 font-mono text-[10.5px] ${
+                m.id === selected.id ? "border-accent bg-accent/15 text-accent-text" : "border-border text-ink-faint hover:text-ink"
+              }`}
+            >
+              {new Date(m.occurred_at).toLocaleDateString()}
+            </button>
+          ))}
         </div>
       )}
+
+      <div className="p-4">
+        <div className="mb-3 flex items-start justify-between gap-3 border-b border-border pb-3">
+          <div className="min-w-0">
+            <div className="text-[15px] font-semibold text-ink">{selected.subject}</div>
+            <div className="mt-1 text-[12px] text-ink-faint">
+              <span className="text-ink-dim">From:</span> {selected.sender}
+            </div>
+            <div className="mt-0.5 text-[11.5px] text-ink-faint">{new Date(selected.occurred_at).toLocaleString()}</div>
+          </div>
+          <div className="flex flex-none flex-col items-end gap-1.5">
+            <a
+              href={selected.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="whitespace-nowrap font-mono text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink"
+            >
+              Open in Gmail
+            </a>
+            <button
+              onClick={onSummarize}
+              disabled={summarizing}
+              className="whitespace-nowrap rounded-md bg-accent px-3 py-1.5 font-mono text-[11px] font-bold text-ground disabled:opacity-50"
+            >
+              {summarizing ? "Summarizing…" : "Summarize ✨"}
+            </button>
+          </div>
+        </div>
+
+        {summaryState && summaryState !== "error" && (
+          <div className="mb-4 rounded-md border border-accent/30 bg-accent/5">
+            <button
+              onClick={onToggleSummary}
+              className="flex w-full items-center justify-between px-3 py-2 text-left font-mono text-[11px] font-bold uppercase tracking-wide text-accent-text"
+            >
+              <span>AI Summary ✨</span>
+              <span className={`transition-transform ${summaryIsOpen ? "rotate-180" : ""}`}>&#9660;</span>
+            </button>
+            {summaryIsOpen && summaryState !== "loading" && (
+              <div className="border-t border-accent/20 px-3 py-3 text-[12.5px] leading-relaxed text-ink-dim">
+                <p className="mb-3">{summaryState.summary}</p>
+                {summaryState.key_points.length > 0 && (
+                  <>
+                    <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wide text-ink-dim">Key Points</div>
+                    <ul className="mb-3 list-disc space-y-1 pl-4">
+                      {summaryState.key_points.map((p, i) => (
+                        <li key={i}>{p}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {summaryState.action_items.length > 0 && (
+                  <>
+                    <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wide text-watch">Action Items</div>
+                    <ul className="list-disc space-y-1 pl-4 text-ink">
+                      {summaryState.action_items.map((a, i) => (
+                        <li key={i}>{a}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {summaryState === "error" && <p className="mb-4 text-[12px] text-crit">Couldn't generate a summary — try again.</p>}
+
+        <div className="font-mono text-[10.5px] font-bold uppercase tracking-wide text-ink-faint">Original Email</div>
+        <div className="mt-2 text-[13px] leading-relaxed text-ink-dim">
+          {bodyState === "loading" && "Fetching…"}
+          {bodyState === "error" && <span className="text-crit">Couldn't fetch this email's content.</span>}
+          {bodyState && bodyState !== "loading" && bodyState !== "error" && (
+            <Markdown text={bodyState.body_text ?? "(no readable body)"} />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

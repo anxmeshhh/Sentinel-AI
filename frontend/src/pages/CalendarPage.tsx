@@ -1,10 +1,13 @@
+import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { CalendarEvent, Connection } from "../api/types";
+import { GoogleAICommand } from "../components/GoogleAICommand";
 
 type View = "month" | "week" | "day" | "agenda";
+type ScheduleTab = "ai" | "manual";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -15,6 +18,8 @@ export function CalendarPage() {
   const [agendaRange, setAgendaRange] = useState<"upcoming" | "past">("upcoming");
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleTab, setScheduleTab] = useState<ScheduleTab>("manual");
 
   useEffect(() => {
     api.get<Connection[]>("/connections").then((conns) => {
@@ -88,8 +93,46 @@ export function CalendarPage() {
 
   return (
     <div className="max-w-3xl">
-      <h1 className="mb-1 text-xl font-semibold text-balance">Calendar</h1>
-      <p className="mb-6 text-[13px] text-ink-dim">Title, attendees, and meeting links only.</p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="mb-1 text-xl font-semibold text-balance">Calendar</h1>
+          <p className="text-[13px] text-ink-dim">Title, attendees, and meeting links only.</p>
+        </div>
+        <button
+          onClick={() => setScheduleOpen((o) => !o)}
+          className="flex-none rounded-md bg-accent px-3.5 py-1.5 font-mono text-[11.5px] font-bold text-ground"
+        >
+          {scheduleOpen ? "Close" : "+ Schedule"}
+        </button>
+      </div>
+
+      {scheduleOpen && (
+        <div className="mb-6 rounded-md border border-border bg-surface">
+          <div className="flex gap-1.5 border-b border-border p-2.5">
+            {(["manual", "ai"] as ScheduleTab[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => setScheduleTab(t)}
+                className={`rounded-full border px-3 py-1.5 font-mono text-[11px] transition-colors ${
+                  scheduleTab === t ? "border-accent bg-accent/15 text-accent-text" : "border-border text-ink-faint hover:text-ink"
+                }`}
+              >
+                {t === "manual" ? "Manual" : "Ask AI"}
+              </button>
+            ))}
+          </div>
+          {scheduleTab === "manual" ? (
+            <NewEventForm
+              onCreated={() => {
+                setScheduleOpen(false);
+                void load();
+              }}
+            />
+          ) : (
+            <GoogleAICommand />
+          )}
+        </div>
+      )}
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1.5">
@@ -224,6 +267,91 @@ function AgendaList({ events, emptyLabel }: { events: CalendarEvent[]; emptyLabe
         </div>
       ))}
     </div>
+  );
+}
+
+function NewEventForm({ onCreated }: { onCreated: () => void }) {
+  const [title, setTitle] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [attendees, setAttendees] = useState("");
+  const [createMeetLink, setCreateMeetLink] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.post("/calendar/events", {
+        title,
+        start: new Date(start).toISOString(),
+        end: new Date(end).toISOString(),
+        attendee_emails: attendees
+          .split(",")
+          .map((a) => a.trim())
+          .filter(Boolean),
+        create_meet_link: createMeetLink,
+      });
+      onCreated();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to create event");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="p-4">
+      <input
+        required
+        placeholder="Event title"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+      />
+      <div className="mb-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block font-mono text-[10.5px] uppercase tracking-wide text-ink-faint">Start</span>
+          <input
+            required
+            type="datetime-local"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+            className="w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block font-mono text-[10.5px] uppercase tracking-wide text-ink-faint">End</span>
+          <input
+            required
+            type="datetime-local"
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+            className="w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+          />
+        </label>
+      </div>
+      <input
+        placeholder="Attendee emails, comma-separated (optional)"
+        value={attendees}
+        onChange={(e) => setAttendees(e.target.value)}
+        className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+      />
+      <label className="mb-3 flex items-center gap-2 text-[12.5px] text-ink-dim">
+        <input type="checkbox" checked={createMeetLink} onChange={(e) => setCreateMeetLink(e.target.checked)} />
+        Add a Google Meet link
+      </label>
+      {error && <p className="mb-2 text-[12.5px] text-crit">{error}</p>}
+      <button
+        type="submit"
+        disabled={submitting}
+        className="rounded-md bg-accent px-4 py-2 font-mono text-[12.5px] font-bold text-ground disabled:opacity-50"
+      >
+        {submitting ? "Creating…" : "Create event"}
+      </button>
+    </form>
   );
 }
 

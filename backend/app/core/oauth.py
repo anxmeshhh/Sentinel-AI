@@ -39,13 +39,22 @@ if GOOGLE_CONFIGURED:
     # calendar.readonly scope; they need to go through "Reconnect Google"
     # once for this to take effect - prompt=consent already forces a real
     # re-consent screen showing the new scope, no separate migration needed.
+    # drive.readonly - Drive search/metadata only, never write, same
+    # least-privilege posture as everything else. Also means another
+    # "Reconnect Google" is needed for existing connections, same as the
+    # calendar.events scope bump above.
     oauth.register(
         name="google_data",
         client_id=_settings.google_client_id,
         client_secret=_settings.google_client_secret,
         server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
         client_kwargs={
-            "scope": "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly",
+            "scope": (
+                "openid email "
+                "https://www.googleapis.com/auth/calendar.events "
+                "https://www.googleapis.com/auth/gmail.readonly "
+                "https://www.googleapis.com/auth/drive.readonly"
+            ),
         },
     )
 

@@ -35,9 +35,11 @@ from app.agents.llm import LLMClient, LLMError
 from app.integrations.gmail_client import GmailClient
 from app.integrations.google_auth import get_valid_access_token
 from app.integrations.google_calendar_client import GoogleCalendarClient
+from app.integrations.google_drive_client import GoogleDriveClient
 from app.models.connection import Provider
 from app.repositories.connections import ConnectionRepository
 from app.services.calendar_query import find_free_slots, list_calendar, list_calendar_range
+from app.services.drive_query import build_drive_query
 from app.services.mail_query import build_gmail_query
 
 logger = structlog.get_logger("sentinel.orchestrator")
@@ -49,18 +51,26 @@ WRITE_TOOLS = {"create_calendar_event"}
 def _system_prompt() -> str:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d (%A)")
     return f"""You are Sentinel's AI Command interface for a user's connected Google \
-services (Gmail, Calendar). Today's date is {today} (UTC) - resolve relative dates ("today", \
+services (Gmail, Calendar, Drive). Today's date is {today} (UTC) - resolve relative dates ("today", \
 "yesterday", "this week", "tomorrow afternoon") to real dates yourself before calling a tool; \
 tools only accept explicit dates, not relative phrases.
 
 You have tools to search Gmail directly (live, whole-mailbox search - not limited to a small \
-recent cache), read one specific email's full content, list calendar events, and create a new \
-calendar event (optionally with a Google Meet link). Use tools to gather whatever real \
-information you actually need before answering - never invent an email, event, person, or detail \
-that a tool didn't return. For search_emails, extract real structured parameters from the \
-request (keywords/topic, sender, a label filter, a date range) rather than guessing - e.g. "any \
-important emails from Unstop" means sender="unstop", label_filter="important", not a bare keyword \
-search for the word "important".
+recent cache), read one specific email's full content, list calendar events, search Google Drive, \
+and create a new calendar event (optionally with a Google Meet link). Use tools to gather \
+whatever real information you actually need before answering - never invent an email, event, \
+file, person, or detail that a tool didn't return. For search_emails/search_drive, extract real \
+structured parameters from the request (keywords/topic, sender, a label or type filter, a date \
+range) rather than guessing - e.g. "any important emails from Unstop" means sender="unstop", \
+label_filter="important", not a bare keyword search for the word "important". A request spanning \
+services (e.g. "find the presentation for tomorrow's meeting" = search_drive + \
+list_calendar_events) should use both tools and combine the results in your answer.
+
+Every email, event, and file a tool returns includes a real "url" field - Sentinel never opens or \
+renders these resources itself, it only links out to the real Gmail/Calendar/Drive page. Whenever \
+you mention a specific email, event, or file in your answer, include it as a real markdown link \
+using that exact url, e.g. [Sprint Sync](url) or [Q3 Report.pdf](url) - never write a bare \
+resource name with no link, and never invent a url that didn't come from a tool.
 
 If the request requires creating or changing something (like scheduling a meeting), call \
 create_calendar_event as soon as you have enough information - it will not actually run until \
@@ -70,9 +80,9 @@ something - "find a free slot" means report the slot and stop, not schedule anyt
 unless asked. Keep your final answer concise and grounded only in what the tools returned.
 
 Formatting: you're writing for a narrow chat panel, not a document. Never use markdown tables \
-(pipe characters) - they don't fit and render unreadably. For a list of emails or events, use a \
-short numbered or bulleted list instead, one item per line, with just the essentials (sender or \
-title, and the one detail that matters most) - not a dump of every field a tool returned."""
+(pipe characters) - they don't fit and render unreadably. For a list of emails, events, or files, \
+use a short numbered or bulleted list instead, one item per line, with just the essentials (the \
+linked name, and the one detail that matters most) - not a dump of every field a tool returned."""
 
 
 @dataclass
@@ -165,6 +175,28 @@ def _tool_schemas() -> list[dict]:
         {
             "type": "function",
             "function": {
+                "name": "search_drive",
+                "description": (
+                    "Live search across the user's Google Drive using Drive's own search index - file/doc "
+                    "name and content, not a local cache. Returns metadata + a link to open in Drive, never "
+                    "file content itself."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "keywords": {"type": "string", "description": "Topic/keyword/filename search, e.g. 'Sentinel project'."},
+                        "mime_type": {"type": "string", "enum": ["pdf", "document", "spreadsheet", "presentation", "folder"]},
+                        "modified_after": {"type": "string", "description": "ISO date YYYY-MM-DD - only files modified on/after this date."},
+                        "shared_with_me": {"type": "boolean", "default": False},
+                        "limit": {"type": "integer", "default": 10},
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "create_calendar_event",
                 "description": (
                     "Create a new calendar event, optionally with a Google Meet link. "
@@ -191,6 +223,7 @@ STATUS_MESSAGES = {
     "read_email_body": "Reading an email…",
     "list_calendar_events": "Checking your calendar…",
     "find_free_slot": "Looking for a free slot…",
+    "search_drive": "Searching your Drive…",
 }
 
 
@@ -327,6 +360,7 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
                 "from": m["payload"]["from"],
                 "occurred_at": m["occurred_at"].isoformat(),
                 "labels": m["payload"]["label_ids"],
+                "url": f"https://mail.google.com/mail/u/0/#all/{m['external_id']}",
             }
             for m in results
         ]
@@ -360,9 +394,25 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
                 "start": e.payload.get("start"),
                 "end": e.payload.get("end"),
                 "attendee_count": e.payload.get("attendee_count"),
+                "url": e.payload.get("url"),
             }
             for e in events
         ]
+
+    if name == "search_drive":
+        connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GOOGLE_DRIVE)
+        if connection is None:
+            return {"error": "google drive not connected"}
+        query = build_drive_query(
+            keywords=args.get("keywords"),
+            mime_type=args.get("mime_type"),
+            modified_after=args.get("modified_after"),
+            shared_with_me=args.get("shared_with_me"),
+        )
+        access_token = get_valid_access_token(session, connection)
+        with GoogleDriveClient(access_token) as client:
+            files = client.search(query, max_results=min(args.get("limit", 10), 30))
+        return files
 
     if name == "find_free_slot":
         date_str = args.get("date")

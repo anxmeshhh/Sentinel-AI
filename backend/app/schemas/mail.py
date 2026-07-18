@@ -15,12 +15,14 @@ class MailItemOut(BaseModel):
     is_important: bool
     is_unread: bool
     is_spam: bool
+    url: str
 
 
 class MailBodyOut(BaseModel):
     subject: str
     sender: str
     body_text: str | None
+    url: str
     fetched_live: bool = True
 
 
@@ -31,6 +33,7 @@ class MailSummaryOut(BaseModel):
     key_points: list[str]
     action_items: list[str]
     body_text: str | None
+    url: str
     cached: bool
 
 

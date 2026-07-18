@@ -9,7 +9,8 @@ export function IntegrationCardGrid({ connections }: { connections: Connection[]
   const githubConnections = connections.filter((c) => c.provider === "github");
   const googleCalendar = connections.find((c) => c.provider === "google_calendar");
   const gmail = connections.find((c) => c.provider === "gmail");
-  const googleConnectedCount = [googleCalendar, gmail].filter(Boolean).length;
+  const googleDrive = connections.find((c) => c.provider === "google_drive");
+  const googleConnectedCount = [googleCalendar, gmail, googleDrive].filter(Boolean).length;
 
   return (
     <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -17,7 +18,7 @@ export function IntegrationCardGrid({ connections }: { connections: Connection[]
         icon={<GoogleIcon />}
         name="Google"
         status={googleConnectedCount > 0 ? `${googleConnectedCount} service${googleConnectedCount === 1 ? "" : "s"} connected` : "Not connected"}
-        desc="Gmail, Calendar, Meet — browse, ask, and get risk findings, or give the AI a command across all of them."
+        desc="Gmail, Calendar, Meet, Drive — browse, ask, and get risk findings, or give the AI a command across all of them."
         connected={googleConnectedCount > 0}
         to="/connections/google"
       />

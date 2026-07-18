@@ -3,7 +3,7 @@
 
 export interface Connection {
   id: string;
-  provider: "github" | "google_calendar" | "gmail";
+  provider: "github" | "google_calendar" | "gmail" | "google_drive";
   org: string;
   repo: string;
   last_synced_at: string | null;
@@ -129,12 +129,14 @@ export interface MailItem {
   is_important: boolean;
   is_unread: boolean;
   is_spam: boolean;
+  url: string;
 }
 
 export interface MailBody {
   subject: string;
   sender: string;
   body_text: string | null;
+  url: string;
   fetched_live: boolean;
 }
 
@@ -145,7 +147,18 @@ export interface MailSummary {
   key_points: string[];
   action_items: string[];
   body_text: string | null;
+  url: string;
   cached: boolean;
+}
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  mime_type: string | null;
+  modified_at: string | null;
+  url: string | null;
+  owner: string | null;
+  shared: boolean;
 }
 
 export interface MailAskResult {

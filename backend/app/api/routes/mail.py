@@ -83,6 +83,7 @@ def get_mail_body(
         subject=signal.payload.get("subject", "(no subject)"),
         sender=signal.payload.get("from", "unknown"),
         body_text=body_text,
+        url=_gmail_url(signal.external_id),
     )
 
 
@@ -118,7 +119,7 @@ def get_mail_summary(
         return MailSummaryOut(
             subject=subject, sender=sender, summary=cached.summary,
             key_points=cached.key_points, action_items=cached.action_items,
-            body_text=body_text, cached=True,
+            body_text=body_text, url=_gmail_url(signal.external_id), cached=True,
         )
 
     result = summarize_email(subject, sender, body_text or "")
@@ -133,8 +134,12 @@ def get_mail_summary(
     return MailSummaryOut(
         subject=subject, sender=sender, summary=result["summary"],
         key_points=result["key_points"], action_items=result["action_items"],
-        body_text=body_text, cached=False,
+        body_text=body_text, url=_gmail_url(signal.external_id), cached=False,
     )
+
+
+def _gmail_url(external_id: str) -> str:
+    return f"https://mail.google.com/mail/u/0/#all/{external_id}"
 
 
 def _to_item(s: Signal) -> MailItemOut:
@@ -150,4 +155,5 @@ def _to_item(s: Signal) -> MailItemOut:
         is_important="IMPORTANT" in labels,
         is_unread="UNREAD" in labels,
         is_spam="SPAM" in labels,
+        url=_gmail_url(s.external_id),
     )

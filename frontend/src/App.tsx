@@ -8,6 +8,7 @@ import { AssistantPage } from "./pages/AssistantPage";
 import { BriefPage } from "./pages/BriefPage";
 import { CalendarPage } from "./pages/CalendarPage";
 import { ConnectionWorkspacePage } from "./pages/ConnectionWorkspacePage";
+import { DrivePage } from "./pages/DrivePage";
 import { FindingDetailPage } from "./pages/FindingDetailPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { JoinInvitePage } from "./pages/JoinInvitePage";
@@ -51,6 +52,7 @@ export function App() {
       <Route path="/assistant" element={<RequireAuth><AssistantPage /></RequireAuth>} />
       <Route path="/mail" element={<RequireAuth><MailPage /></RequireAuth>} />
       <Route path="/calendar" element={<RequireAuth><CalendarPage /></RequireAuth>} />
+      <Route path="/drive" element={<RequireAuth><DrivePage /></RequireAuth>} />
       <Route path="/connections/:provider" element={<RequireAuth><ConnectionWorkspacePage /></RequireAuth>} />
     </Routes>
   );

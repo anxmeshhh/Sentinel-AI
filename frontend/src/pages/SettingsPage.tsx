@@ -12,9 +12,9 @@ const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
 
 const AGENTS = [
   { name: "Engineering", desc: "GitHub bottlenecks, hotspots, inactive contributors, risky deploys", tag: "PHASE 1", on: true },
+  { name: "Communication", desc: "Stale flagged mail, spam surges, calendar overload — from Gmail/Calendar", tag: "PHASE 2", on: true },
   { name: "Executive", desc: "Synthesizes every agent's findings into the daily brief", tag: "ALWAYS ON", on: true },
   { name: "Project", desc: "Jira / Linear sprint risk & deadline-slip prediction", tag: "PHASE 2", on: false },
-  { name: "Communication", desc: "Slack gaps, missing approvals, unanswered questions", tag: "PHASE 3", on: false },
   { name: "Knowledge", desc: "Stale or missing docs across Notion / Confluence", tag: "PHASE 3", on: false },
   { name: "DevOps · Security · Finance", desc: "Deploy risk, secret exposure, cost anomalies", tag: "PHASE 4", on: false },
   { name: "HR Wellbeing", desc: "Team-level workload patterns only — never individual judgment. Opt-in, off by default.", tag: "OPT-IN", on: false },
@@ -25,6 +25,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 export function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [expandedGroup, setExpandedGroup] = useState<string | null>("google");
   const [org, setOrg] = useState("");
   const [repo, setRepo] = useState("");
   const [token, setToken] = useState("");
@@ -41,7 +42,7 @@ export function SettingsPage() {
   const githubConnections = connections.filter((c) => c.provider === "github");
   const googleCalendar = connections.find((c) => c.provider === "google_calendar");
   const gmail = connections.find((c) => c.provider === "gmail");
-  const googleConnected = Boolean(googleCalendar || gmail);
+  const googleConnectedCount = [googleCalendar, gmail].filter(Boolean).length;
 
   const connectedBanner = searchParams.get("connected");
   const googleError = searchParams.get("google_error");
@@ -78,6 +79,16 @@ export function SettingsPage() {
     }
   }
 
+  async function handleDisconnectAllGoogle() {
+    const ids = [googleCalendar?.id, gmail?.id].filter((id): id is string => Boolean(id));
+    await Promise.all(ids.map((id) => api.delete(`/connections/${id}`)));
+    load();
+  }
+
+  function toggleGroup(key: string) {
+    setExpandedGroup(expandedGroup === key ? null : key);
+  }
+
   return (
     <div className="max-w-2xl">
       <h1 className="mb-1 text-xl font-semibold text-balance">Agents &amp; Connections</h1>
@@ -96,92 +107,122 @@ export function SettingsPage() {
         </Banner>
       )}
 
-      <SectionLabel>Integrations</SectionLabel>
-      <div className="mb-8 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-        <IntegrationTile name="GitHub" desc="PRs, commits, issues, reviews" status="available" />
-        <IntegrationTile
-          name="Gmail"
-          desc="Subject, participants, timestamps — never message bodies"
-          status={gmail ? "connected" : "available"}
-          detail={gmail?.org}
-          onConnect={handleConnectGoogle}
-          connecting={googleConnecting}
-        />
-        <IntegrationTile
-          name="Google Calendar"
-          desc="Meetings, attendees, duration"
-          status={googleCalendar ? "connected" : "available"}
-          detail={googleCalendar?.org}
-          onConnect={handleConnectGoogle}
-          connecting={googleConnecting}
-        />
-        <IntegrationTile name="Google Meet" desc="Meeting links come from Calendar — no separate connection needed" status={googleConnected ? "connected" : "rides-on-calendar"} />
-        <IntegrationTile name="Zoom" desc="Meeting metadata" status="coming-soon" />
-      </div>
-
-      <SectionLabel>Connected Repositories</SectionLabel>
-      <div className="mb-3 rounded-md border border-border bg-surface">
-        {githubConnections.length === 0 ? (
-          <p className="p-4 text-[13px] text-ink-dim">No repository connected yet.</p>
-        ) : (
-          githubConnections.map((c) => (
-            <div key={c.id} className="flex items-center gap-3 border-b border-border p-3.5 last:border-b-0">
-              <div>
-                <div className="font-mono text-[12.5px] font-semibold">
-                  {c.org}/{c.repo}
-                </div>
-                <div className="text-[11.5px] text-ink-faint">
-                  GitHub · {c.last_synced_at ? `synced ${new Date(c.last_synced_at).toLocaleString()}` : "not yet synced"}
-                </div>
-              </div>
-              <button
-                onClick={() => handleDisconnect(c.id)}
-                className="ml-auto rounded-md border border-crit px-2.5 py-1 font-mono text-[11.5px] text-crit hover:bg-crit/10"
-              >
-                DISCONNECT
-              </button>
-            </div>
-          ))
-        )}
-      </div>
-
-      <form onSubmit={handleConnect} className="mb-8 rounded-md border border-border bg-surface p-4">
-        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <input
-            required
-            placeholder="org (e.g. northwind)"
-            value={org}
-            onChange={(e) => setOrg(e.target.value)}
-            className="rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
-          />
-          <input
-            required
-            placeholder="repo (e.g. checkout-service)"
-            value={repo}
-            onChange={(e) => setRepo(e.target.value)}
-            className="rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
-          />
-        </div>
-        <input
-          required
-          type="password"
-          placeholder="GitHub personal access token"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          className="mb-3 w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
-        />
-        {error && <p className="mb-2 text-[12.5px] text-crit">{error}</p>}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded-md bg-accent py-2.5 text-[13.5px] font-bold text-ground disabled:opacity-50"
+      <SectionLabel>Connections</SectionLabel>
+      <div className="mb-8 flex flex-col gap-2.5">
+        <ProviderGroupCard
+          name="Google"
+          summary={googleConnectedCount > 0 ? `${googleConnectedCount} service${googleConnectedCount === 1 ? "" : "s"} connected` : "Not connected"}
+          connected={googleConnectedCount > 0}
+          expanded={expandedGroup === "google"}
+          onToggle={() => toggleGroup("google")}
         >
-          {submitting ? "Connecting…" : "Connect repository"}
-        </button>
-        <p className="mt-2.5 text-[12px] text-ink-dim">
-          🔒 Sentinel reads PR, commit, issue, and review metadata only — never source code.
-        </p>
-      </form>
+          <ServiceRow
+            name="Gmail"
+            desc="Subject, participants, timestamps — never message bodies"
+            connected={Boolean(gmail)}
+            detail={gmail?.org}
+            onDisconnect={gmail ? () => handleDisconnect(gmail.id) : undefined}
+          />
+          <ServiceRow
+            name="Google Calendar"
+            desc="Meetings, attendees, duration"
+            connected={Boolean(googleCalendar)}
+            detail={googleCalendar?.org}
+            onDisconnect={googleCalendar ? () => handleDisconnect(googleCalendar.id) : undefined}
+          />
+          <ServiceRow
+            name="Google Meet"
+            desc="Rides on Calendar — no separate connection needed"
+            connected={googleConnectedCount > 0}
+            disabled
+          />
+          <div className="flex items-center gap-3 border-t border-border p-3.5">
+            <button
+              onClick={handleConnectGoogle}
+              disabled={googleConnecting}
+              className="rounded-md bg-accent px-3.5 py-1.5 font-mono text-[11.5px] font-bold text-ground disabled:opacity-50"
+            >
+              {googleConnecting ? "Redirecting…" : googleConnectedCount > 0 ? "Reconnect Google" : "Connect Google"}
+            </button>
+            {googleConnectedCount > 0 && (
+              <button
+                onClick={handleDisconnectAllGoogle}
+                className="font-mono text-[11.5px] text-crit underline underline-offset-2"
+              >
+                Disconnect all
+              </button>
+            )}
+          </div>
+        </ProviderGroupCard>
+
+        <ProviderGroupCard
+          name="GitHub"
+          summary={githubConnections.length > 0 ? `${githubConnections.length} repo${githubConnections.length === 1 ? "" : "s"} connected` : "Not connected"}
+          connected={githubConnections.length > 0}
+          expanded={expandedGroup === "github"}
+          onToggle={() => toggleGroup("github")}
+        >
+          {githubConnections.map((c) => (
+            <ServiceRow
+              key={c.id}
+              name={`${c.org}/${c.repo}`}
+              desc={c.last_synced_at ? `synced ${new Date(c.last_synced_at).toLocaleString()}` : "not yet synced"}
+              connected
+              mono
+              onDisconnect={() => handleDisconnect(c.id)}
+            />
+          ))}
+
+          <form onSubmit={handleConnect} className="border-t border-border p-3.5">
+            <div className="mb-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <input
+                required
+                placeholder="org (e.g. northwind)"
+                value={org}
+                onChange={(e) => setOrg(e.target.value)}
+                className="rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+              />
+              <input
+                required
+                placeholder="repo (e.g. checkout-service)"
+                value={repo}
+                onChange={(e) => setRepo(e.target.value)}
+                className="rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+              />
+            </div>
+            <input
+              required
+              type="password"
+              placeholder="GitHub personal access token"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+            />
+            {error && <p className="mb-2 text-[12.5px] text-crit">{error}</p>}
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-md bg-accent py-2 text-[12.5px] font-bold text-ground disabled:opacity-50"
+            >
+              {submitting ? "Connecting…" : "Connect repository"}
+            </button>
+            <p className="mt-2 text-[11.5px] text-ink-dim">
+              🔒 PR, commit, issue, and review metadata only — never source code.
+            </p>
+          </form>
+        </ProviderGroupCard>
+
+        <ProviderGroupCard
+          name="Zoom"
+          summary="Coming soon"
+          connected={false}
+          disabled
+          expanded={expandedGroup === "zoom"}
+          onToggle={() => toggleGroup("zoom")}
+        >
+          <p className="p-3.5 text-[12.5px] text-ink-faint">Meeting metadata — not yet available.</p>
+        </ProviderGroupCard>
+      </div>
 
       <SectionLabel>Agents</SectionLabel>
       <div className="rounded-md border border-border bg-surface">
@@ -208,52 +249,81 @@ export function SettingsPage() {
   );
 }
 
-type IntegrationStatus = "available" | "connected" | "coming-soon" | "rides-on-calendar";
-
-function IntegrationTile({
+function ProviderGroupCard({
   name,
-  desc,
-  status,
-  detail,
-  onConnect,
-  connecting,
+  summary,
+  connected,
+  expanded,
+  onToggle,
+  disabled,
+  children,
 }: {
   name: string;
-  desc: string;
-  status: IntegrationStatus;
-  detail?: string;
-  onConnect?: () => void;
-  connecting?: boolean;
+  summary: string;
+  connected: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+  children: ReactNode;
 }) {
-  const dimmed = status === "coming-soon";
   return (
-    <div className={`flex items-start justify-between gap-3 border p-3.5 ${dimmed ? "border-border/60 bg-surface/50" : "border-border bg-surface"}`}>
-      <div className="min-w-0">
-        <div className={`text-[13px] font-semibold ${dimmed ? "text-ink-faint" : "text-ink"}`}>{name}</div>
-        <div className="mt-0.5 text-[11.5px] text-ink-faint">{status === "connected" && detail ? detail : desc}</div>
-        {status === "available" && onConnect && (
-          <button onClick={onConnect} disabled={connecting} className="mt-2 text-[11.5px] font-semibold text-ink underline underline-offset-2 disabled:opacity-50">
-            {connecting ? "Redirecting…" : "Connect"}
-          </button>
-        )}
-      </div>
-      <StatusBadge status={status} />
+    <div className={`rounded-md border ${disabled ? "border-border/60 bg-surface/50" : "border-border bg-surface"}`}>
+      <button onClick={onToggle} className="flex w-full items-center gap-3 p-3.5 text-left">
+        <span className={`h-2 w-2 flex-none rounded-full ${connected ? "bg-good" : "bg-ink-faint"}`} />
+        <div className="min-w-0 flex-1">
+          <div className={`text-[13.5px] font-semibold ${disabled ? "text-ink-faint" : "text-ink"}`}>{name}</div>
+          <div className="mt-0.5 text-[11.5px] text-ink-faint">{summary}</div>
+        </div>
+        <span className={`flex-none text-[12px] text-ink-faint transition-transform ${expanded ? "rotate-180" : ""}`}>
+          &#9660;
+        </span>
+      </button>
+      {expanded && <div className="border-t border-border">{children}</div>}
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: IntegrationStatus }) {
-  const label = { available: "Available", connected: "Connected", "coming-soon": "Coming soon", "rides-on-calendar": "Via Calendar" }[status];
-  const cls =
-    status === "connected"
-      ? "border-good/40 text-good"
-      : status === "available"
-        ? "border-watch/40 text-watch"
-        : "border-border text-ink-faint";
+function ServiceRow({
+  name,
+  desc,
+  connected,
+  detail,
+  disabled,
+  mono,
+  onDisconnect,
+}: {
+  name: string;
+  desc: string;
+  connected: boolean;
+  detail?: string;
+  disabled?: boolean;
+  mono?: boolean;
+  onDisconnect?: () => void;
+}) {
   return (
-    <span className={`flex-none whitespace-nowrap rounded-full border px-2 py-[3px] text-[10px] font-medium uppercase tracking-wide ${cls}`}>
-      {label}
-    </span>
+    <div className="flex items-center gap-3 border-b border-border p-3.5 last:border-b-0">
+      <div className="min-w-0 flex-1">
+        <div className={`${mono ? "font-mono" : ""} text-[12.5px] font-semibold ${disabled ? "text-ink-faint" : "text-ink"}`}>
+          {name}
+        </div>
+        <div className="mt-0.5 truncate text-[11px] text-ink-faint">{connected && detail ? detail : desc}</div>
+      </div>
+      <span
+        className={`flex-none whitespace-nowrap rounded-full border px-2 py-[3px] text-[9.5px] font-medium uppercase tracking-wide ${
+          connected ? "border-good/40 text-good" : "border-border text-ink-faint"
+        }`}
+      >
+        {connected ? "Connected" : "Not connected"}
+      </span>
+      {onDisconnect && (
+        <button
+          onClick={onDisconnect}
+          className="flex-none font-mono text-[11px] text-crit underline underline-offset-2"
+        >
+          Disconnect
+        </button>
+      )}
+    </div>
   );
 }
 

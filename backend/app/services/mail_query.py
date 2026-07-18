@@ -139,3 +139,45 @@ def find_best_matching_email(session: Session, workspace_id, question: str) -> S
 
 def _render_line(s: Signal) -> str:
     return f"- \"{s.payload.get('subject', '(no subject)')}\" from {s.payload.get('from', 'unknown')} ({s.occurred_at.isoformat()})"
+
+
+GMAIL_LABEL_FILTERS = {
+    "starred": "is:starred",
+    "important": "is:important",
+    "unread": "is:unread",
+    "spam": "is:spam",
+}
+
+
+def build_gmail_query(
+    *,
+    keywords: str | None = None,
+    sender: str | None = None,
+    label_filter: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> str:
+    """Translates structured search intent (what the AI Command orchestrator's
+    search_emails tool extracts from a natural-language request) into a real
+    Gmail search query string - used by GmailClient.search() for a live,
+    whole-mailbox search via Gmail's own index, not a local filter.
+    """
+    parts: list[str] = []
+    if keywords:
+        parts.append(keywords)
+    if sender:
+        parts.append(f"from:{sender}")
+    if label_filter and label_filter in GMAIL_LABEL_FILTERS:
+        parts.append(GMAIL_LABEL_FILTERS[label_filter])
+    if since:
+        parts.append(f"after:{_to_gmail_date(since)}")
+    if until:
+        parts.append(f"before:{_to_gmail_date(until)}")
+    return " ".join(parts) if parts else "in:inbox OR in:spam"
+
+
+def _to_gmail_date(iso_date: str) -> str:
+    try:
+        return datetime.fromisoformat(iso_date[:10]).strftime("%Y/%m/%d")
+    except ValueError:
+        return iso_date

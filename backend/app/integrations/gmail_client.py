@@ -58,6 +58,34 @@ class GmailClient:
         resp = self._get_with_retry(f"/messages/{message_id}", {"format": "full"})
         return _extract_body(resp.json())
 
+    def search(self, query: str, max_results: int = 20) -> list[dict]:
+        """Live search against Gmail's own index using its native query syntax
+        (keywords, is:starred, from:x, after:/before:) - unlike browsing the
+        locally-ingested Signal cache (mail_query.py), this reaches the whole
+        mailbox and Gmail's own full-text index, not just the last
+        MAX_MESSAGES_PER_SYNC backfilled messages. Metadata only, same as
+        fetch_messages - only fetch_message_body ever reads a body.
+        """
+        ids: list[str] = []
+        page_token: str | None = None
+        while len(ids) < max_results:
+            params = {"q": query, "maxResults": min(50, max_results - len(ids)), "includeSpamTrash": "true"}
+            if page_token:
+                params["pageToken"] = page_token
+            resp = self._get_with_retry("/messages", params)
+            data = resp.json()
+            ids.extend(m["id"] for m in data.get("messages", []))
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+
+        messages = []
+        for message_id in ids[:max_results]:
+            metadata = self._fetch_message_metadata(message_id)
+            if metadata:
+                messages.append(metadata)
+        return messages
+
     def _list_message_ids(self, since: datetime) -> list[str]:
         ids: list[str] = []
         page_token: str | None = None

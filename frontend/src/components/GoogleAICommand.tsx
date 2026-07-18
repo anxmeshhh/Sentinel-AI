@@ -3,7 +3,7 @@ import { useState } from "react";
 import { api, ApiError } from "../api/client";
 import { Markdown } from "./Markdown";
 
-type TurnStatus = "done" | "confirmation_required" | "executing" | "executed" | "error" | "cancelled";
+type TurnStatus = "streaming" | "done" | "confirmation_required" | "executing" | "executed" | "error" | "cancelled";
 
 interface PendingAction {
   name: string;
@@ -13,18 +13,16 @@ interface PendingAction {
 interface Turn {
   command: string;
   status: TurnStatus;
+  statusMessage?: string;
   reply?: string | null;
   plan?: Record<string, unknown> | null;
   pendingAction?: PendingAction | null;
   executedResult?: Record<string, unknown> | null;
 }
 
-interface CommandResponse {
-  status: TurnStatus;
-  reply: string | null;
-  plan: Record<string, unknown> | null;
-  pending_action: PendingAction | null;
-}
+type StreamEvent =
+  | { type: "status"; message: string }
+  | { type: "result"; status: TurnStatus; reply?: string | null; plan?: Record<string, unknown> | null; pending_action?: PendingAction | null };
 
 export function GoogleAICommand() {
   const [input, setInput] = useState("");
@@ -36,11 +34,29 @@ export function GoogleAICommand() {
     if (!command || sending) return;
     setSending(true);
     setInput("");
+
+    const index = turns.length;
+    setTurns((t) => [...t, { command, status: "streaming", statusMessage: "Starting…" }]);
+
     try {
-      const res = await api.post<CommandResponse>("/connections/google/command", { command });
-      setTurns((t) => [...t, { command, status: res.status, reply: res.reply, plan: res.plan, pendingAction: res.pending_action }]);
+      await api.postStream("/connections/google/command/stream", { command }, (raw) => {
+        const event = raw as StreamEvent;
+        if (event.type === "status") {
+          setTurns((t) => t.map((x, i) => (i === index ? { ...x, statusMessage: event.message } : x)));
+        } else if (event.type === "result") {
+          setTurns((t) =>
+            t.map((x, i) =>
+              i === index
+                ? { ...x, status: event.status, reply: event.reply, plan: event.plan, pendingAction: event.pending_action }
+                : x
+            )
+          );
+        }
+      });
     } catch (err) {
-      setTurns((t) => [...t, { command, status: "error", reply: err instanceof ApiError ? err.message : "Something went wrong." }]);
+      setTurns((t) =>
+        t.map((x, i) => (i === index ? { ...x, status: "error", reply: err instanceof ApiError ? err.message : "Something went wrong." } : x))
+      );
     } finally {
       setSending(false);
     }
@@ -78,6 +94,13 @@ export function GoogleAICommand() {
           {turns.map((turn, i) => (
             <div key={i} className="rounded-md border border-border bg-ground/40 p-3">
               <div className="mb-1.5 text-[12px] font-semibold text-ink">{turn.command}</div>
+
+              {turn.status === "streaming" && (
+                <div className="flex items-center gap-2 text-[12px] text-ink-faint">
+                  <span className="h-3 w-3 flex-none animate-spin rounded-full border-2 border-ink-faint border-t-transparent" />
+                  {turn.statusMessage ?? "Working…"}
+                </div>
+              )}
 
               {turn.status === "done" && turn.reply && (
                 <div className="text-[12px] leading-relaxed text-ink-dim">
@@ -134,9 +157,10 @@ export function GoogleAICommand() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send()}
+          onKeyDown={(e) => e.key === "Enter" && !sending && send()}
+          disabled={sending}
           placeholder="Try: what are my most important unread emails?"
-          className="flex-1 rounded-md border border-border bg-ground px-3 py-2 text-[12.5px] outline-none focus:border-accent"
+          className="flex-1 rounded-md border border-border bg-ground px-3 py-2 text-[12.5px] outline-none focus:border-accent disabled:opacity-60"
         />
         <button
           onClick={send}

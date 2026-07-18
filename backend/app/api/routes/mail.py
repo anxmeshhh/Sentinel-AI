@@ -11,10 +11,13 @@ from app.api.deps import get_db, get_workspace_id
 from app.integrations.gmail_client import GmailClient
 from app.integrations.google_auth import get_valid_access_token
 from app.models.connection import Provider
+from app.models.email_summary import EmailSummary
 from app.models.signal import Signal, SignalType
 from app.repositories.connections import ConnectionRepository
-from app.schemas.mail import MailAskRequest, MailAskResponse, MailBodyOut, MailItemOut
+from app.repositories.email_summaries import EmailSummaryRepository
+from app.schemas.mail import MailAskRequest, MailAskResponse, MailBodyOut, MailItemOut, MailSummaryOut
 from app.services.mail_query import MAIL_FILTERS, list_mail, match_mail_intent
+from app.services.mail_summarizer import summarize_email
 
 router = APIRouter(prefix="/mail", tags=["mail"])
 
@@ -80,6 +83,57 @@ def get_mail_body(
         subject=signal.payload.get("subject", "(no subject)"),
         sender=signal.payload.get("from", "unknown"),
         body_text=body_text,
+    )
+
+
+@router.get("/{signal_id}/summary", response_model=MailSummaryOut)
+def get_mail_summary(
+    signal_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+) -> MailSummaryOut:
+    """Structured AI summary (summary/key_points/action_items), cached after
+    the first generation - see EmailSummary's docstring. Still does a live
+    body fetch every time (bodies are never stored), but the LLM call itself
+    only happens once per email.
+    """
+    signal = session.get(Signal, signal_id)
+    if signal is None or signal.workspace_id != workspace_id or signal.type != SignalType.EMAIL:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    subject = signal.payload.get("subject", "(no subject)")
+    sender = signal.payload.get("from", "unknown")
+
+    summary_repo = EmailSummaryRepository(session, workspace_id)
+    cached = summary_repo.get_by_message_id(signal.external_id)
+
+    connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GMAIL)
+    if connection is None:
+        raise HTTPException(status_code=404, detail="Gmail is not connected")
+    access_token = get_valid_access_token(session, connection)
+    with GmailClient(access_token) as client:
+        body_text = client.fetch_message_body(signal.external_id)
+
+    if cached is not None:
+        return MailSummaryOut(
+            subject=subject, sender=sender, summary=cached.summary,
+            key_points=cached.key_points, action_items=cached.action_items,
+            body_text=body_text, cached=True,
+        )
+
+    result = summarize_email(subject, sender, body_text or "")
+    summary_repo.add(
+        EmailSummary(
+            message_id=signal.external_id, subject=subject, sender=sender,
+            summary=result["summary"], key_points=result["key_points"], action_items=result["action_items"],
+        )
+    )
+    session.commit()
+
+    return MailSummaryOut(
+        subject=subject, sender=sender, summary=result["summary"],
+        key_points=result["key_points"], action_items=result["action_items"],
+        body_text=body_text, cached=False,
     )
 
 

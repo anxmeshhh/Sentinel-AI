@@ -138,6 +138,16 @@ export interface MailBody {
   fetched_live: boolean;
 }
 
+export interface MailSummary {
+  subject: string;
+  sender: string;
+  summary: string;
+  key_points: string[];
+  action_items: string[];
+  body_text: string | null;
+  cached: boolean;
+}
+
 export interface MailAskResult {
   matched_filter: string | null;
   matched_category: string | null;

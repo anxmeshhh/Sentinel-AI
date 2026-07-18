@@ -795,6 +795,83 @@ reconnect + click-through.**
 
 ---
 
+### Phase 2g — AI Search, Loading UX, Mail Summarization & Calendar Views ✅ Built and tested end-to-end
+
+**Objective:** Phase 2f proved the tool-calling loop works; this phase makes it actually good -
+real search instead of a handful of fixed filters, real loading feedback instead of a frozen
+button, structured email presentation instead of a raw paragraph dump, cached summaries instead of
+re-paying LLM cost on every open, and a real visual Calendar instead of one list view.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2g.1 | Live whole-mailbox Gmail search (topic/sender/label/date), replacing the fixed-filter-only `search_emails` tool | ✅ |
+| 2g.2 | `EmailSummary` cache table + `GET /mail/{id}/summary` (summary/key points/action items, generated once) | ✅ |
+| 2g.3 | Mail page's expanded view: Subject/From/Date → AI Summary → Key Points → Action Items → collapsed Original | ✅ |
+| 2g.4 | Calendar tools: explicit date ranges (`list_calendar_events`) + deterministic `find_free_slot` | ✅ |
+| 2g.5 | Calendar Month grid view (Week/Day as filtered list views, Agenda unchanged) | ✅ |
+| 2g.6 | Real SSE streaming for AI Command - live per-step status, not simulated | ✅ |
+
+### What actually got built (technical notes)
+
+- **Search moved from "filter the last 500 ingested messages" to "search the whole mailbox
+  live."** The old `search_emails` tool only accepted a fixed filter enum (recent/starred/spam/
+  top) over the locally-ingested Signal cache - "show my hackathon emails" had no way to work.
+  `GmailClient.search()` now calls Gmail's own live query API; `mail_query.build_gmail_query()`
+  translates structured tool arguments (keywords, sender, label_filter, since/until - extracted by
+  the LLM from the request) into Gmail's native query syntax (`hackathon from:unstop is:important`).
+  Verified against every example in the request: "show my hackathon emails" (keyword search, real
+  results), "any important emails from Unstop" (sender + label combined), both doing genuine intent
+  extraction into structured parameters before ever touching an API.
+  **Side effect**: `read_email_body` no longer looks up a Signal row at all - it takes Gmail's
+  native message id directly (now what `search_emails` returns as `id`), since live search results
+  don't necessarily correspond to any locally-ingested row.
+- **Summary caching is real, not just described**: `EmailSummary` (new table, keyed on
+  `(workspace_id, message_id)`) stores the generated summary/key_points/action_items once.
+  Measured directly: first open of a real email took 1.6s (live LLM call); the second open of the
+  *same* email took 0.39s (cache hit, zero LLM cost) - confirmed the token-efficiency requirement
+  actually holds, not just that the code looks like it should.
+- **`find_free_slot` is deterministic, not the LLM guessing** - same discipline as every other
+  agent in this codebase. It computes real gaps between existing events for a given day/hour-window/
+  duration in plain Python; the LLM only narrates the result. Caught and fixed a real prompt
+  ambiguity during testing: "find a free slot" was sometimes followed by the model proactively
+  calling `create_calendar_event` unprompted - the write-confirmation gate still caught it correctly
+  (nothing was created), but the system prompt was tightened so "find" doesn't imply "book."
+- **Loading states are genuinely real, not simulated** - this was an explicit call before building:
+  `run_command_stream()` is a generator yielding a status event the moment each step actually
+  starts (`"Searching your emails…"` right when `search_emails` begins executing, not on a timer).
+  `run_command()` (used by tests and the plain call path) now just drains the same generator, so
+  there's exactly one loop implementation, not two. The streaming endpoint is POST, not GET, despite
+  SSE convention - `EventSource` can't carry the `Authorization` header this app's auth requires, so
+  the frontend reads the same `data: {...}\n\n` framing off a plain `fetch()` stream reader instead
+  (`api.postStream` in `client.ts`). Verified the full real HTTP round-trip: real auth, real SSE
+  frames, in the exact shape the frontend parses.
+- **Calendar view scope, as agreed upfront**: Month is a real grid (event-count badges per day,
+  click a day to open it). Week and Day reuse the existing Agenda list, just date-bounded to a
+  7-day or 1-day window via a new `since`/`until` query on `GET /calendar` (and a dedicated
+  `GET /calendar/month` for the grid) - not a full hour-by-hour time-grid renderer, which was
+  explicitly scoped out as a second, separate UI investment.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **Mail page's structured summary view uses the same summary endpoint for every open** - there's
+  no separate lightweight "just show me the raw text" fast path; opening an email always triggers
+  (or reuses the cache for) a summary. Matches "prioritize summarized info by default" from the
+  request, but means even a quick glance pays the summary-generation cost once.
+- **Cross-service orchestration (Gmail → Calendar → Meet in one request) relies on the existing
+  general-purpose tool loop, not new dedicated plumbing** - it wasn't separately built because the
+  richer search + calendar tools from this phase already make it work through the same mechanism
+  Phase 2f proved out. Not exhaustively tested against a real "email mentions an event, check my
+  calendar" scenario end-to-end.
+- **Week/Day calendar views are list-based, not a time grid** - deliberate scope trim, see above.
+- **No Month-view click-through in a real browser yet** - verified at the API/service level only.
+
+**Exit criteria:** natural search works without learning filter names; opening an email shows a
+structured summary, not a wall of text; the same email never gets re-summarized; loading states
+reflect real backend steps; Calendar has a real Month view. **All confirmed working against real
+data - Month view and the full click-through UX not yet exercised in a live browser.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

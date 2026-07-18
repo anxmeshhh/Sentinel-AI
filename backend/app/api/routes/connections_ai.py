@@ -5,14 +5,16 @@ purpose rather than generic, so adding another provider later is a new
 router, not a branch inside this one.
 """
 
+import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_workspace_id
 from app.schemas.orchestrator import CommandRequest, CommandResponse, ExecuteActionRequest, ExecuteActionResponse
-from app.services.orchestrator import execute_planned_action, run_command
+from app.services.orchestrator import execute_planned_action, run_command, run_command_stream
 
 router = APIRouter(prefix="/connections/google", tags=["connections-ai"])
 
@@ -25,6 +27,28 @@ def google_command(
 ) -> CommandResponse:
     result = run_command(session, workspace_id, payload.command)
     return CommandResponse(status=result.status, reply=result.reply, plan=result.plan, pending_action=result.pending_action)
+
+
+@router.post("/command/stream")
+def google_command_stream(
+    payload: CommandRequest,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+) -> StreamingResponse:
+    """Same loop as /command, but streams each real step as it happens (SSE
+    framing) instead of returning only the final answer - what the AI
+    Command UI shows as loading text is genuinely what's occurring server
+    side at that moment, not a simulated sequence. POST (not GET, despite
+    SSE convention) because EventSource can't carry the Authorization header
+    this app's auth requires - the frontend reads this with fetch() +
+    a stream reader instead of the EventSource API.
+    """
+
+    def event_source():
+        for event in run_command_stream(session, workspace_id, payload.command):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(event_source(), media_type="text/event-stream")
 
 
 @router.post("/command/execute", response_model=ExecuteActionResponse)

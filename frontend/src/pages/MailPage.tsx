@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
-import type { Connection, MailAskResult, MailBody, MailItem } from "../api/types";
+import type { Connection, MailAskResult, MailItem, MailSummary } from "../api/types";
 
 type Tab = { key: string; label: string; filter: string; category?: string };
 
@@ -32,7 +32,8 @@ export function MailPage() {
   const [askMessage, setAskMessage] = useState<string | null>(null);
   const [expandedThread, setExpandedThread] = useState<string | null>(null);
   const [expandedMessageId, setExpandedMessageId] = useState<string | null>(null);
-  const [bodies, setBodies] = useState<Record<string, MailBody | "loading" | "error">>({});
+  const [summaries, setSummaries] = useState<Record<string, MailSummary | "loading" | "error">>({});
+  const [expandedOriginal, setExpandedOriginal] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     api.get<Connection[]>("/connections").then((conns) => {
@@ -104,14 +105,14 @@ export function MailPage() {
     }
   }
 
-  async function fetchBody(item: MailItem) {
-    if (bodies[item.id]) return;
-    setBodies((b) => ({ ...b, [item.id]: "loading" }));
+  async function fetchSummary(item: MailItem) {
+    if (summaries[item.id]) return;
+    setSummaries((b) => ({ ...b, [item.id]: "loading" }));
     try {
-      const body = await api.get<MailBody>(`/mail/${item.id}/body`);
-      setBodies((b) => ({ ...b, [item.id]: body }));
+      const summary = await api.get<MailSummary>(`/mail/${item.id}/summary`);
+      setSummaries((b) => ({ ...b, [item.id]: summary }));
     } catch {
-      setBodies((b) => ({ ...b, [item.id]: "error" }));
+      setSummaries((b) => ({ ...b, [item.id]: "error" }));
     }
   }
 
@@ -121,11 +122,11 @@ export function MailPage() {
       return;
     }
     setExpandedThread(group.key);
-    // A single-message "thread" behaves like before: one click shows its body.
+    // A single-message "thread" behaves like before: one click opens its summary.
     // A real multi-message thread expands to a message list first.
     if (group.messages.length === 1) {
       setExpandedMessageId(group.messages[0].id);
-      void fetchBody(group.messages[0]);
+      void fetchSummary(group.messages[0]);
     }
   }
 
@@ -135,15 +136,67 @@ export function MailPage() {
       return;
     }
     setExpandedMessageId(item.id);
-    void fetchBody(item);
+    void fetchSummary(item);
   }
 
-  function renderBody(id: string) {
-    const state = bodies[id];
-    if (state === "loading") return <p className="p-3.5 text-[12.5px] text-ink-dim">Fetching live content&hellip;</p>;
-    if (state === "error") return <p className="p-3.5 text-[12.5px] text-crit">Couldn't fetch this email's content.</p>;
+  function renderSummary(id: string) {
+    const state = summaries[id];
+    if (state === "loading") {
+      return <p className="p-3.5 text-[12.5px] text-ink-dim">Fetching &amp; summarizing&hellip;</p>;
+    }
+    if (state === "error") {
+      return <p className="p-3.5 text-[12.5px] text-crit">Couldn't load this email.</p>;
+    }
     if (!state) return null;
-    return <p className="whitespace-pre-wrap p-3.5 text-[12.5px] leading-relaxed text-ink-dim">{state.body_text ?? "(no readable body)"}</p>;
+
+    const showOriginal = Boolean(expandedOriginal[id]);
+    return (
+      <div className="p-3.5">
+        <div className="mb-3 border-b border-border pb-3">
+          <div className="text-[13.5px] font-semibold text-ink">{state.subject}</div>
+          <div className="mt-1 text-[11.5px] text-ink-faint">
+            <span className="text-ink-dim">From:</span> {state.sender}
+          </div>
+        </div>
+
+        <div className="mb-1 font-mono text-[10.5px] font-bold uppercase tracking-wide text-accent-text">AI Summary</div>
+        <p className="mb-3 text-[12.5px] leading-relaxed text-ink-dim">{state.summary}</p>
+
+        {state.key_points.length > 0 && (
+          <>
+            <div className="mb-1 font-mono text-[10.5px] font-bold uppercase tracking-wide text-ink-dim">Key Points</div>
+            <ul className="mb-3 list-disc space-y-1 pl-4 text-[12.5px] leading-relaxed text-ink-dim">
+              {state.key_points.map((p, i) => (
+                <li key={i}>{p}</li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {state.action_items.length > 0 && (
+          <>
+            <div className="mb-1 font-mono text-[10.5px] font-bold uppercase tracking-wide text-watch">Action Items</div>
+            <ul className="mb-3 list-disc space-y-1 pl-4 text-[12.5px] leading-relaxed text-ink">
+              {state.action_items.map((a, i) => (
+                <li key={i}>{a}</li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        <button
+          onClick={() => setExpandedOriginal((o) => ({ ...o, [id]: !o[id] }))}
+          className="mb-2 font-mono text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink"
+        >
+          {showOriginal ? "Hide original email" : "Show original email"}
+        </button>
+        {showOriginal && (
+          <p className="whitespace-pre-wrap rounded-md border border-border bg-ground/50 p-3 text-[12px] leading-relaxed text-ink-dim">
+            {state.body_text ?? "(no readable body)"}
+          </p>
+        )}
+      </div>
+    );
   }
 
   if (connected === false) {
@@ -161,7 +214,8 @@ export function MailPage() {
     <div className="max-w-3xl">
       <h1 className="mb-1 text-xl font-semibold text-balance">Mail</h1>
       <p className="mb-6 text-[13px] text-ink-dim">
-        Subject, sender, and labels only — full content is fetched live when you open an email, never stored.
+        Subject, sender, and labels only for browsing — opening an email fetches its content live and
+        summarizes it (cached after the first time), never stored as raw text.
       </p>
 
       <div className="mb-5 flex gap-2">
@@ -251,7 +305,7 @@ export function MailPage() {
                 {expandedThread === group.key && (
                   <div className="border-t border-border bg-ground/50">
                     {group.messages.length === 1
-                      ? renderBody(latest.id)
+                      ? renderSummary(latest.id)
                       : group.messages.map((m) => (
                           <div key={m.id} className="border-b border-border/60 last:border-b-0">
                             <button
@@ -265,7 +319,7 @@ export function MailPage() {
                                 {new Date(m.occurred_at).toLocaleString()}
                               </span>
                             </button>
-                            {expandedMessageId === m.id && renderBody(m.id)}
+                            {expandedMessageId === m.id && renderSummary(m.id)}
                           </div>
                         ))}
                   </div>

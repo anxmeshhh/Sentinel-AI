@@ -24,6 +24,16 @@ class MailBodyOut(BaseModel):
     fetched_live: bool = True
 
 
+class MailSummaryOut(BaseModel):
+    subject: str
+    sender: str
+    summary: str
+    key_points: list[str]
+    action_items: list[str]
+    body_text: str | None
+    cached: bool
+
+
 class MailAskRequest(BaseModel):
     question: str
 

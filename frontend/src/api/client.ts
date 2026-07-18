@@ -38,9 +38,45 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function postStream(path: string, body: unknown, onEvent: (data: unknown) => void): Promise<void> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (activeWorkspaceId) headers["X-Workspace-Id"] = activeWorkspaceId;
+  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+
+  const res = await fetch(`${BASE_URL}${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+  if (!res.ok || !res.body) {
+    const errBody = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new ApiError(res.status, errBody.detail ?? `Request failed: ${res.status}`);
+  }
+
+  // EventSource can't carry the Authorization header this app's auth needs,
+  // so this reads the same SSE framing (`data: {...}\n\n`) by hand off a
+  // plain fetch() stream instead - see connections_ai.py's stream endpoint.
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      const line = frame.trim();
+      if (!line.startsWith("data:")) continue;
+      try {
+        onEvent(JSON.parse(line.slice(5).trim()));
+      } catch {
+        // malformed chunk - skip rather than crash the stream
+      }
+    }
+  }
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  postStream,
   delete: (path: string) => request<void>(path, { method: "DELETE" }),
 };

@@ -2,6 +2,7 @@ from app.models.agent_run import AgentRun
 from app.models.base import Base
 from app.models.brief import Brief
 from app.models.connection import Connection
+from app.models.email_summary import EmailSummary
 from app.models.finding import Finding
 from app.models.invite import WorkspaceInvite
 from app.models.otp_code import OtpCode
@@ -24,4 +25,5 @@ __all__ = [
     "AgentRun",
     "Finding",
     "Brief",
+    "EmailSummary",
 ]

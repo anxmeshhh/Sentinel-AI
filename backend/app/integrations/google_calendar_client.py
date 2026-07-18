@@ -2,8 +2,14 @@
 meeting link. Calendar events don't have a "body" the way emails/PRs do, so
 there's no separate stripping step here - the event resource itself is
 already just metadata.
+
+create_event() is the one write operation in this codebase - everything
+else, in every client, is read-only. It exists only for the AI Command
+orchestrator (services/orchestrator.py), and the orchestrator never calls it
+without the user confirming a shown plan first - see that module's docstring.
 """
 
+import uuid
 from datetime import datetime, timezone
 
 import httpx
@@ -60,6 +66,51 @@ class GoogleCalendarClient:
                 break
 
         return events
+
+    def create_event(
+        self,
+        *,
+        title: str,
+        start: datetime,
+        end: datetime,
+        attendee_emails: list[str] | None = None,
+        create_meet_link: bool = False,
+    ) -> dict:
+        """The one write call in this codebase - see module docstring."""
+        body: dict = {
+            "summary": title,
+            "start": {"dateTime": start.astimezone(timezone.utc).isoformat()},
+            "end": {"dateTime": end.astimezone(timezone.utc).isoformat()},
+        }
+        if attendee_emails:
+            body["attendees"] = [{"email": e} for e in attendee_emails]
+
+        params = {}
+        if create_meet_link:
+            body["conferenceData"] = {
+                "createRequest": {
+                    "requestId": str(uuid.uuid4()),
+                    "conferenceSolutionKey": {"type": "hangoutsMeet"},
+                }
+            }
+            params["conferenceDataVersion"] = 1
+
+        resp = self._client.post("/calendars/primary/events", params=params, json=body)
+        if resp.status_code >= 400:
+            logger.warning("google_calendar_create_event_failed", status=resp.status_code, body=resp.text[:500])
+            resp.raise_for_status()
+
+        event = resp.json()
+        meet_link = event.get("hangoutLink") or _extract_conference_link(event)
+        return {
+            "id": event["id"],
+            "title": event.get("summary", title),
+            "start": event.get("start", {}).get("dateTime"),
+            "end": event.get("end", {}).get("dateTime"),
+            "attendee_emails": attendee_emails or [],
+            "meet_link": meet_link,
+            "url": event.get("htmlLink"),
+        }
 
 
 def _normalize_event(event: dict) -> dict | None:

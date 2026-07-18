@@ -714,6 +714,78 @@ info. **Confirmed via direct API testing against a real multi-workspace account.
 
 ---
 
+### Phase 2f — AI Command: real tool-calling orchestration for the Google Connection Workspace ✅ Built, read-path tested end-to-end; write-path confirm-block verified, execution not yet run
+
+**Objective:** every prior agent in this codebase follows one rule - "detection is deterministic
+Python, the LLM only narrates a candidate that already exists." That rule is why findings are
+trustworthy, but it also means nothing in Sentinel could actually *do* multi-step work across
+services on request. This phase adds the one deliberate exception: a real tool-calling agent loop
+that reads across Gmail + Calendar together, and - the first write capability anywhere in the
+codebase - can create a calendar event, gated behind an explicit user confirmation step.
+
+**Explicitly scoped to Google only for this pass** (per the user's own call when this was proposed):
+the orchestration loop's mechanics aren't Google-specific (generic tool registry, generic
+read/write split), but only Google tools are registered. GitHub/Slack/Zoom/Microsoft get the same
+pattern when those providers themselves get built - not scaffolded empty ahead of time.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2f.1 | Verified Groq's `openai/gpt-oss-120b` supports real OpenAI-style tool calling | ✅ |
+| 2f.2 | Calendar OAuth scope widened `calendar.readonly` → `calendar.events` (read+write on events only) | ✅ |
+| 2f.3 | `GoogleCalendarClient.create_event()` - the first write call in the codebase | ✅ |
+| 2f.4 | `services/orchestrator.py` - bounded tool-calling loop, read/write safety split | ✅ |
+| 2f.5 | `POST /connections/google/command` + `/command/execute` | ✅ |
+| 2f.6 | AI Command chat UI inside the Google Connection Workspace, plan/confirm/execute UI | ✅ |
+
+### What actually got built (technical notes)
+
+- **The safety model is the actual point of this feature, not a bolt-on**: read tools
+  (`search_emails`, `read_email_body`, `list_calendar_events`) execute automatically inside the
+  loop - they can't change anything. The moment the model calls the one write tool
+  (`create_calendar_event`), the loop stops immediately and returns a plan instead of a result;
+  nothing is touched until a *separate* confirmed request re-enters through
+  `execute_planned_action()`, which re-derives the connection from `workspace_id` itself rather
+  than trusting anything about the pending action's origin - a tampered confirm request still
+  can't act outside the caller's own workspace.
+- **Verified both halves for real, not just by reading the code**: a read-only multi-step command
+  ("what are my top 3 most important unread emails, summarize them") produced a real two-tool chain
+  - `search_emails` then `read_email_body` on a specific message - and a grounded summary quoting
+  real content (a real coupon code, real instructions) from that email, not an invented one. A
+  write command ("schedule a meeting tomorrow at 3pm... with a Meet link") correctly stopped at a
+  plan (`{action: "Create Calendar Event", title: "Sprint Sync", start: ..., create_meet_link:
+  true}`) and produced **no** calendar side effect, confirmed by never having called the execute
+  step - the block works by construction, not by assumption.
+- **New OAuth scope needs a real reconnect**: existing Google connections were authorized under the
+  old `calendar.readonly` scope and can't create events with their current token.
+  `google_data`'s scope is now `calendar.events` (covers both read and write on events, without the
+  broader `calendar` scope's access to calendar settings/sharing) - taking effect requires clicking
+  "Reconnect Google" once, which the existing `prompt=consent` flow already forces a real re-consent
+  screen for.
+- **`LLMClient` gained one new method**, `complete_with_tools()`, alongside the existing
+  `complete_json`/`complete_text` - kept in the same single choke-point file per the project's
+  standing rule that swapping LLM providers should stay a one-file change.
+- **The one write path was deliberately never executed against the real account during this build**
+  - the confirm-required block was verified by never calling the execute step, not by actually
+  creating and then deleting a test event. Actually creating an event (even a harmless test one)
+  needs the user to trigger it themselves through Reconnect Google + the real UI.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **Write execution not yet run against the real account** - needs the user to reconnect Google
+  (new scope) and click "Confirm & Execute" themselves in a real browser.
+- **Only one write tool exists** (`create_calendar_event`). No email-sending, no event
+  editing/deletion, no Meet-only actions independent of Calendar.
+- **No cross-provider orchestration yet** - GitHub, Slack, Zoom, Microsoft all still have zero AI
+  Command capability, by design for this pass (see Objective above).
+- **`MAX_STEPS = 5`** is an arbitrary bound, not tuned against real usage patterns yet.
+
+**Exit criteria:** a natural-language command spanning Gmail + Calendar without the user picking
+which service to use. **Read path confirmed end-to-end against real data; write path confirmed to
+correctly refuse to execute without confirmation - actual execution needs the user's own
+reconnect + click-through.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

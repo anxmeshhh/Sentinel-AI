@@ -11,6 +11,7 @@ from app.api.routes import (
     briefs,
     calendar,
     connections,
+    connections_ai,
     findings,
     integrations,
     invites,
@@ -64,6 +65,7 @@ app.include_router(integrations.router)
 app.include_router(assistant.router)
 app.include_router(mail.router)
 app.include_router(calendar.router)
+app.include_router(connections_ai.router)
 
 
 @app.get("/health")

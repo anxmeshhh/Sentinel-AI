@@ -70,3 +70,20 @@ class LLMClient:
             temperature=temperature,
         )
         return response.choices[0].message.content or ""
+
+    def complete_with_tools(self, *, system: str, messages: list[dict], tools: list[dict]):
+        """Tool-calling completion - used only by services/orchestrator.py's
+        AI Command loop, the one place in the codebase where the model
+        decides what to do next rather than narrating something already
+        computed. Returns the raw message object (.content / .tool_calls)
+        rather than parsed text or JSON, since the caller needs to inspect
+        tool_calls itself to drive the next loop iteration.
+        """
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "system", "content": system}, *messages],
+            tools=tools,
+            tool_choice="auto",
+            temperature=0.2,
+        )
+        return response.choices[0].message

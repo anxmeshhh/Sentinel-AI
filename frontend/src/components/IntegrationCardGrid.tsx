@@ -1,8 +1,10 @@
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { Connection } from "../api/types";
+import { GoogleAICommand } from "./GoogleAICommand";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -156,6 +158,7 @@ function GoogleDetail({
         desc="Subject, participants, timestamps — never message bodies"
         connected={Boolean(gmail)}
         detail={gmail?.org}
+        href={gmail ? "/mail" : undefined}
         onDisconnect={gmail ? () => handleDisconnect(gmail.id) : undefined}
       />
       <ServiceRow
@@ -163,6 +166,7 @@ function GoogleDetail({
         desc="Meetings, attendees, duration"
         connected={Boolean(googleCalendar)}
         detail={googleCalendar?.org}
+        href={googleCalendar ? "/calendar" : undefined}
         onDisconnect={googleCalendar ? () => handleDisconnect(googleCalendar.id) : undefined}
       />
       <ServiceRow name="Google Meet" desc="Rides on Calendar — no separate connection needed" connected={connectedCount > 0} disabled />
@@ -180,6 +184,7 @@ function GoogleDetail({
           </button>
         )}
       </div>
+      {connectedCount > 0 && <GoogleAICommand />}
     </>
   );
 }
@@ -271,6 +276,7 @@ function ServiceRow({
   detail,
   disabled,
   mono,
+  href,
   onDisconnect,
 }: {
   name: string;
@@ -279,13 +285,20 @@ function ServiceRow({
   detail?: string;
   disabled?: boolean;
   mono?: boolean;
+  href?: string;
   onDisconnect?: () => void;
 }) {
   return (
     <div className="flex items-center gap-3 border-b border-border p-3.5 last:border-b-0">
       <div className="min-w-0 flex-1">
         <div className={`${mono ? "font-mono" : ""} text-[12.5px] font-semibold ${disabled ? "text-ink-faint" : "text-ink"}`}>
-          {name}
+          {href ? (
+            <Link to={href} className="hover:underline hover:underline-offset-2">
+              {name}
+            </Link>
+          ) : (
+            name
+          )}
         </div>
         <div className="mt-0.5 truncate text-[11px] text-ink-faint">{connected && detail ? detail : desc}</div>
       </div>
@@ -296,6 +309,11 @@ function ServiceRow({
       >
         {connected ? "Connected" : "Not connected"}
       </span>
+      {href && (
+        <Link to={href} className="flex-none font-mono text-[11px] text-ink-dim underline underline-offset-2 hover:text-ink">
+          Open
+        </Link>
+      )}
       {onDisconnect && (
         <button onClick={onDisconnect} className="flex-none font-mono text-[11px] text-crit underline underline-offset-2">
           Disconnect

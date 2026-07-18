@@ -31,13 +31,21 @@ if GOOGLE_CONFIGURED:
     # at the authorize_redirect() call site in routes/integrations.py, not
     # here - verified directly that client_kwargs doesn't reliably propagate
     # access_type through to the real redirect URL.
+    #
+    # calendar.events (not the broader "calendar" scope) - read+write on
+    # events specifically (what the AI Command orchestrator needs to create
+    # events/Meet links), without granting calendar *settings* access.
+    # Existing connections were authorized under the old read-only
+    # calendar.readonly scope; they need to go through "Reconnect Google"
+    # once for this to take effect - prompt=consent already forces a real
+    # re-consent screen showing the new scope, no separate migration needed.
     oauth.register(
         name="google_data",
         client_id=_settings.google_client_id,
         client_secret=_settings.google_client_secret,
         server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
         client_kwargs={
-            "scope": "openid email https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly",
+            "scope": "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly",
         },
     )
 

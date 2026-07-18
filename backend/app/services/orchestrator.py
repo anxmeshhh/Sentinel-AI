@@ -40,6 +40,7 @@ from app.models.connection import Provider
 from app.repositories.connections import ConnectionRepository
 from app.services.calendar_query import find_free_slots, list_calendar, list_calendar_range
 from app.services.drive_query import build_drive_query
+from app.services.ingestion import ingest_connection
 from app.services.mail_query import build_gmail_query
 
 logger = structlog.get_logger("sentinel.orchestrator")
@@ -334,6 +335,12 @@ def execute_planned_action(session: Session, workspace_id: uuid.UUID, name: str,
             attendee_emails=arguments.get("attendee_emails") or [],
             create_meet_link=bool(arguments.get("create_meet_link")),
         )
+
+    # Without this, the new event wouldn't show up in Month/Week/Day/Agenda
+    # until the next scheduled poll (default every 6h) - same real gap as
+    # the manual create endpoint, fixed the same way.
+    ingest_connection(session, connection)
+
     logger.info("orchestrator_action_executed", action=name, workspace_id=str(workspace_id))
     return result
 

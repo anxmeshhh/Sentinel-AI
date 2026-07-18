@@ -12,6 +12,7 @@ from app.models.signal import Signal
 from app.repositories.connections import ConnectionRepository
 from app.schemas.calendar import CalendarEventOut, CreateEventOut, CreateEventRequest
 from app.services.calendar_query import CALENDAR_RANGES, list_calendar, list_calendar_month, list_calendar_range
+from app.services.ingestion import ingest_connection
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 
@@ -80,6 +81,13 @@ def create_event(
             attendee_emails=payload.attendee_emails,
             create_meet_link=payload.create_meet_link,
         )
+
+    # Without this, the new event wouldn't appear in Month/Week/Day/Agenda
+    # until the next scheduled poll (default every 6h, see
+    # ingestion_poll_interval_seconds) - confirmed as a real gap: a user
+    # created an event and couldn't see it anywhere in the app afterward.
+    ingest_connection(session, connection)
+
     return CreateEventOut(**result)
 
 

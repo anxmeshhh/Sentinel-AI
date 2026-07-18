@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { api, ApiError } from "../api/client";
+import { Markdown } from "./Markdown";
 
 type TurnStatus = "done" | "confirmation_required" | "executing" | "executed" | "error" | "cancelled";
 
@@ -78,7 +79,11 @@ export function GoogleAICommand() {
             <div key={i} className="rounded-md border border-border bg-ground/40 p-3">
               <div className="mb-1.5 text-[12px] font-semibold text-ink">{turn.command}</div>
 
-              {turn.status === "done" && <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-ink-dim">{turn.reply}</p>}
+              {turn.status === "done" && turn.reply && (
+                <div className="text-[12px] leading-relaxed text-ink-dim">
+                  <Markdown text={turn.reply} />
+                </div>
+              )}
               {turn.status === "error" && <p className="text-[12px] text-crit">{turn.reply ?? "Something went wrong."}</p>}
               {turn.status === "cancelled" && <p className="text-[12px] text-ink-faint">Cancelled — nothing was changed.</p>}
 

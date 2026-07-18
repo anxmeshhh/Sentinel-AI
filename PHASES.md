@@ -768,6 +768,15 @@ pattern when those providers themselves get built - not scaffolded empty ahead o
   - the confirm-required block was verified by never calling the execute step, not by actually
   creating and then deleting a test event. Actually creating an event (even a harmless test one)
   needs the user to trigger it themselves through Reconnect Google + the real UI.
+- **Two follow-up fixes, both caught from real usage screenshots, not review**: (1) the connection
+  detail panel was an inline expansion below the dashboard's card grid, not its own page - moved to
+  a dedicated `/connections/:provider` route (`ConnectionWorkspacePage`) so Google/GitHub/Zoom/Slack/
+  Notion each get a real page with its own service-card grid, matching the same `ServiceCard` visual
+  used on the dashboard (extracted into a shared component so both levels stay visually identical).
+  (2) the model's replies defaulted to markdown pipe tables, which are unreadable in a narrow chat
+  column - fixed two ways: the system prompt now explicitly asks for numbered/bulleted lists instead
+  of tables, and a small dependency-free `Markdown` component renders bold/lists/paragraphs properly
+  instead of dumping raw markdown syntax as plain text.
 
 ### Known gaps (deliberately deferred, not oversights)
 

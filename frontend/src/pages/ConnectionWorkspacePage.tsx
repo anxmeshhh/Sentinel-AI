@@ -1,0 +1,256 @@
+import type { FormEvent, ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+
+import { api } from "../api/client";
+import type { Connection } from "../api/types";
+import { GoogleAICommand } from "../components/GoogleAICommand";
+import { CalendarIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
+import { ServiceCard } from "../components/ServiceCard";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
+const PROVIDER_META: Record<string, { label: string; icon: ReactNode }> = {
+  google: { label: "Google", icon: <GoogleIcon /> },
+  github: { label: "GitHub", icon: <GitHubIcon /> },
+  zoom: { label: "Zoom", icon: <ZoomIcon /> },
+  slack: { label: "Slack", icon: <SlackIcon /> },
+  notion: { label: "Notion", icon: <NotionIcon /> },
+};
+
+export function ConnectionWorkspacePage() {
+  const { provider = "" } = useParams<{ provider: string }>();
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  function load() {
+    setLoading(true);
+    api
+      .get<Connection[]>("/connections")
+      .then(setConnections)
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(load, []);
+
+  const meta = PROVIDER_META[provider];
+
+  return (
+    <div className="max-w-3xl">
+      <Link to="/" className="mb-4 inline-block font-mono text-[12px] text-ink-faint underline underline-offset-2 hover:text-ink">
+        &larr; Dashboard
+      </Link>
+
+      {!meta ? (
+        <div className="rounded-md border border-dashed border-border p-8 text-center text-[13px] text-ink-faint">
+          Unknown connection.
+        </div>
+      ) : (
+        <>
+          <div className="mb-6 flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-surface-2">{meta.icon}</div>
+            <h1 className="text-xl font-semibold text-balance">{meta.label}</h1>
+          </div>
+
+          {loading ? (
+            <div className="text-ink-dim">Loading&hellip;</div>
+          ) : provider === "google" ? (
+            <GoogleWorkspace connections={connections} onChanged={load} />
+          ) : provider === "github" ? (
+            <GitHubWorkspace connections={connections} onChanged={load} />
+          ) : (
+            <ComingSoonWorkspace label={meta.label} />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]; onChanged: () => void }) {
+  const [connecting, setConnecting] = useState(false);
+  const gmail = connections.find((c) => c.provider === "gmail");
+  const googleCalendar = connections.find((c) => c.provider === "google_calendar");
+  const connectedCount = [gmail, googleCalendar].filter(Boolean).length;
+
+  async function handleConnect() {
+    setConnecting(true);
+    try {
+      const { ticket } = await api.post<{ ticket: string }>("/integrations/google/connect-ticket");
+      window.location.href = `${API_BASE}/integrations/google/connect?ticket=${encodeURIComponent(ticket)}`;
+    } catch {
+      setConnecting(false);
+    }
+  }
+
+  async function handleDisconnect(id: string) {
+    await api.delete(`/connections/${id}`);
+    onChanged();
+  }
+
+  async function handleDisconnectAll() {
+    const ids = [gmail?.id, googleCalendar?.id].filter((id): id is string => Boolean(id));
+    await Promise.all(ids.map((id) => api.delete(`/connections/${id}`)));
+    onChanged();
+  }
+
+  return (
+    <div>
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <ServiceCard
+          icon={<MailIcon />}
+          name="Gmail"
+          status={gmail ? "Connected" : "Not connected"}
+          desc={gmail?.org ?? "Subject, participants, timestamps — never message bodies"}
+          connected={Boolean(gmail)}
+          to={gmail ? "/mail" : undefined}
+          disabled={!gmail}
+        />
+        <ServiceCard
+          icon={<CalendarIcon />}
+          name="Google Calendar"
+          status={googleCalendar ? "Connected" : "Not connected"}
+          desc={googleCalendar?.org ?? "Meetings, attendees, duration"}
+          connected={Boolean(googleCalendar)}
+          to={googleCalendar ? "/calendar" : undefined}
+          disabled={!googleCalendar}
+        />
+        <ServiceCard
+          icon={<MeetIcon />}
+          name="Google Meet"
+          status={connectedCount > 0 ? "Available" : "Not connected"}
+          desc="Rides on Calendar — no separate connection needed"
+          connected={connectedCount > 0}
+          to={googleCalendar ? "/calendar" : undefined}
+          disabled={!googleCalendar}
+        />
+      </div>
+
+      <div className="mb-6 flex items-center gap-3">
+        <button
+          onClick={handleConnect}
+          disabled={connecting}
+          className="rounded-md bg-accent px-3.5 py-1.5 font-mono text-[11.5px] font-bold text-ground disabled:opacity-50"
+        >
+          {connecting ? "Redirecting…" : connectedCount > 0 ? "Reconnect Google" : "Connect Google"}
+        </button>
+        {gmail && (
+          <button onClick={() => handleDisconnect(gmail.id)} className="font-mono text-[11.5px] text-ink-faint underline underline-offset-2 hover:text-crit">
+            Disconnect Gmail
+          </button>
+        )}
+        {googleCalendar && (
+          <button onClick={() => handleDisconnect(googleCalendar.id)} className="font-mono text-[11.5px] text-ink-faint underline underline-offset-2 hover:text-crit">
+            Disconnect Calendar
+          </button>
+        )}
+        {connectedCount > 0 && (
+          <button onClick={handleDisconnectAll} className="font-mono text-[11.5px] text-crit underline underline-offset-2">
+            Disconnect all
+          </button>
+        )}
+      </div>
+
+      {connectedCount > 0 && (
+        <div className="rounded-md border border-border bg-surface">
+          <GoogleAICommand />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]; onChanged: () => void }) {
+  const repos = connections.filter((c) => c.provider === "github");
+  const [org, setOrg] = useState("");
+  const [repo, setRepo] = useState("");
+  const [token, setToken] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleConnect(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.post("/connections", { org, repo, github_token: token });
+      setOrg("");
+      setRepo("");
+      setToken("");
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to connect repository");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDisconnect(id: string) {
+    await api.delete(`/connections/${id}`);
+    onChanged();
+  }
+
+  return (
+    <div>
+      {repos.length > 0 && (
+        <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {repos.map((c) => (
+            <ServiceCard
+              key={c.id}
+              icon={<GitHubIcon />}
+              name={`${c.org}/${c.repo}`}
+              status="Connected"
+              desc={c.last_synced_at ? `synced ${new Date(c.last_synced_at).toLocaleString()}` : "not yet synced"}
+              connected
+              onRemove={() => handleDisconnect(c.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={handleConnect} className="rounded-md border border-border bg-surface p-4">
+        <div className="mb-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <input
+            required
+            placeholder="org (e.g. northwind)"
+            value={org}
+            onChange={(e) => setOrg(e.target.value)}
+            className="rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+          />
+          <input
+            required
+            placeholder="repo (e.g. checkout-service)"
+            value={repo}
+            onChange={(e) => setRepo(e.target.value)}
+            className="rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+          />
+        </div>
+        <input
+          required
+          type="password"
+          placeholder="GitHub personal access token"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+        />
+        {error && <p className="mb-2 text-[12.5px] text-crit">{error}</p>}
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-md bg-accent px-4 py-2 font-mono text-[12.5px] font-bold text-ground disabled:opacity-50"
+        >
+          {submitting ? "Connecting…" : "Connect repository"}
+        </button>
+        <p className="mt-2 text-[11.5px] text-ink-dim">🔒 PR, commit, issue, and review metadata only — never source code.</p>
+      </form>
+    </div>
+  );
+}
+
+function ComingSoonWorkspace({ label }: { label: string }) {
+  return (
+    <div className="rounded-md border border-dashed border-border p-8 text-center text-[13px] text-ink-faint">
+      {label} isn't available yet — check back soon.
+    </div>
+  );
+}

@@ -54,7 +54,12 @@ never invent an email, event, person, or detail that a tool didn't return. If th
 requires creating or changing something (like scheduling a meeting), call create_calendar_event \
 as soon as you have enough information - it will not actually run until the user confirms it \
 themselves, so you don't need to ask permission first, just propose the concrete action. Keep \
-your final answer concise and grounded only in what the tools returned."""
+your final answer concise and grounded only in what the tools returned.
+
+Formatting: you're writing for a narrow chat panel, not a document. Never use markdown tables \
+(pipe characters) - they don't fit and render unreadably. For a list of emails or events, use a \
+short numbered or bulleted list instead, one item per line, with just the essentials (sender or \
+title, and the one detail that matters most) - not a dump of every field a tool returned."""
 
 
 @dataclass

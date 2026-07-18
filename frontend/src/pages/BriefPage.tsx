@@ -84,7 +84,7 @@ export function BriefPage() {
       <ChannelCards onSelectWorkspace={setActiveId} />
 
       <div className="mb-2.5 font-mono text-[13px] font-bold uppercase tracking-wide text-ink-dim">My Connections</div>
-      <IntegrationCardGrid connections={connections} onChanged={load} />
+      <IntegrationCardGrid connections={connections} />
 
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>

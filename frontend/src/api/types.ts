@@ -84,6 +84,7 @@ export interface Team {
   slug: string;
   member_count: number;
   is_member: boolean;
+  my_channel_role: "channel_admin" | "channel_member" | null;
 }
 
 export interface MyTeam {
@@ -93,7 +94,15 @@ export interface MyTeam {
   name: string;
   slug: string;
   member_count: number;
-  role: string;
+  role: string; // workspace-level role
+  channel_role: "channel_admin" | "channel_member";
+}
+
+export interface TeamMember {
+  user_id: string;
+  name: string;
+  email: string;
+  channel_role: "channel_admin" | "channel_member";
 }
 
 export interface Invite {

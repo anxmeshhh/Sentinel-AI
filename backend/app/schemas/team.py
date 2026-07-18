@@ -14,6 +14,7 @@ class TeamOut(BaseModel):
     slug: str
     member_count: int
     is_member: bool
+    my_channel_role: str | None = None  # None if not a member; else "channel_admin"/"channel_member"
 
     model_config = {"from_attributes": True}
 
@@ -30,4 +31,16 @@ class MyTeamOut(BaseModel):
     name: str
     slug: str
     member_count: int
-    role: str
+    role: str  # the caller's Workspace-level role
+    channel_role: str  # the caller's Team-level role (channel_admin/channel_member)
+
+
+class TeamMemberOut(BaseModel):
+    user_id: uuid.UUID
+    name: str
+    email: str
+    channel_role: str
+
+
+class TeamMemberRoleUpdate(BaseModel):
+    channel_role: str

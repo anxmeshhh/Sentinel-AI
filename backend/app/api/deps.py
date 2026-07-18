@@ -1,5 +1,5 @@
 import uuid
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 
 from fastapi import Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 from app.core.auth import InvalidTokenError, decode_access_token
 from app.core.bootstrap import provision_personal_workspace_for_user
 from app.db.session import SessionLocal
+from app.models.team import ChannelRole, Team, TeamMembership
 from app.models.user import User
-from app.models.workspace import Membership
+from app.models.workspace import Membership, Role
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -53,6 +54,42 @@ def require_workspace_membership(session: Session, user: User, workspace_id: uui
     if membership is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
     return membership
+
+
+def require_workspace_role(session: Session, user: User, workspace_id: uuid.UUID, allowed: Iterable[Role]) -> Membership:
+    """Like require_workspace_membership, but also enforces the caller's
+    Workspace-level Role is one of `allowed` - 403 (not 404, membership
+    already proved the workspace exists and is theirs) if not.
+    """
+    membership = require_workspace_membership(session, user, workspace_id)
+    if membership.role not in allowed:
+        raise HTTPException(status_code=403, detail="You don't have permission to do this")
+    return membership
+
+
+def require_channel_role(session: Session, user: User, team_id: uuid.UUID, allowed: Iterable[ChannelRole]) -> TeamMembership:
+    """Channel-scoped authorization (Phase 3a). A Workspace-level
+    super_admin/org_admin can always manage any Channel in their Workspace
+    (Group Owner/Admin per the spec has full control) even without an
+    explicit TeamMembership row for that channel; otherwise the caller's own
+    ChannelRole on this specific team must be one of `allowed`.
+    """
+    team = session.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    workspace_membership = require_workspace_membership(session, user, team.workspace_id)
+    if workspace_membership.role in (Role.SUPER_ADMIN, Role.ORG_ADMIN):
+        return workspace_membership  # type: ignore[return-value]
+
+    channel_membership = session.execute(
+        select(TeamMembership).where(TeamMembership.team_id == team_id, TeamMembership.user_id == user.id)
+    ).scalar_one_or_none()
+    if channel_membership is None:
+        raise HTTPException(status_code=404, detail="Team not found")
+    if channel_membership.role not in allowed:
+        raise HTTPException(status_code=403, detail="You don't have permission to do this")
+    return channel_membership
 
 
 def get_workspace_id(

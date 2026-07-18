@@ -1168,6 +1168,92 @@ confirmed against real data - full browser click-through still pending.**
 
 ---
 
+### Phase 2k — Channel Roles + RBAC Enforcement ✅ Built and tested (backend/API-verified; no new UI surface yet)
+
+**Objective:** the first slice of the user's "Discord-Inspired Groups & Channels" spec. That spec's
+Group/Channel hierarchy turned out to already be built and shipped (Phase 2a's `Workspace`=Group,
+`Team`=Channel) - what's genuinely new is real role enforcement, which is also literally what this
+whole Phase (Phase 2, title: "Workspace CRUD, Teams, Projects, RBAC Enforcement") always promised
+and Phase 2b left scoped-but-unbuilt. Everything else in the new spec (per-channel Connections,
+resource-level permissions, Channel AI, admin UI) is sequenced as 2l/2m/2n, confirmed with the user
+up front as a phased build rather than one large unverified pass.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2k.1 | `ChannelRole` (channel_admin/channel_member) added to `TeamMembership`, `created_by_user_id` added to `Team` | ✅ |
+| 2k.2 | Migration grandfathers every *existing* TeamMembership row to `channel_admin` - a data migration, not just a column default, so nobody loses access they already had | ✅ |
+| 2k.3 | `require_workspace_role` / `require_channel_role` dependencies - real backend enforcement of the existing 5-role enum, which previously existed but was checked nowhere | ✅ |
+| 2k.4 | Channel member management: list members + roles, promote/demote, remove - gated to Channel Admin (or a Workspace org_admin/super_admin, who can always manage any Channel) | ✅ |
+| 2k.5 | Closed a real, previously-live privilege-escalation gap in invite creation | ✅ |
+
+### What actually got built (technical notes)
+
+- **A real security bug found while building this, not before**: `create_workspace_invite` and
+  `create_team_invite` only ever checked that the caller was *some* member of the workspace
+  (`require_workspace_membership`, existence only) - nothing stopped a plain `employee` or even a
+  `guest` from minting an invite with `role: "org_admin"` or `"super_admin"` and handing it to
+  anyone. Fixed by comparing the requested role's rank against the caller's own
+  (`ROLE_RANK`, declaration order on the `Role` enum) and rejecting anything more privileged than
+  the caller already holds - invite creation itself stays open to any member (preserves Phase 2a's
+  tested Discord-style flow), only the *ceiling* on what role it can grant is now enforced.
+- **Channel roles are independent of Workspace roles, on purpose.** A person can be Channel Admin
+  of `#development` while a plain member of `#marketing` in the same Workspace - `TeamMembership`
+  now carries its own `ChannelRole`, separate from `Membership.role`. A Workspace `org_admin`/
+  `super_admin` can still always manage any Channel (Group Owner/Admin per the spec has full
+  control) via `require_channel_role`'s bypass path, without needing an explicit `TeamMembership`
+  row of their own.
+- **The grandfather-clause migration matters more than it looks.** Every `TeamMembership` row that
+  existed before this migration ran predates the concept of Channel roles entirely - under the old
+  model every member could already do anything in their channel (no role existed to restrict
+  them). Simply adding the column with a `channel_member` default would have silently *revoked*
+  access nobody asked to have taken away. The migration's `UPDATE team_memberships SET role =
+  'CHANNEL_ADMIN'` runs once, immediately after adding the column, and only touches rows that exist
+  at that exact moment - anything created after (via join/invite/accept) already correctly defaults
+  to `channel_member` in application code.
+- **A real modeling bug caught before it shipped**: SQLAlchemy's `Enum` type stores a Python enum
+  member's *name* in the DB column (`'CHANNEL_MEMBER'`), not its `.value`
+  (`'channel_member'`) - confirmed by checking how the existing `membership_role`/`workspace_kind`
+  columns were actually migrated. The first draft of this migration used `.value` as the column
+  `server_default`, which would have been silently wrong (a value MySQL's ENUM type wouldn't even
+  recognize) - caught by checking the established convention before applying it, not after.
+- **Last-admin protection**: leaving, demoting, or removing the sole remaining Channel Admin of a
+  channel that still has other members is rejected (`_reject_if_last_admin`) - a channel with
+  members but no one able to manage its Connections/resources/roles going forward would be a real
+  dead end. Leaving/removal is still allowed if it's the *last* member entirely - the channel just
+  goes quiet, not un-manageable.
+- **Verified against real data, not just the new unit test suite** (`tests/test_rbac.py`, 8 tests
+  covering both the role-check dependencies and the invite escalation guard against a throwaway
+  in-memory DB): also ran the migration against the actual connected account's real MySQL database
+  and confirmed via live FastAPI `TestClient` calls (with a real JWT, real `Team`/`TeamMembership`
+  rows) that `/teams/{id}/members`, `/teams/mine`, and `/workspaces/{id}/teams` all correctly
+  serialize the new `channel_role`/`my_channel_role` fields, and that every pre-existing membership
+  came back as `channel_admin` as intended - read-only checks only, to avoid mutating the real
+  account's actual role assignments as a side effect of testing.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **No new frontend UI surface yet** - `channel_role`/`my_channel_role` fields are wired into the
+  TypeScript types and API responses, but there's no visible "Promote to Admin" button or role
+  badge anywhere yet. That's Phase 2n's job (dedicated admin management UI); building it before
+  2l/2m (per-channel Connections, Channel AI) would mean designing it twice.
+- **Workspace-level Owner vs. Admin is not split** - the spec's RBAC section describes a distinct
+  "Group Owner" (full control) vs. "Group Admin" (channels/members/connections) tier; today's
+  5-role enum only has a single `org_admin` top tier for a Workspace. Not introduced here to avoid
+  a bigger, separately-risky schema change without a concrete need for it yet - noted for
+  reconsideration once 2l/2n reveal whether the distinction is actually load-bearing.
+- **`create_team`/`join_team`/`leave_team` still don't require any particular Workspace role** -
+  any workspace member can still create or join a channel freely. This is Phase 2a's deliberate,
+  already-tested open/Discord-style design, not something this phase changed; only the genuinely
+  new admin-type actions (member role management, and anything 2l/2n add) are role-gated from the
+  start.
+
+**Exit criteria:** a Channel has its own Admin/Member distinction, independent of Workspace role; a
+Guest can no longer mint an org_admin invite; every pre-existing member keeps the access they had
+before this shipped. **Confirmed against real data at the API level - no browser click-through yet
+since there's no new UI surface in this slice.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

@@ -2,16 +2,26 @@
 workspace kind of its own - this is what replaces v1's WorkspaceKind.TEAM.
 
 Open-join by default: any Workspace member can join any Team in that
-workspace without an invite (TeamMembership has no role of its own - access
-level still comes from the Workspace-level Membership.role).
+workspace without an invite. TeamMembership now carries its own ChannelRole
+(Phase 3a) - access to channel-scoped admin actions (assigning Connections,
+managing resource permissions, promoting/removing members) is governed by
+this, independently of the caller's Workspace-level Membership.role, since a
+person can be a Channel Admin of #development while just a plain member of
+#marketing in the same Workspace.
 """
 
+import enum
 import uuid
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint, Uuid
+from sqlalchemy import Enum, ForeignKey, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPk
+
+
+class ChannelRole(str, enum.Enum):
+    CHANNEL_ADMIN = "channel_admin"
+    CHANNEL_MEMBER = "channel_member"
 
 
 class Team(Base, UUIDPk, TimestampMixin):
@@ -21,6 +31,7 @@ class Team(Base, UUIDPk, TimestampMixin):
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
 
 class TeamMembership(Base, UUIDPk, TimestampMixin):
@@ -29,3 +40,10 @@ class TeamMembership(Base, UUIDPk, TimestampMixin):
 
     team_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("teams.id"), nullable=False, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    role: Mapped[ChannelRole] = mapped_column(
+        # server_default must be the enum member's *name* ('CHANNEL_MEMBER'),
+        # not its .value ('channel_member') - SQLAlchemy's Enum type stores
+        # member names in the DB column by default, matching this
+        # codebase's existing membership_role/workspace_kind columns.
+        Enum(ChannelRole, name="channel_role"), nullable=False, default=ChannelRole.CHANNEL_MEMBER, server_default=ChannelRole.CHANNEL_MEMBER.name
+    )

@@ -8,18 +8,28 @@ from app.api.deps import get_current_user, get_db, require_workspace_membership
 from app.models.invite import WorkspaceInvite
 from app.models.team import Team
 from app.models.user import User
-from app.models.workspace import Role, Workspace
+from app.models.workspace import Membership, Role, ROLE_RANK, Workspace
 from app.schemas.invite import InviteAcceptResult, InviteCreate, InviteOut, InvitePreview
 from app.services.invites import accept_invite, get_invite_by_token, validate_invite
 
 router = APIRouter(tags=["invites"])
 
 
-def _create_invite(session: Session, *, workspace_id: uuid.UUID, team_id: uuid.UUID | None, payload: InviteCreate, user: User) -> WorkspaceInvite:
+def _create_invite(
+    session: Session, *, workspace_id: uuid.UUID, team_id: uuid.UUID | None, payload: InviteCreate, user: User, caller_membership: Membership
+) -> WorkspaceInvite:
     try:
         role = Role(payload.role)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid role: {payload.role}")
+
+    # Confirmed real, previously-unenforced privilege escalation: nothing
+    # stopped a plain Employee (or Guest) from minting an invite granting
+    # org_admin/super_admin to whoever used the link. Anyone can still hand
+    # out an invite (preserves the open, Discord-style flow), but never for
+    # a role more privileged than their own.
+    if ROLE_RANK[role] < ROLE_RANK[caller_membership.role]:
+        raise HTTPException(status_code=403, detail=f"You can't create an invite for a role more privileged than your own ({caller_membership.role.value})")
 
     expires_at = (
         datetime.now(timezone.utc) + timedelta(hours=payload.expires_in_hours) if payload.expires_in_hours else None
@@ -45,8 +55,8 @@ def create_workspace_invite(
     session: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> WorkspaceInvite:
-    require_workspace_membership(session, user, workspace_id)
-    return _create_invite(session, workspace_id=workspace_id, team_id=None, payload=payload, user=user)
+    membership = require_workspace_membership(session, user, workspace_id)
+    return _create_invite(session, workspace_id=workspace_id, team_id=None, payload=payload, user=user, caller_membership=membership)
 
 
 @router.post("/teams/{team_id}/invites", response_model=InviteOut, status_code=201)
@@ -59,8 +69,8 @@ def create_team_invite(
     team = session.get(Team, team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")
-    require_workspace_membership(session, user, team.workspace_id)
-    return _create_invite(session, workspace_id=team.workspace_id, team_id=team_id, payload=payload, user=user)
+    membership = require_workspace_membership(session, user, team.workspace_id)
+    return _create_invite(session, workspace_id=team.workspace_id, team_id=team_id, payload=payload, user=user, caller_membership=membership)
 
 
 @router.get("/invites/{token}", response_model=InvitePreview)

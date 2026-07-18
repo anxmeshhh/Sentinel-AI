@@ -30,6 +30,12 @@ class Role(str, enum.Enum):
     GUEST = "guest"
 
 
+# Declaration order above is rank order (most to least privileged) - used
+# wherever an action must check a role isn't more privileged than another
+# (e.g. an invite can't grant a role above the inviter's own, Phase 3a).
+ROLE_RANK = {role: i for i, role in enumerate(Role)}
+
+
 class Workspace(Base, UUIDPk, TimestampMixin):
     __tablename__ = "workspaces"
 

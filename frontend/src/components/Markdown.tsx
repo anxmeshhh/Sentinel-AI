@@ -103,18 +103,36 @@ function renderInline(text: string): ReactNode[] {
     }
     const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
     if (link) {
-      return (
-        <a
-          key={i}
-          href={link[2]}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-accent-text underline underline-offset-2 hover:opacity-80"
-        >
-          {link[1]}
-        </a>
-      );
+      const url = cleanLinkUrl(link[2]);
+      // Only ever a real external link, target="_blank": a malformed or
+      // relative-looking url (e.g. leftover <angle-bracket> wrapping from
+      // some markdown source) must never become an in-app navigation -
+      // confirmed on a real email where exactly that broke React Router.
+      if (url) {
+        return (
+          <a
+            key={i}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent-text underline underline-offset-2 hover:opacity-80"
+          >
+            {link[1]}
+          </a>
+        );
+      }
+      return link[1];
     }
     return part;
   });
+}
+
+function cleanLinkUrl(raw: string): string | null {
+  let url = raw.trim();
+  // Some markdown sources wrap the url as <url> or <url> "title" - strip
+  // both rather than trust the raw content of a link target.
+  const angled = /^<([^>]+)>/.exec(url);
+  url = angled ? angled[1] : url.replace(/\s+"[^"]*"$/, "");
+  url = url.trim();
+  return /^https?:\/\//i.test(url) ? url : null;
 }

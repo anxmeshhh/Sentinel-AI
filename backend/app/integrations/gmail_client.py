@@ -219,7 +219,13 @@ def _html_to_markdown(raw_html: str) -> str:
     converter.body_width = 0  # don't hard-wrap - let the UI's own text wrapping handle it
     converter.unicode_snob = True  # decode entities to real characters, not ascii approximations
     converter.inline_links = True
-    converter.protect_links = True
+    # protect_links wraps urls as [text](<url> "title") to survive line-
+    # wrapping - since body_width=0 disables wrapping entirely, that
+    # protection is dead weight and its <angle-bracket> + "title" syntax
+    # isn't what the frontend's Markdown renderer expects for a link's url,
+    # which broke real links (confirmed on a real email: a Pinterest link
+    # rendered as an in-app route instead of opening externally).
+    converter.protect_links = False
     text = converter.handle(cleaned)
 
     # Collapse html2text's occasional runs of 3+ blank lines from empty

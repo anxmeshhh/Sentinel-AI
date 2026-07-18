@@ -1,8 +1,13 @@
 """LangGraph StateGraph: specialist agents fan into the Executive Agent.
 
-Phase 1 has exactly one specialist node (engineering -> executive), but the
-graph is built as an N-node fan-out/fan-in shape from day one (ARCHITECTURE.md
-§5) - Phase 2/3 add a new node + one new edge into `executive`, not a rewrite.
+Phase 1 shipped with one specialist node (engineering -> executive); the
+Google module adds a second (communication -> executive), the first real use
+of the N-node fan-out/fan-in shape the graph was built for from day one
+(ARCHITECTURE.md §5). Each node only produces findings for the signal types
+it understands - a Gmail connection's signals produce zero Engineering
+candidates and a GitHub connection's signals produce zero Communication
+candidates, so both nodes run unconditionally without needing to know which
+connection triggered the run.
 
 One agent node failing does not take down the run: its error is recorded in
 `node_errors` and the graph continues with whatever findings the other nodes
@@ -14,6 +19,8 @@ from typing import TypedDict
 import structlog
 from langgraph.graph import END, StateGraph
 
+from app.agents.base import SpecialistAgent
+from app.agents.communication_agent import CommunicationAgent
 from app.agents.engineering_agent import EngineeringAgent
 from app.agents.executive_agent import ExecutiveAgent
 from app.models.finding import Finding
@@ -31,7 +38,7 @@ class SentinelState(TypedDict, total=False):
     top_finding_ids: list[str]
 
 
-def _engineering_node_factory(agent: EngineeringAgent):
+def _specialist_node_factory(agent: SpecialistAgent):
     def node(state: SentinelState) -> SentinelState:
         try:
             findings = agent.analyze(state.get("signals", []))
@@ -60,14 +67,25 @@ def _executive_node_factory(agent: ExecutiveAgent):
     return node
 
 
-def build_graph(engineering_agent: EngineeringAgent | None = None, executive_agent: ExecutiveAgent | None = None):
+def build_graph(
+    engineering_agent: EngineeringAgent | None = None,
+    communication_agent: CommunicationAgent | None = None,
+    executive_agent: ExecutiveAgent | None = None,
+):
     engineering_agent = engineering_agent or EngineeringAgent()
+    communication_agent = communication_agent or CommunicationAgent()
     executive_agent = executive_agent or ExecutiveAgent()
 
+    # Chained rather than concurrently fanned-out: both specialists append to
+    # the same `findings` list in one execution thread, which sidesteps
+    # LangGraph's parallel-branch state-merge reducers entirely - simplest
+    # correct way to get the fan-in shape without a new class of merge bugs.
     graph = StateGraph(SentinelState)
-    graph.add_node("engineering", _engineering_node_factory(engineering_agent))
+    graph.add_node("engineering", _specialist_node_factory(engineering_agent))
+    graph.add_node("communication", _specialist_node_factory(communication_agent))
     graph.add_node("executive", _executive_node_factory(executive_agent))
     graph.set_entry_point("engineering")
-    graph.add_edge("engineering", "executive")
+    graph.add_edge("engineering", "communication")
+    graph.add_edge("communication", "executive")
     graph.add_edge("executive", END)
     return graph.compile()

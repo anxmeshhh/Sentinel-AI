@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
 import type { Brief, Connection } from "../api/types";
+import { ConnectedSourcesStrip } from "../components/ConnectedSourcesStrip";
 import { FindingCard } from "../components/FindingCard";
 
 export function BriefPage() {
@@ -49,22 +50,29 @@ export function BriefPage() {
 
   if (connections.length === 0) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border p-10 text-center text-ink-dim">
-        <p className="mb-3 text-[14px]">No repository connected yet.</p>
-        <Link to="/settings" className="font-mono text-[13px] font-semibold text-accent-text hover:underline">
-          Connect a repository &rarr;
-        </Link>
+      <div>
+        <ConnectedSourcesStrip connections={connections} />
+        <div className="max-w-lg rounded-md border border-dashed border-border p-10 text-center text-ink-dim">
+          <p className="mb-3 text-[14px]">Nothing connected yet.</p>
+          <Link to="/settings" className="font-mono text-[13px] font-semibold text-accent-text hover:underline">
+            Connect a source &rarr;
+          </Link>
+        </div>
       </div>
     );
   }
 
+  const githubConnection = connections.find((c) => c.provider === "github");
+
   return (
     <div>
+      <ConnectedSourcesStrip connections={connections} />
+
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="mb-1 text-xl font-semibold text-balance">Today's Brief</h1>
           <p className="font-mono text-[13px] text-ink-dim">
-            {connections[0].org}/{connections[0].repo}
+            {githubConnection ? `${githubConnection.org}/${githubConnection.repo}` : connections[0].org}
             {brief && ` · generated ${new Date(brief.generated_at).toLocaleString()}`}
           </p>
         </div>

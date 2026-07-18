@@ -108,6 +108,44 @@ export interface InvitePreview {
   reason_invalid: string | null;
 }
 
+export interface MailItem {
+  id: string;
+  subject: string;
+  sender: string;
+  to: string | null;
+  occurred_at: string;
+  is_starred: boolean;
+  is_important: boolean;
+  is_unread: boolean;
+  is_spam: boolean;
+}
+
+export interface MailBody {
+  subject: string;
+  sender: string;
+  body_text: string | null;
+  fetched_live: boolean;
+}
+
+export interface MailAskResult {
+  matched_filter: string | null;
+  matched_category: string | null;
+  items: MailItem[];
+  message: string | null;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string | null;
+  end: string | null;
+  occurred_at: string;
+  attendee_count: number;
+  organizer: string | null;
+  has_meeting_link: boolean;
+  url: string | null;
+}
+
 export type Severity = "crit" | "warn" | "watch";
 
 export function severityBand(severity: number): Severity {

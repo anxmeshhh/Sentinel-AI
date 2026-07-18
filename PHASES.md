@@ -564,6 +564,96 @@ GitHub) can connect at least one of these and get a finding that's actually abou
 
 ---
 
+### Phase 2d — The Google Module: Mail & Calendar, Structured and Smart ✅ Built and tested end-to-end
+
+**Objective:** Phase 2c got Gmail/Calendar ingesting; nothing surfaced it. This phase turns that
+into an actually usable module — browsable, askable, and risk-aware — without turning into "10
+different mixed items." Three deliberate constraints kept it tight:
+
+1. **One data source of truth** — the existing `Signal` table. No new tables; Gmail's
+   `payload.label_ids` (already captured since Phase 2c) is all that's needed to drive every
+   grouping (starred/important/spam/category).
+2. **One interaction model** — a small fixed set of structured filters (recent/starred/
+   important/unread/spam/category/top), each a plain SQL query. The ask-bar is a rule-based
+   phrase-matcher onto those same filters, not an LLM call — predictable, free, and fast.
+3. **Security posture preserved, deliberately extended in one bounded way** — email bodies are
+   never stored. When full content is actually needed (viewing an email, or a targeted Assistant
+   question), it's fetched live from Gmail for that one message, used once, and discarded — a real
+   DB compromise still can't leak the mailbox, which was the point of the original metadata-only
+   rule.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2d.1 | Gmail spam/trash visibility fix (`includeSpamTrash=true` — was silently excluded) | ✅ |
+| 2d.2 | Live, never-persisted body fetch (`GmailClient.fetch_message_body`) | ✅ |
+| 2d.3 | Structured mail/calendar query service (`mail_query.py`, `calendar_query.py`) | ✅ |
+| 2d.4 | `GET /mail`, `GET /mail/{id}/body`, `POST /mail/ask`, `GET /calendar` | ✅ |
+| 2d.5 | Communication Agent — deterministic detection over email/calendar metadata | ✅ |
+| 2d.6 | Assistant chat extended with mail/calendar context + on-demand body | ✅ |
+| 2d.7 | Mail + Calendar pages, connected-sources status strip on the dashboard | ✅ |
+
+### What actually got built (technical notes)
+
+- **A real, previously-invisible bug found while scoping this**: Gmail's `messages.list` excludes
+  `SPAM`/`TRASH` by default — every sync since Phase 2c had silently never seen spam mail at all.
+  Fixed with `includeSpamTrash=true`; re-ingested and confirmed 3 previously-invisible spam messages
+  became visible and filterable.
+- **The live-fetch boundary is enforced at exactly three call sites, nowhere else**: the
+  `/mail/{id}/body` endpoint (user opens an email), the Communication Agent's... actually *not* the
+  agent — see below — and the Assistant's `_maybe_live_email_body` (a targeted content question).
+  `GmailClient.fetch_message_body` parses the MIME tree for `text/plain` (falling back to
+  HTML-stripped `text/html`, entities unescaped), caps output at `MAX_BODY_CHARS`, and is never
+  called from anything that writes to the database.
+- **The Communication Agent deliberately does NOT use live body fetch** — kept to the same
+  deterministic-detection-from-stored-metadata discipline as the Engineering Agent (labels, subject
+  lines, timestamps only). This was a scope trim to avoid changing `SpecialistAgent.analyze()`'s
+  signature (session/token access) across every agent for one agent's benefit. Its three detectors,
+  all real and tested against the live account: `stale_flagged_mail` (important/starred + unread,
+  aging), `spam_surge` (recent vs. baseline spam rate), `calendar_overload` (daily meeting-hour
+  totals + back-to-back count). First real run produced a genuine finding: *"86 important emails are
+  over 20 days old, indicating a growing backlog of unattended messages"* (severity 0.70, confidence
+  0.90) — deterministic candidate detection, LLM only narrated it.
+- **Graph wiring: chained, not concurrently fanned-out.** `engineering -> communication ->
+  executive` rather than a true parallel fan-out — sidesteps LangGraph's parallel-branch state-merge
+  reducers entirely (a real class of bug) for a shape that's already effectively fan-in (multiple
+  specialists, one synthesizer) without the concurrency risk. Each node only produces candidates for
+  the signal types it understands, so it's a no-op (not an error) on a connection it doesn't apply
+  to — confirmed both directions already worked before this phase (Engineering on a Gmail
+  connection, now also Communication on a GitHub connection).
+- **MySQL `JSON_CONTAINS` powers every label filter** — `payload.label_ids` is a JSON array;
+  `SignalRepository._has_label()` wraps `func.json_contains(Signal.payload, json.dumps(label),
+  "$.label_ids") == 1`. No schema change, no new columns.
+- **The Assistant's targeted-content path is a bounded heuristic, not NLU**: a question only
+  triggers a live body fetch if it (a) contains a content-intent word ("say", "about", "summarize",
+  etc.) AND (b) keyword-overlap-matches a specific email's subject/sender with `find_best_matching_email`.
+  Verified both branches: "what is the recent mail" answers from the structured summary alone; "what
+  did the stipend email say" correctly matched and live-fetched that one email's real body.
+- **Top 10 defined concretely**, not left ambiguous: important/starred first, topped up with plain
+  recency if fewer than 10 flagged — implemented in `mail_query._list_top`.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **Confused naming, worth flagging for future-me**: `PHASES.md`'s own Phase 3 plan (3.2) already
+  named a future "Communication Agent" for Slack gaps/unanswered questions. This phase's
+  Communication Agent covers Gmail/Calendar instead, arrived earlier than planned, and is scoped
+  differently (personal inbox/calendar risk, not team communication gaps). When Phase 3 happens,
+  decide whether Slack detection extends this same agent or gets its own — don't silently conflate
+  them.
+- **Not yet click-tested in a real browser** — every layer (services, route handlers, full HTTP
+  round-trip with real auth) was verified directly against the live `guptaanimesh020@gmail.com`
+  account; the actual Mail/Calendar pages haven't been clicked through in a browser yet.
+- **No caching on live body fetches** — opening the same email twice in a session re-fetches from
+  Gmail both times. Deliberate for now (simplicity over a cache-invalidation problem for a feature
+  this new), worth revisiting if it feels slow in practice.
+- **GitHub OAuth connect flow** (browse + pick private repos, discussed alongside this phase) —
+  explicitly parked by request, not started.
+
+**Exit criteria:** ask "what's in starred" and get a real answer; open an email and see its real
+content; get a real risk finding from actual mailbox/calendar data. **All three confirmed working
+against the live account.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

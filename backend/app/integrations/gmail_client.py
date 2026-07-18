@@ -1,11 +1,18 @@
-"""Gmail client - metadata only: subject, participants, timestamp, thread.
+"""Gmail client - metadata only at ingestion time: subject, participants,
+timestamp, thread, labels. Body content is never stored - see
+fetch_message_body() below, which is the one deliberate, bounded exception:
+a live, on-demand, never-persisted fetch used only when a user explicitly
+asks for a specific email's content (Mail page click, or a targeted
+Assistant question). Nothing that goes through fetch_message_body ever
+touches the database.
 
 Hard constraint (same discipline as the GitHub client's diff-stripping):
 Gmail's API returns a `snippet` field (a body preview) even in metadata
 mode. We explicitly discard it in _normalize_message and never store or
-forward it - the message body, in any form, never reaches this app.
+forward it - the message body, in any form, never reaches storage.
 """
 
+import base64
 import time
 from datetime import datetime, timezone
 
@@ -17,6 +24,7 @@ logger = structlog.get_logger("sentinel.gmail")
 API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 MAX_MESSAGES_PER_SYNC = 500  # safety cap - a large mailbox shouldn't turn one sync into thousands of requests
 METADATA_HEADERS = ["Subject", "From", "To", "Date"]
+MAX_BODY_CHARS = 20_000  # a live-fetched body is bounded before it ever reaches an LLM prompt
 
 
 class GmailClient:
@@ -45,13 +53,20 @@ class GmailClient:
                 messages.append(metadata)
         return messages
 
+    def fetch_message_body(self, message_id: str) -> str | None:
+        """Live, on-demand, never-persisted body fetch - see module docstring."""
+        resp = self._get_with_retry(f"/messages/{message_id}", {"format": "full"})
+        return _extract_body(resp.json())
+
     def _list_message_ids(self, since: datetime) -> list[str]:
         ids: list[str] = []
         page_token: str | None = None
         query = f"after:{int(since.timestamp())}"
 
         while len(ids) < MAX_MESSAGES_PER_SYNC:
-            params = {"q": query, "maxResults": 100}
+            # includeSpamTrash - without it Gmail's default list excludes SPAM
+            # and TRASH entirely, so spam mail was silently never even seen.
+            params = {"q": query, "maxResults": 100, "includeSpamTrash": "true"}
             if page_token:
                 params["pageToken"] = page_token
 
@@ -113,3 +128,45 @@ def _parse_date_header(value: str) -> datetime:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     except (TypeError, ValueError):
         return datetime.now(timezone.utc)
+
+
+def _extract_body(data: dict) -> str | None:
+    """Walk a full-format message's MIME tree for a readable body.
+    Prefers text/plain; falls back to text/html with tags stripped.
+    Truncated to MAX_BODY_CHARS before it ever leaves this function.
+    """
+    payload = data.get("payload") or {}
+    plain = _find_part(payload, "text/plain")
+    if plain is not None:
+        return plain[:MAX_BODY_CHARS]
+    html = _find_part(payload, "text/html")
+    if html is not None:
+        return _strip_html(html)[:MAX_BODY_CHARS]
+    return None
+
+
+def _find_part(part: dict, mime_type: str) -> str | None:
+    if part.get("mimeType") == mime_type:
+        data = (part.get("body") or {}).get("data")
+        if data:
+            return _decode_base64url(data)
+    for sub_part in part.get("parts", []) or []:
+        found = _find_part(sub_part, mime_type)
+        if found is not None:
+            return found
+    return None
+
+
+def _decode_base64url(data: str) -> str:
+    padded = data + "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(padded).decode("utf-8", errors="replace")
+
+
+def _strip_html(raw_html: str) -> str:
+    import html
+    import re
+
+    text = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", raw_html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()

@@ -6,10 +6,12 @@ import { useAuth } from "./context/AuthContext";
 import { AdminPage } from "./pages/AdminPage";
 import { AssistantPage } from "./pages/AssistantPage";
 import { BriefPage } from "./pages/BriefPage";
+import { CalendarPage } from "./pages/CalendarPage";
 import { FindingDetailPage } from "./pages/FindingDetailPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { JoinInvitePage } from "./pages/JoinInvitePage";
 import { LoginPage } from "./pages/LoginPage";
+import { MailPage } from "./pages/MailPage";
 import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignupPage } from "./pages/SignupPage";
@@ -46,6 +48,8 @@ export function App() {
       <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
       <Route path="/admin" element={<RequireAuth><AdminPage /></RequireAuth>} />
       <Route path="/assistant" element={<RequireAuth><AssistantPage /></RequireAuth>} />
+      <Route path="/mail" element={<RequireAuth><MailPage /></RequireAuth>} />
+      <Route path="/calendar" element={<RequireAuth><CalendarPage /></RequireAuth>} />
     </Routes>
   );
 }

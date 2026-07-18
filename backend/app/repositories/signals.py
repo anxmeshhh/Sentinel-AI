@@ -1,6 +1,8 @@
+import json
 import uuid
 from datetime import datetime
 
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.mysql import insert
 
 from app.models.signal import Signal, SignalType
@@ -49,3 +51,53 @@ class SignalRepository(WorkspaceScopedRepository[Signal]):
             Signal.occurred_at >= since,
         )
         return list(self.session.execute(rows).scalars().all())
+
+    # ---- Gmail/Calendar structured browsing (Google module) ----
+    #
+    # Gmail label membership (STARRED, IMPORTANT, SPAM, UNREAD, CATEGORY_*)
+    # already lives in payload.label_ids for every ingested EMAIL signal -
+    # no schema change needed, just a MySQL JSON_CONTAINS check per label.
+
+    def _has_label(self, label: str):
+        return func.json_contains(Signal.payload, json.dumps(label), "$.label_ids") == 1
+
+    def list_mail(
+        self,
+        *,
+        labels_any: list[str] | None = None,
+        exclude_labels: list[str] | None = None,
+        limit: int = 30,
+    ) -> list[Signal]:
+        query = self._scoped().where(Signal.type == SignalType.EMAIL)
+        if labels_any:
+            query = query.where(or_(*[self._has_label(label) for label in labels_any]))
+        for label in exclude_labels or []:
+            query = query.where(~self._has_label(label))
+        query = query.order_by(Signal.occurred_at.desc()).limit(limit)
+        return list(self.session.execute(query).scalars().all())
+
+    def count_mail(self, *, labels_any: list[str] | None = None, exclude_labels: list[str] | None = None) -> int:
+        query = select(func.count()).select_from(Signal).where(
+            Signal.workspace_id == self.workspace_id, Signal.type == SignalType.EMAIL
+        )
+        if labels_any:
+            query = query.where(or_(*[self._has_label(label) for label in labels_any]))
+        for label in exclude_labels or []:
+            query = query.where(~self._has_label(label))
+        return self.session.execute(query).scalar_one()
+
+    def list_calendar(
+        self,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        ascending: bool = True,
+        limit: int = 30,
+    ) -> list[Signal]:
+        query = self._scoped().where(Signal.type == SignalType.CALENDAR_EVENT)
+        if since is not None:
+            query = query.where(Signal.occurred_at >= since)
+        if until is not None:
+            query = query.where(Signal.occurred_at <= until)
+        query = query.order_by(Signal.occurred_at.asc() if ascending else Signal.occurred_at.desc()).limit(limit)
+        return list(self.session.execute(query).scalars().all())

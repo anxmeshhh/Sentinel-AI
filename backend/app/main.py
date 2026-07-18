@@ -4,7 +4,21 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api.routes import admin, assistant, auth, briefs, connections, findings, integrations, invites, runs, teams, workspaces
+from app.api.routes import (
+    admin,
+    assistant,
+    auth,
+    briefs,
+    calendar,
+    connections,
+    findings,
+    integrations,
+    invites,
+    mail,
+    runs,
+    teams,
+    workspaces,
+)
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 
@@ -48,6 +62,8 @@ app.include_router(teams.router)
 app.include_router(invites.router)
 app.include_router(integrations.router)
 app.include_router(assistant.router)
+app.include_router(mail.router)
+app.include_router(calendar.router)
 
 
 @app.get("/health")

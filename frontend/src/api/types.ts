@@ -175,9 +175,21 @@ export interface CalendarEvent {
   end: string | null;
   occurred_at: string;
   attendee_count: number;
+  attendee_emails: string[];
   organizer: string | null;
   has_meeting_link: boolean;
+  meet_url: string | null;
+  status: string;
   url: string | null;
+}
+
+export type HolidayCategory = "national" | "regional" | "festival" | "observance";
+
+export interface Holiday {
+  title: string;
+  date: string;
+  category: HolidayCategory;
+  states: string[] | null;
 }
 
 export type Severity = "crit" | "warn" | "watch";

@@ -40,6 +40,7 @@ from app.models.connection import Provider
 from app.repositories.connections import ConnectionRepository
 from app.services.calendar_query import find_free_slots, list_calendar, list_calendar_range
 from app.services.drive_query import build_drive_query
+from app.services.holiday_query import list_indian_holidays
 from app.services.ingestion import ingest_connection
 from app.services.mail_query import build_gmail_query
 
@@ -58,14 +59,17 @@ tools only accept explicit dates, not relative phrases.
 
 You have tools to search Gmail directly (live, whole-mailbox search - not limited to a small \
 recent cache), read one specific email's full content, list calendar events, search Google Drive, \
-and create a new calendar event (optionally with a Google Meet link). Use tools to gather \
-whatever real information you actually need before answering - never invent an email, event, \
-file, person, or detail that a tool didn't return. For search_emails/search_drive, extract real \
-structured parameters from the request (keywords/topic, sender, a label or type filter, a date \
-range) rather than guessing - e.g. "any important emails from Unstop" means sender="unstop", \
-label_filter="important", not a bare keyword search for the word "important". A request spanning \
-services (e.g. "find the presentation for tomorrow's meeting" = search_drive + \
-list_calendar_events) should use both tools and combine the results in your answer.
+look up Indian public holidays/festivals, and create a new calendar event (optionally with a \
+Google Meet link). Use tools to gather whatever real information you actually need before \
+answering - never invent an email, event, file, holiday date, person, or detail that a tool \
+didn't return. For search_emails/search_drive, extract real structured parameters from the \
+request (keywords/topic, sender, a label or type filter, a date range) rather than guessing - e.g. \
+"any important emails from Unstop" means sender="unstop", label_filter="important", not a bare \
+keyword search for the word "important". A request spanning services (e.g. "find the presentation \
+for tomorrow's meeting" = search_drive + list_calendar_events) should use both tools and combine \
+the results in your answer. get_holidays returns real dates from Google's own Indian holiday \
+calendar - always call it rather than answering a holiday-date question from memory, since exact \
+dates (especially lunar-calendar festivals like Diwali/Eid/Holi) shift every year.
 
 Every email, event, and file a tool returns includes a real "url" field - Sentinel never opens or \
 renders these resources itself, it only links out to the real Gmail/Calendar/Drive page. Whenever \
@@ -198,6 +202,26 @@ def _tool_schemas() -> list[dict]:
         {
             "type": "function",
             "function": {
+                "name": "get_holidays",
+                "description": (
+                    "Real Indian public holidays/festivals for a date range, from Google's own Indian "
+                    "holiday calendar - always real dates for the actual year asked about, never guessed. "
+                    "Each result has a category: national, regional, festival, or observance."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "since": {"type": "string", "description": "ISO date YYYY-MM-DD"},
+                        "until": {"type": "string", "description": "ISO date YYYY-MM-DD"},
+                        "state": {"type": "string", "description": "Indian state name, to filter regional holidays to just that state. Omit for all."},
+                    },
+                    "required": ["since", "until"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "create_calendar_event",
                 "description": (
                     "Create a new calendar event, optionally with a Google Meet link. "
@@ -225,6 +249,7 @@ STATUS_MESSAGES = {
     "list_calendar_events": "Checking your calendar…",
     "find_free_slot": "Looking for a free slot…",
     "search_drive": "Searching your Drive…",
+    "get_holidays": "Checking Indian holidays…",
 }
 
 
@@ -433,6 +458,18 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
             duration_minutes=int(args.get("duration_minutes", 30)),
         )
         return {"free_slots": gaps} if gaps else {"free_slots": [], "note": "no gap of the requested length found in that window"}
+
+    if name == "get_holidays":
+        since_str, until_str = args.get("since"), args.get("until")
+        if not since_str or not until_str:
+            return {"error": "missing since/until"}
+        try:
+            since = datetime.fromisoformat(since_str)
+            until = datetime.fromisoformat(until_str)
+        except ValueError:
+            return {"error": "invalid since/until - use ISO dates"}
+        holidays = list_indian_holidays(session, workspace_id, since=since, until=until, state=args.get("state"))
+        return {"holidays": holidays} if holidays else {"holidays": [], "note": "no holidays found in that range"}
 
     return {"error": f"unknown tool {name}"}
 

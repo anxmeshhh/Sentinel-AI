@@ -11,7 +11,9 @@ from app.models.connection import Provider
 from app.models.signal import Signal
 from app.repositories.connections import ConnectionRepository
 from app.schemas.calendar import CalendarEventOut, CreateEventOut, CreateEventRequest
+from app.schemas.holiday import HolidayOut
 from app.services.calendar_query import CALENDAR_RANGES, list_calendar, list_calendar_month, list_calendar_range
+from app.services.holiday_query import list_indian_holidays
 from app.services.ingestion import ingest_connection
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
@@ -54,6 +56,30 @@ def get_calendar_month(
         raise HTTPException(status_code=400, detail="month must be 1-12")
     signals = list_calendar_month(session, workspace_id, year=year, month=month)
     return [_to_item(s) for s in signals]
+
+
+@router.get("/holidays", response_model=list[HolidayOut])
+def get_holidays(
+    year: int,
+    month: int | None = None,
+    state: str | None = None,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+) -> list[HolidayOut]:
+    """Live from Google's public Indian holiday calendar - see
+    services/holiday_query.py's docstring. month omitted = the whole year."""
+    if month is not None and not (1 <= month <= 12):
+        raise HTTPException(status_code=400, detail="month must be 1-12")
+
+    if month is not None:
+        since = datetime(year, month, 1)
+        until = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+    else:
+        since = datetime(year, 1, 1)
+        until = datetime(year + 1, 1, 1)
+
+    holidays = list_indian_holidays(session, workspace_id, since=since, until=until, state=state)
+    return [HolidayOut(**h) for h in holidays]
 
 
 @router.post("/events", response_model=CreateEventOut, status_code=201)
@@ -99,7 +125,10 @@ def _to_item(s: Signal) -> CalendarEventOut:
         end=s.payload.get("end"),
         occurred_at=s.occurred_at,
         attendee_count=s.payload.get("attendee_count", 0),
+        attendee_emails=s.payload.get("attendee_emails", []),
         organizer=s.payload.get("organizer"),
         has_meeting_link=s.payload.get("has_meeting_link", False),
+        meet_url=s.payload.get("meet_url"),
+        status=s.payload.get("status", "confirmed"),
         url=s.payload.get("url"),
     )

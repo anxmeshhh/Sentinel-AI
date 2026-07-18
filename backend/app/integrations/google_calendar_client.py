@@ -11,6 +11,7 @@ without the user confirming a shown plan first - see that module's docstring.
 
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 import httpx
 import structlog
@@ -37,7 +38,12 @@ class GoogleCalendarClient:
     def __exit__(self, *exc) -> None:
         self.close()
 
-    def fetch_events(self, since: datetime) -> list[dict]:
+    def fetch_events(self, since: datetime, *, until: datetime | None = None, calendar_id: str = "primary") -> list[dict]:
+        """calendar_id defaults to the user's own calendar, but any calendar
+        the token can read works - e.g. Google's public "Holidays in India"
+        calendar (see calendar.readonly's docstring in core/oauth.py for why
+        that needs a broader scope than the user's own events do).
+        """
         events: list[dict] = []
         page_token: str | None = None
         while True:
@@ -47,12 +53,18 @@ class GoogleCalendarClient:
                 "orderBy": "startTime",
                 "maxResults": 250,
             }
+            if until is not None:
+                params["timeMax"] = until.astimezone(timezone.utc).isoformat()
             if page_token:
                 params["pageToken"] = page_token
 
-            resp = self._client.get("/calendars/primary/events", params=params)
+            # Public calendar ids commonly contain '#' and '@' (e.g. Google's
+            # own "en.indian#holiday@group.v.calendar.google.com") - quoted
+            # with safe="" so '#' doesn't get parsed as a URL fragment
+            # delimiter, which silently truncated the request path here.
+            resp = self._client.get(f"/calendars/{quote(calendar_id, safe='')}/events", params=params)
             if resp.status_code != 200:
-                logger.warning("google_calendar_fetch_failed", status=resp.status_code)
+                logger.warning("google_calendar_fetch_failed", status=resp.status_code, calendar_id=calendar_id)
                 resp.raise_for_status()
 
             data = resp.json()
@@ -114,8 +126,12 @@ class GoogleCalendarClient:
 
 
 def _normalize_event(event: dict) -> dict | None:
+    # Cancelled events are still synced (with status carried through), not
+    # dropped - dropping them meant a cancellation on Google's side never
+    # reached our cache, so a stale "still happening" row would sit there
+    # forever. Only a genuinely unusable event (no start time at all) is skipped.
     start = event.get("start", {}).get("dateTime") or event.get("start", {}).get("date")
-    if not start or event.get("status") == "cancelled":
+    if not start:
         return None
 
     attendees = event.get("attendees", [])
@@ -133,6 +149,8 @@ def _normalize_event(event: dict) -> dict | None:
             "attendee_emails": [a.get("email") for a in attendees if a.get("email")],
             "organizer": (event.get("organizer") or {}).get("email"),
             "has_meeting_link": bool(meet_link),
+            "meet_url": meet_link,
+            "status": event.get("status", "confirmed"),
             "url": event.get("htmlLink"),
         },
     }

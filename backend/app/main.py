@@ -17,6 +17,7 @@ from app.api.routes import (
     integrations,
     invites,
     mail,
+    meet,
     runs,
     teams,
     workspaces,
@@ -68,6 +69,7 @@ app.include_router(mail.router)
 app.include_router(calendar.router)
 app.include_router(connections_ai.router)
 app.include_router(drive.router)
+app.include_router(meet.router)
 
 
 @app.get("/health")

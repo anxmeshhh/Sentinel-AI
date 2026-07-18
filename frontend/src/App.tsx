@@ -14,6 +14,7 @@ import { HistoryPage } from "./pages/HistoryPage";
 import { JoinInvitePage } from "./pages/JoinInvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { MailPage } from "./pages/MailPage";
+import { MeetPage } from "./pages/MeetPage";
 import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignupPage } from "./pages/SignupPage";
@@ -53,6 +54,7 @@ export function App() {
       <Route path="/mail" element={<RequireAuth><MailPage /></RequireAuth>} />
       <Route path="/calendar" element={<RequireAuth><CalendarPage /></RequireAuth>} />
       <Route path="/drive" element={<RequireAuth><DrivePage /></RequireAuth>} />
+      <Route path="/meet" element={<RequireAuth><MeetPage /></RequireAuth>} />
       <Route path="/connections/:provider" element={<RequireAuth><ConnectionWorkspacePage /></RequireAuth>} />
     </Routes>
   );

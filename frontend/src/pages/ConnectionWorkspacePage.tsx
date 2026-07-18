@@ -120,9 +120,9 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
           icon={<MeetIcon />}
           name="Google Meet"
           status={googleCalendar ? "Available" : "Not connected"}
-          desc="Rides on Calendar — no separate connection needed"
+          desc="Meeting history — rides on Calendar, no separate connection needed"
           connected={Boolean(googleCalendar)}
-          to={googleCalendar ? "/calendar" : undefined}
+          to={googleCalendar ? "/meet" : undefined}
           disabled={!googleCalendar}
         />
         <ServiceCard

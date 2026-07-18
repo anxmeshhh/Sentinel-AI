@@ -11,8 +11,11 @@ class CalendarEventOut(BaseModel):
     end: str | None
     occurred_at: datetime
     attendee_count: int
+    attendee_emails: list[str]
     organizer: str | None
     has_meeting_link: bool
+    meet_url: str | None
+    status: str
     url: str | None
 
 

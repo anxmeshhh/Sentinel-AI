@@ -43,6 +43,14 @@ if GOOGLE_CONFIGURED:
     # least-privilege posture as everything else. Also means another
     # "Reconnect Google" is needed for existing connections, same as the
     # calendar.events scope bump above.
+    #
+    # calendar.readonly, alongside calendar.events - confirmed directly that
+    # calendar.events alone 403s with "insufficient scope" when reading a
+    # calendar other than the user's own (e.g. Google's public "Holidays in
+    # India" calendar, id en.indian#holiday@group.v.calendar.google.com) -
+    # calendar.events is scoped to the user's own event operations, not
+    # arbitrary calendarId lookups. Both scopes together: full read of any
+    # calendar the token can see, plus write on the user's own events.
     oauth.register(
         name="google_data",
         client_id=_settings.google_client_id,
@@ -51,6 +59,7 @@ if GOOGLE_CONFIGURED:
         client_kwargs={
             "scope": (
                 "openid email "
+                "https://www.googleapis.com/auth/calendar.readonly "
                 "https://www.googleapis.com/auth/calendar.events "
                 "https://www.googleapis.com/auth/gmail.readonly "
                 "https://www.googleapis.com/auth/drive.readonly"

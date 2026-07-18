@@ -957,6 +957,101 @@ user's own reconnect/click-through.**
 
 ---
 
+### Bug fixes found via real usage, between phases
+
+Two real bugs surfaced by the user actually using the app (not review), fixed the same day:
+
+- **A link inside a real HTML email broke React Router navigation.** Root cause:
+  `html2text`'s `protect_links=True` wraps urls as `[text](<url> "title")` to survive line-
+  wrapping - dead weight since `body_width=0` already disables wrapping, and the Markdown
+  component's link regex didn't understand that syntax, so the whole `<url> "title"` blob became
+  a broken `href`. Fixed at the source (`protect_links=False`) and hardened the renderer as
+  defense in depth: link urls are now cleaned and validated as real `http(s)` URLs before ever
+  becoming clickable - anything else renders as plain text instead of a broken navigation.
+- **A newly-created calendar event didn't appear anywhere in the app.** Root cause: scheduled
+  ingestion only runs every `ingestion_poll_interval_seconds` (default 6h), so an event created via
+  the manual form or the AI Command's confirmed write sat on the real Google Calendar but never
+  reached the local Signal cache that Month/Week/Day/Agenda actually query - confirmed directly (2
+  real events on Google's calendar, 0 in the local cache). Both create paths now call
+  `ingest_connection()` immediately after creating an event.
+
+---
+
+### Phase 2i — Indian Calendar Intelligence, Meeting History ✅ Built and tested end-to-end
+
+**Objective:** make Calendar India-aware (holidays/festivals, correctly categorized, with regional
+filtering) and give the Meet Workspace a real Meeting History - both explicitly scoped to reuse
+what Google's APIs actually make available, not invent data that doesn't exist.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2i.1 | Calendar client: preserve real `meet_url` (was discarded), sync cancelled events (were dropped), support querying any `calendar_id` | ✅ |
+| 2i.2 | Indian holidays sourced live from Google's own public "Holidays in India" calendar - never hardcoded dates | ✅ |
+| 2i.3 | Keyword-based category classification (National/Regional/Festival/Observance) calibrated against real data | ✅ |
+| 2i.4 | `get_holidays` orchestrator tool for natural-language holiday questions | ✅ |
+| 2i.5 | Holidays shown in Month/Agenda views, visually distinct from personal events, with category + state filters | ✅ |
+| 2i.6 | Meet Workspace: dedicated Meeting History page (Upcoming/Past, search, both links external) | ✅ |
+
+### What actually got built (technical notes)
+
+- **Two real bugs found while building this, not before**: (1) reading Google's public holiday
+  calendar 403'd with "insufficient scope" - `calendar.events` (added in Phase 2f) only covers the
+  user's *own* event operations, not arbitrary `calendarId` lookups; needed `calendar.readonly`
+  added alongside it (another "Reconnect Google" needed). (2) even after that, the request still
+  403'd - the calendar id itself (`en.indian#holiday@group.v.calendar.google.com`) contains a `#`,
+  which was being parsed as a URL fragment delimiter and silently truncating the request path to
+  `/calendars/en.indian`. Fixed by `urllib.parse.quote()`-ing the calendar id before building the
+  request path. Confirmed working only after both fixes landed together.
+- **Dates are 100% dynamic, categories are a maintained keyword table - a deliberate, bounded
+  exception to "never hardcode dates".** Verified against a full real year of data (2026): Diwali
+  landed on the real 8 November 2026, Holi on the real 4 March - genuine lunar-calendar dates from
+  Google, not computed or guessed. Only the *label* ("this is a Festival", "this is Regional to
+  Kerala") comes from a static name-matching table, refined twice against real observed titles
+  (Ramzan Id/Bakrid/Vaisakhi weren't initially recognized as festival/regional names, since Indian
+  holiday calendars use colloquial names inconsistently) - genuinely different from hardcoding
+  *when* a holiday falls.
+- **Meeting History is honestly scoped to what's actually available.** Google's real Meet
+  attendance/conference-record API (actual join times, actual attendees) is a Workspace-admin-only
+  API - not available for a personal Google account, and this project has no Workspace admin
+  access regardless. Meeting History is built entirely from the same Calendar Signal data Calendar
+  itself already has: "duration" is the *scheduled* duration, "participants" are *invited*
+  attendees, "status" (Upcoming/Past/Cancelled) is genuinely derivable (cancelled from Google's own
+  `event.status`, upcoming/past from comparing scheduled time to now). The UI copy says this
+  explicitly rather than implying real attendance data exists.
+- **Cancelled events are now synced, not dropped.** `_normalize_event` used to skip any event with
+  `status == "cancelled"` entirely, meaning a cancellation on Google's side never reached the local
+  cache - a stale "still happening" row would sit there forever. Now cancelled events sync with
+  their status intact, so the Agenda/Meeting History views show a real "Cancelled" badge instead of
+  going silently stale.
+- **Holidays are never stored locally** - queried live from Google every time (a year's worth of
+  holiday data is small and cheap to fetch), consistent with "don't duplicate what the provider
+  already serves." Same connection/token as the user's own Calendar - holidays aren't a separate
+  service to connect, just a different `calendar_id` on the same API.
+- **Verified end-to-end with real logic tests, not just code review**: inserted two local test
+  Signal rows (never touching the real Google Calendar) to confirm `meeting_status()` correctly
+  derives "upcoming" from a future scheduled time and "cancelled" from `event.status` overriding
+  the time-based logic - then removed them. Real orchestrator queries ("When is Diwali this year?",
+  "Show me the next three public holidays") confirmed against live Google data separately.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **Regional coverage is keyword-based, not authoritative** - Google's Indian holiday calendar
+  isn't officially segmented by state, so "regional" classification and state tagging comes from a
+  maintained table of well-known festival names, not a government source. Reasonable for major
+  festivals (Onam/Pongal/Durga Puja/etc.), less complete for lesser-known state-specific observances.
+- **Meeting History has no real attendance data** - see above, an honest API limitation, not a gap
+  to fix later without a Workspace-tier Google account.
+- **No click-through in a real browser yet** for the Month view's holiday indicators, the category
+  filter chips, or the Meet Workspace page - verified at the API/service level, consistent with
+  every other such note in this file.
+
+**Exit criteria:** ask "when is Diwali" and get the real 2026 date; see holidays on the calendar
+clearly separate from personal events, filterable by category and state; find upcoming/past
+meetings with working external links to both the Calendar event and the Meet call. **All confirmed
+against real data - full browser click-through still pending.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

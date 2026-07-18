@@ -159,6 +159,16 @@ export interface DriveFile {
   url: string | null;
   owner: string | null;
   shared: boolean;
+  size_bytes: number | null;
+}
+
+export interface DriveAnalytics {
+  recent_files: DriveFile[];
+  shared_files: DriveFile[];
+  type_counts: Record<string, number>;
+  large_files: DriveFile[];
+  storage_used_bytes: number | null;
+  storage_limit_bytes: number | null;
 }
 
 export interface MailAskResult {

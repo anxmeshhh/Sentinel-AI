@@ -24,19 +24,23 @@ type StreamEvent =
   | { type: "status"; message: string }
   | { type: "result"; status: TurnStatus; reply?: string | null; plan?: Record<string, unknown> | null; pending_action?: PendingAction | null };
 
-export function GoogleAICommand() {
+export function GoogleAICommand({ contextPrefix, placeholder }: { contextPrefix?: string; placeholder?: string }) {
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [sending, setSending] = useState(false);
 
   async function send() {
-    const command = input.trim();
-    if (!command || sending) return;
+    const question = input.trim();
+    if (!question || sending) return;
     setSending(true);
     setInput("");
 
+    // The displayed bubble shows just what the user typed; the actual
+    // request sent to the model can carry hidden context (e.g. which
+    // Drive file this question is "about") without cluttering the UI.
+    const command = contextPrefix ? `${contextPrefix} ${question}` : question;
     const index = turns.length;
-    setTurns((t) => [...t, { command, status: "streaming", statusMessage: "Starting…" }]);
+    setTurns((t) => [...t, { command: question, status: "streaming", statusMessage: "Starting…" }]);
 
     try {
       await api.postStream("/connections/google/command/stream", { command }, (raw) => {
@@ -159,7 +163,7 @@ export function GoogleAICommand() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !sending && send()}
           disabled={sending}
-          placeholder="Try: what are my most important unread emails?"
+          placeholder={placeholder ?? "Try: what are my most important unread emails?"}
           className="flex-1 rounded-md border border-border bg-ground px-3 py-2 text-[12.5px] outline-none focus:border-accent disabled:opacity-60"
         />
         <button

@@ -8,7 +8,7 @@ import json
 import re
 
 import structlog
-from groq import Groq
+from groq import APIStatusError, BadRequestError, Groq
 
 from app.core.config import get_settings
 
@@ -17,6 +17,13 @@ logger = structlog.get_logger("sentinel.llm")
 
 class LLMError(Exception):
     pass
+
+
+class LLMOverloadedError(LLMError):
+    """Request exceeded the model's tokens-per-minute ceiling. Not transient -
+    retrying sends the same size again - so the orchestrator should surface
+    this message directly rather than the generic "try again" fallback.
+    """
 
 
 class LLMClient:
@@ -71,7 +78,7 @@ class LLMClient:
         )
         return response.choices[0].message.content or ""
 
-    def complete_with_tools(self, *, system: str, messages: list[dict], tools: list[dict]):
+    def complete_with_tools(self, *, system: str, messages: list[dict], tools: list[dict], max_retries: int = 2):
         """Tool-calling completion - used only by services/orchestrator.py's
         AI Command loop, the one place in the codebase where the model
         decides what to do next rather than narrating something already
@@ -79,11 +86,67 @@ class LLMClient:
         rather than parsed text or JSON, since the caller needs to inspect
         tool_calls itself to drive the next loop iteration.
         """
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=[{"role": "system", "content": system}, *messages],
-            tools=tools,
-            tool_choice="auto",
-            temperature=0.2,
-        )
-        return response.choices[0].message
+        last_err: Exception | None = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._model,
+                    messages=[{"role": "system", "content": system}, *messages],
+                    tools=tools,
+                    tool_choice="auto",
+                    temperature=0.2,
+                    # Confirmed real cause of the 413s: Groq's TPM accounting
+                    # reserves room for the model's default max completion
+                    # length when max_tokens is left unset, and that
+                    # reservation alone was eating most of the 8000 TPM
+                    # ceiling - even a first-turn call with almost no
+                    # conversation content got rejected. 3000 leaves headroom
+                    # under the 8000 TPM ceiling even with a multi-step
+                    # conversation, while still covering this model's hidden
+                    # "harmony"-format reasoning tokens - at 1024 a
+                    # multi-candidate search reliably burned the whole
+                    # budget on internal reasoning and returned truncated,
+                    # empty final content (confirmed via a real cross-document
+                    # search request that got 3 search results but no answer).
+                    max_tokens=3000,
+                )
+                return response.choices[0].message
+            except BadRequestError as exc:
+                # Confirmed real, reproducible quirk of this model's "harmony"
+                # output format: internal channel/commentary tokens
+                # occasionally leak into the tool call name (e.g.
+                # "search_drive<|channel|>commentary"), which the API then
+                # rejects as an unknown tool. A retry (temperature isn't 0)
+                # reliably gets a clean call instead of failing the whole
+                # AI Command request over a formatting glitch.
+                last_err = exc
+                logger.warning("llm_tool_call_malformed", attempt=attempt, error=str(exc))
+            except APIStatusError as exc:
+                if exc.status_code == 413:
+                    # Confirmed real: a composite workflow that reads several
+                    # Drive files in one loop (cross-document search, doc
+                    # comparison, meeting prep) can still push the running
+                    # conversation over Groq's 8000 TPM ceiling for this
+                    # model/tier even after capping per-file content -
+                    # retrying sends the identical size again, so surface a
+                    # clear message instead of burning retries or crashing.
+                    logger.warning("llm_request_too_large", attempt=attempt, error=str(exc))
+                    raise LLMOverloadedError(
+                        "That request needs more information than the AI service can handle in one go - "
+                        "try narrowing it (e.g. fewer documents, or one file at a time)."
+                    ) from exc
+                if exc.status_code == 429:
+                    # Confirmed real: heavy same-day testing exhausted this
+                    # Groq account's on-demand tier daily quota (200k
+                    # tokens/day) - retrying immediately can't help (the
+                    # error itself reports a real wait time), so fail fast
+                    # with an honest message instead of burning 3 identical
+                    # retries against a quota that won't refill mid-loop.
+                    logger.warning("llm_rate_limited", attempt=attempt, error=str(exc))
+                    raise LLMOverloadedError(
+                        "The AI service has hit its usage limit for now - please try again in a little while."
+                    ) from exc
+                last_err = exc
+                logger.warning("llm_request_failed", attempt=attempt, error=str(exc))
+
+        raise LLMError(f"LLM tool call failed after {max_retries + 1} attempts") from last_err

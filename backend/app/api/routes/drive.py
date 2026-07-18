@@ -13,10 +13,28 @@ from app.integrations.google_auth import get_valid_access_token
 from app.integrations.google_drive_client import GoogleDriveClient
 from app.models.connection import Provider
 from app.repositories.connections import ConnectionRepository
-from app.schemas.drive import DriveFileOut
-from app.services.drive_query import build_drive_query
+from app.schemas.drive import DriveAnalyticsOut, DriveFileOut
+from app.services.drive_query import build_drive_query, get_drive_analytics
 
 router = APIRouter(prefix="/drive", tags=["drive"])
+
+
+@router.get("/analytics", response_model=DriveAnalyticsOut)
+def drive_analytics(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+) -> DriveAnalyticsOut:
+    result = get_drive_analytics(session, workspace_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Google Drive is not connected")
+    return DriveAnalyticsOut(
+        recent_files=[DriveFileOut(**f) for f in result["recent_files"]],
+        shared_files=[DriveFileOut(**f) for f in result["shared_files"]],
+        type_counts=result["type_counts"],
+        large_files=[DriveFileOut(**f) for f in result["large_files"]],
+        storage_used_bytes=result["storage_used_bytes"],
+        storage_limit_bytes=result["storage_limit_bytes"],
+    )
 
 
 @router.get("/search", response_model=list[DriveFileOut])

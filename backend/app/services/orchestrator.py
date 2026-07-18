@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 import structlog
 from sqlalchemy.orm import Session
 
-from app.agents.llm import LLMClient, LLMError
+from app.agents.llm import LLMClient, LLMError, LLMOverloadedError
 from app.integrations.gmail_client import GmailClient
 from app.integrations.google_auth import get_valid_access_token
 from app.integrations.google_calendar_client import GoogleCalendarClient
@@ -43,39 +43,58 @@ from app.services.drive_query import build_drive_query
 from app.services.holiday_query import list_indian_holidays
 from app.services.ingestion import ingest_connection
 from app.services.mail_query import build_gmail_query
+from app.services.meet_query import list_meetings, meeting_status
 
 logger = structlog.get_logger("sentinel.orchestrator")
 
-MAX_STEPS = 5
+MAX_STEPS = 10  # composite workflows (meeting prep, cross-document search) chain more tools than a single lookup
 WRITE_TOOLS = {"create_calendar_event"}
 
 
 def _system_prompt() -> str:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d (%A)")
     return f"""You are Sentinel's AI Command interface for a user's connected Google \
-services (Gmail, Calendar, Drive). Today's date is {today} (UTC) - resolve relative dates ("today", \
-"yesterday", "this week", "tomorrow afternoon") to real dates yourself before calling a tool; \
-tools only accept explicit dates, not relative phrases.
+services (Gmail, Calendar, Drive, Meet). Today's date is {today} (UTC) - resolve relative dates \
+("today", "yesterday", "this week", "tomorrow afternoon") to real dates yourself before calling a \
+tool; tools only accept explicit dates, not relative phrases.
 
-You have tools to search Gmail directly (live, whole-mailbox search - not limited to a small \
-recent cache), read one specific email's full content, list calendar events, search Google Drive, \
-look up Indian public holidays/festivals, and create a new calendar event (optionally with a \
-Google Meet link). Use tools to gather whatever real information you actually need before \
-answering - never invent an email, event, file, holiday date, person, or detail that a tool \
-didn't return. For search_emails/search_drive, extract real structured parameters from the \
-request (keywords/topic, sender, a label or type filter, a date range) rather than guessing - e.g. \
-"any important emails from Unstop" means sender="unstop", label_filter="important", not a bare \
-keyword search for the word "important". A request spanning services (e.g. "find the presentation \
-for tomorrow's meeting" = search_drive + list_calendar_events) should use both tools and combine \
-the results in your answer. get_holidays returns real dates from Google's own Indian holiday \
-calendar - always call it rather than answering a holiday-date question from memory, since exact \
-dates (especially lunar-calendar festivals like Diwali/Eid/Holi) shift every year.
+You have tools to search Gmail (live, whole-mailbox search), read one specific email's full \
+content, list calendar events, list past/upcoming Meet meetings, search Google Drive, read one \
+specific Drive file's actual content, look up Indian public holidays/festivals, and create a new \
+calendar event (optionally with a Google Meet link). Use tools to gather whatever real information \
+you actually need before answering - never invent an email, event, file, meeting, holiday date, \
+person, or detail that a tool didn't return. For search_emails/search_drive, extract real \
+structured parameters from the request (keywords/topic, sender, a label or type filter, a date \
+range) rather than guessing - e.g. "any important emails from Unstop" means sender="unstop", \
+label_filter="important", not a bare keyword search for the word "important".
 
-Every email, event, and file a tool returns includes a real "url" field - Sentinel never opens or \
-renders these resources itself, it only links out to the real Gmail/Calendar/Drive page. Whenever \
-you mention a specific email, event, or file in your answer, include it as a real markdown link \
-using that exact url, e.g. [Sprint Sync](url) or [Q3 Report.pdf](url) - never write a bare \
-resource name with no link, and never invent a url that didn't come from a tool.
+Composite requests should chain whatever tools the request actually needs, combining results in \
+one answer:
+- "Find the presentation for tomorrow's meeting" = list_calendar_events + search_drive.
+- "Prepare me for tomorrow's client meeting" = list_calendar_events (find it) + search_emails \
+(recent messages from the attendees/about the topic) + search_drive (related documents) + \
+list_meeting_history (past meetings with the same people/topic) - combine into a short meeting \
+brief: objective, relevant documents, recent email context, prior meeting context, suggested prep.
+- "Summarize this document" / "extract deadlines" / "what does this say about X" = search_drive to \
+find the file (if not already identified), then read_drive_file for its actual content - never \
+answer content questions from the file name alone.
+- "Compare document A with document B" = read_drive_file on both, then describe concrete \
+differences grounded in what each file actually contains.
+- "Which documents mention X" = search_drive with keywords, then read_drive_file on each strong \
+candidate (only as many as actually needed) to confirm/quote the real mention - don't guess from \
+titles alone.
+- If a document's content reveals a real deadline the user might want on their calendar, mention it \
+and offer to add it - only call create_calendar_event if the user confirms they want that.
+get_holidays returns real dates from Google's own Indian holiday calendar - always call it rather \
+than answering a holiday-date question from memory, since exact dates (especially lunar-calendar \
+festivals like Diwali/Eid/Holi) shift every year.
+
+Every email, event, meeting, and file a tool returns includes a real "url" field (or "calendar_url"/\
+"meet_url" for meetings) - Sentinel never opens or renders these resources itself, it only links \
+out to the real Gmail/Calendar/Drive/Meet page. Whenever you mention a specific resource in your \
+answer, include it as a real markdown link using that exact url, e.g. [Sprint Sync](url) or \
+[Q3 Report.pdf](url) - never write a bare resource name with no link, and never invent a url that \
+didn't come from a tool.
 
 If the request requires creating or changing something (like scheduling a meeting), call \
 create_calendar_event as soon as you have enough information - it will not actually run until \
@@ -85,9 +104,19 @@ something - "find a free slot" means report the slot and stop, not schedule anyt
 unless asked. Keep your final answer concise and grounded only in what the tools returned.
 
 Formatting: you're writing for a narrow chat panel, not a document. Never use markdown tables \
-(pipe characters) - they don't fit and render unreadably. For a list of emails, events, or files, \
-use a short numbered or bulleted list instead, one item per line, with just the essentials (the \
-linked name, and the one detail that matters most) - not a dump of every field a tool returned."""
+(pipe characters) - they don't fit and render unreadably, even for a "compare A vs B" answer - use \
+short bulleted "A: ..." / "B: ..." pairs per aspect instead of a table. For a list of emails, \
+events, meetings, or files, use a short numbered or bulleted list instead, one item per line, with \
+just the essentials (the linked name, and the one detail that matters most) - not a dump of every \
+field a tool returned.
+
+Be efficient with tool calls - each one costs real time and a real API rate-limit budget shared \
+across the whole request. Don't repeat a search with only a minor variation (a slightly different \
+keyword, or a date range shifted by a day) if the previous call already returned enough to work \
+with - move to synthesizing an answer once you have "enough", not "everything possible". For a \
+composite request like meeting prep, one search_emails call and one search_drive call (broad \
+enough to catch relevant results) is normally sufficient - don't re-run the same tool 3+ times \
+chasing a better query."""
 
 
 @dataclass
@@ -202,6 +231,39 @@ def _tool_schemas() -> list[dict]:
         {
             "type": "function",
             "function": {
+                "name": "read_drive_file",
+                "description": (
+                    "Read one specific Drive file's actual content by its id (the 'id' field from "
+                    "search_drive results) - live fetch, never stored. Required before answering any "
+                    "question about what a document actually says (summarize, extract deadlines/action "
+                    "items, compare, confirm a mention) - never answer from the filename alone. Only "
+                    "Docs/Sheets/Slides/PDF/Word/plain-text files can be read; other types return an error."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {"file_id": {"type": "string"}},
+                    "required": ["file_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_meeting_history",
+                "description": "List past or upcoming meetings (calendar events with a Google Meet link) - use for meeting-prep requests that need prior meeting context.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "range": {"type": "string", "enum": ["upcoming", "past"]},
+                        "search": {"type": "string", "description": "Optional keyword filter on the meeting title."},
+                    },
+                    "required": ["range"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "get_holidays",
                 "description": (
                     "Real Indian public holidays/festivals for a date range, from Google's own Indian "
@@ -250,6 +312,8 @@ STATUS_MESSAGES = {
     "find_free_slot": "Looking for a free slot…",
     "search_drive": "Searching your Drive…",
     "get_holidays": "Checking Indian holidays…",
+    "read_drive_file": "Reading a file…",
+    "list_meeting_history": "Checking meeting history…",
 }
 
 
@@ -289,12 +353,24 @@ def run_command_stream(session: Session, workspace_id: uuid.UUID, user_command: 
             yield {"type": "status", "message": "Thinking…"}
         try:
             message = llm.complete_with_tools(system=_system_prompt(), messages=messages, tools=_tool_schemas())
+        except LLMOverloadedError as exc:
+            yield {"type": "result", "status": "error", "reply": str(exc)}
+            return
         except LLMError:
             yield {"type": "result", "status": "error", "reply": "Couldn't reach the language model just now - please try again."}
             return
 
         if not message.tool_calls:
-            yield {"type": "result", "status": "done", "reply": message.content or "", "steps": steps}
+            # A model can stop calling tools yet still produce blank content
+            # (confirmed real: gpt-oss-120b's hidden "harmony" reasoning
+            # tokens occasionally consumed the whole completion budget
+            # before reaching the visible answer, on a real multi-search
+            # request) - never ship an empty reply to the user regardless
+            # of why it happened.
+            reply = (message.content or "").strip() or (
+                "I wasn't able to put together a clear answer for that - try rephrasing or narrowing the request."
+            )
+            yield {"type": "result", "status": "done", "reply": reply, "steps": steps}
             return
 
         messages.append(
@@ -445,6 +521,38 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
         with GoogleDriveClient(access_token) as client:
             files = client.search(query, max_results=min(args.get("limit", 10), 30))
         return files
+
+    if name == "read_drive_file":
+        file_id = args.get("file_id")
+        if not file_id:
+            return {"error": "missing file_id"}
+        connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GOOGLE_DRIVE)
+        if connection is None:
+            return {"error": "google drive not connected"}
+        access_token = get_valid_access_token(session, connection)
+        with GoogleDriveClient(access_token) as client:
+            content, mime_or_reason = client.fetch_file_content(file_id)
+        if content is None:
+            return {"error": mime_or_reason}
+        return {"content": content, "mime_type": mime_or_reason}
+
+    if name == "list_meeting_history":
+        meeting_range = args.get("range", "upcoming")
+        try:
+            signals = list_meetings(session, workspace_id, meeting_range=meeting_range, search=args.get("search"), limit=30)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        return [
+            {
+                "title": s.payload.get("title"),
+                "start": s.payload.get("start"),
+                "attendee_count": s.payload.get("attendee_count", 0),
+                "status": meeting_status(s),
+                "calendar_url": s.payload.get("url"),
+                "meet_url": s.payload.get("meet_url"),
+            }
+            for s in signals
+        ]
 
     if name == "find_free_slot":
         date_str = args.get("date")

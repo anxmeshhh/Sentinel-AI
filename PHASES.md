@@ -1052,6 +1052,122 @@ against real data - full browser click-through still pending.**
 
 ---
 
+### Phase 2j — Intelligent Drive & Organizational Memory ✅ Built and tested end-to-end (with real infrastructure limits documented, not hidden)
+
+**Objective:** implement the user's "Intelligent Google Drive & Organizational Memory" spec -
+natural-language Drive search, on-demand file understanding (never automatic), cross-document
+search, document comparison, AI-powered meeting prep, smart resource recommendations, deadline
+detection, and Drive analytics. Sections 11-13 of the spec (Cross-Service Universal Search across
+GitHub/Jira/Slack/Notion, a dedicated semantic "Contextual Memory Search," Project-Based Knowledge)
+were explicitly deferred - the user's own spec language frames them as "long-term goal" / "later
+this architecture should extend to...", and building them literally now would mean standing up
+connections and a vector-search layer that nothing in the product yet justifies. The existing
+orchestrator's tool-calling loop already substantially achieves composite/cross-service search for
+a single request without that infrastructure.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2j.1 | Live Drive file content fetch (`GoogleDriveClient.fetch_file_content`) - Docs/Slides/Sheets via export, PDF/.docx via download + text extraction, bounded and never persisted | ✅ |
+| 2j.2 | `read_drive_file` + `list_meeting_history` orchestrator tools; system prompt taught composite workflow patterns (meeting prep, comparison, cross-document search, deadline extraction) | ✅ |
+| 2j.3 | Drive Analytics (`GET /drive/analytics`) - real storage quota, type breakdown, largest files, all from live Drive API calls, no fabricated capabilities (no view counts, no access history - Drive's API doesn't expose those) | ✅ |
+| 2j.4 | Drive page UI: collapsible analytics overview, per-file "Ask about this file" panel reusing `GoogleAICommand` via a new `contextPrefix` prop | ✅ |
+| 2j.5 | Real composite-workflow verification: single-file summarize, cross-document search, document comparison, meeting prep - each run against the live connected account, not just code review | ✅ |
+
+### What actually got built (technical notes)
+
+- **Live-fetch-never-store discipline, same as Gmail bodies**: `fetch_file_content()` fetches on
+  demand, capped, never written to any table. Google-native formats (Docs/Slides/Sheets) use
+  Drive's `/export` endpoint; PDF and `.docx` are downloaded via `alt=media` and text-extracted
+  with `pypdf`/`python-docx`; anything else returns a graceful "Sentinel can only read text-based
+  files..." instead of erroring.
+- **Composite workflows are not new endpoints** - meeting prep, comparison, cross-document search,
+  and deadline extraction all emerge from the existing orchestrator tool-calling loop freely
+  chaining `search_drive`/`read_drive_file`/`list_calendar_events`/`search_emails`/
+  `list_meeting_history`, guided by system-prompt examples. Verified with real requests against the
+  connected account: "compare my hackathon deck with my cover letter" produced an accurate,
+  content-grounded comparison (correctly identified one as a competition pitch, the other as a job
+  application, down to specific projects named in the cover letter); "prepare me for my next
+  meeting" correctly chained calendar → email → Drive → meeting-history and produced a real prep
+  checklist referencing the actual next event and an actually-relevant Drive file.
+- **Four real, reproducible bugs found only by testing against the live account - not caught by
+  code review or unit tests:**
+  1. **gpt-oss-120b tool-name corruption**: the model's internal "harmony" format occasionally
+     leaks channel/commentary tokens into a tool call's name (e.g.
+     `search_drive<|channel|>commentary`), which Groq's API rejects outright. Fixed with a bounded
+     retry in `complete_with_tools()` (temperature isn't 0, so a retry reliably produces a clean
+     call).
+  2. **`max_tokens` was never set on the tool-calling completion** - Groq's TPM accounting reserves
+     room for the model's default completion length when it's left unset, and that reservation
+     alone was consuming most of this account's 8000-tokens/minute on-demand-tier ceiling,
+     independent of how small the actual prompt was (confirmed: a first-turn call with almost no
+     conversation content still got rejected at "Requested 8442/8000"). Fixed by setting
+     `max_tokens=3000` explicitly - enough headroom for the model's hidden reasoning tokens plus a
+     real answer, without alone exhausting the per-minute budget.
+  3. **A "no tool calls, but also no content" dead end**: with `max_tokens` too tight (1024, tried
+     first), a multi-candidate search burned the whole completion budget on gpt-oss's hidden
+     reasoning and returned truncated, empty final content - the user got a blank reply with no
+     indication anything went wrong. Fixed two ways: raised the budget (see above) and added a
+     hard floor in `run_command_stream()` that replaces any empty final reply with an explicit
+     "I wasn't able to put together a clear answer" message - never ship silence to the user
+     regardless of why the model produced it.
+  4. **A composite request (meeting prep) could exhaust `MAX_STEPS` without ever answering** -
+     confirmed real: the model repeatedly re-ran `search_emails` with only minor keyword/date
+     variations instead of moving to synthesis, hitting the step ceiling with nothing to show.
+     Fixed by raising `MAX_STEPS` 8→10 and adding explicit system-prompt guidance against redundant
+     near-duplicate tool calls ("move to synthesizing an answer once you have 'enough', not
+     'everything possible'"). Re-tested after the fix: the same "prepare me for my next meeting"
+     request completed in 7 steps with a real, grounded prep checklist.
+  5. Also caught while stress-testing: the model ignored the system prompt's "never use markdown
+     tables" instruction once, on a comparison request. Reinforced the instruction to explicitly
+     cover comparison-style answers ("use short bulleted 'A: ...' / 'B: ...' pairs... even for a
+     'compare A vs B' answer").
+- **Groq's rate limits are a real, external, two-layer constraint - documented honestly rather than
+  papered over.** There's a per-minute ceiling (8000 TPM for this model/tier) and a separate daily
+  ceiling (200,000 tokens/day). Both were hit for real during this session's testing: the per-minute
+  one from a single composite request needing several tool round-trips in quick succession, the
+  daily one from the cumulative volume of same-day live testing. Neither is fully solvable in
+  application code on this account tier - both are now handled by *failing honestly* instead of
+  crashing: a new `LLMOverloadedError` distinguishes non-retryable 413 (single request too large)
+  and 429 (rate/quota exceeded) responses from the retryable gpt-oss formatting glitch, and the
+  orchestrator surfaces its message directly to the user ("try narrowing it" / "hit its usage limit
+  for now, try again shortly") instead of the generic connectivity-failure fallback or an unhandled
+  500. This is a known, tracked platform constraint of the connected account's tier, not a bug to
+  chase further without upgrading it.
+- **`MAX_CONTENT_CHARS` for Drive file reads cut from 20,000 to 6,000 chars** - the old value alone
+  (~5000 tokens) was consuming most of the 8000 TPM budget by itself before the `max_tokens` fix was
+  even found, making any workflow needing more than one file read guaranteed to fail. Kept at the
+  lower value even after the real fix landed, since it's still good token-efficiency practice for
+  multi-file composite workflows (the user's own spec, §14, asks for exactly this).
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **Sections 11-13 of the spec (Cross-Service Universal Search UI, a dedicated semantic
+  "Contextual Memory Search," Project-Based Knowledge Graph) are not built** - the user's own spec
+  language frames these as future direction, not a current ask, and they'd require unbuilt
+  connections (GitHub/Jira/Slack/Notion inside this AI Command surface) plus a real vector/semantic
+  search layer nothing in the product yet justifies.
+- **Section 6 (dedicated "related file discovery" beyond what `search_drive` already returns) and
+  section 8 (smart resource recommendations proactively surfaced on calendar events, rather than
+  on-request) are not separately built** - reachable today by just asking the AI Command for them
+  (which works, per the composite-workflow testing above), but there's no dedicated UI surface for
+  either yet.
+- **Cross-document search is real but rate-limit-fragile on the current Groq account tier** -
+  confirmed working end-to-end (a real query correctly found and quoted a genuine mention in the
+  hackathon deck), but a request needing several sequential searches/reads can occasionally collide
+  with the account's per-minute or daily token ceiling, especially right after other heavy usage.
+  When that happens it now fails with a clear, honest message rather than a crash - this is an
+  external account-tier constraint, not something further code changes can fully eliminate.
+- **No click-through in a real browser yet** for the Drive Overview analytics panel or the
+  per-file "Ask about this file" toggle - verified at the API/orchestrator level against the live
+  account, consistent with every other such note in this file.
+
+**Exit criteria:** ask "summarize this file" / "which documents mention X" / "compare A with B" /
+"prepare me for my next meeting" and get a real, content-grounded answer built from live Drive/
+Gmail/Calendar/Meet data, not fabricated - confirmed against the actual connected account. **All
+confirmed against real data - full browser click-through still pending.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

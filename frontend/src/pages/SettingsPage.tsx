@@ -1,3 +1,5 @@
+import { BackNav } from "../components/BackNav";
+
 const AGENTS = [
   { name: "Engineering", desc: "GitHub bottlenecks, hotspots, inactive contributors, risky deploys", tag: "PHASE 1", on: true },
   { name: "Communication", desc: "Stale flagged mail, spam surges, calendar overload — from Gmail/Calendar", tag: "PHASE 2", on: true },
@@ -11,6 +13,7 @@ const AGENTS = [
 export function SettingsPage() {
   return (
     <div className="max-w-2xl">
+      <BackNav back={{ to: "/", label: "Dashboard" }} />
       <h1 className="mb-1 text-xl font-semibold text-balance">Agents</h1>
       <p className="mb-7 text-[13px] text-ink-dim">
         Which agents are allowed to run. Connections live on the Dashboard now.

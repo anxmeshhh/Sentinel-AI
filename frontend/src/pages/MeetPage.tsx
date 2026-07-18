@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { Connection } from "../api/types";
+import { BackNav } from "../components/BackNav";
 
 interface Meeting {
   id: string;
@@ -62,6 +63,10 @@ export function MeetPage() {
   if (connected === false) {
     return (
       <div className="max-w-lg rounded-md border border-dashed border-border p-10 text-center text-ink-dim">
+        <BackNav
+          back={{ to: "/connections/google", label: "Google Workspace" }}
+          crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Meet" }]}
+        />
         <p className="mb-3 text-[14px]">Google Calendar isn't connected yet.</p>
         <Link to="/connections/google" className="font-mono text-[13px] font-semibold text-accent-text hover:underline">
           Connect Google &rarr;
@@ -72,6 +77,10 @@ export function MeetPage() {
 
   return (
     <div className="max-w-3xl">
+      <BackNav
+        back={{ to: "/connections/google", label: "Google Workspace" }}
+        crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Meet" }]}
+      />
       <h1 className="mb-1 text-xl font-semibold text-balance">Meet</h1>
       <p className="mb-6 text-[13px] text-ink-dim">
         Meeting history, built from your Calendar events — duration and attendees reflect what was

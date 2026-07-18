@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { Finding } from "../api/types";
 import { severityBand } from "../api/types";
+import { BackNav } from "../components/BackNav";
 import { SeverityChip } from "../components/SeverityChip";
 
 export function FindingDetailPage() {
@@ -26,12 +27,7 @@ export function FindingDetailPage() {
 
   return (
     <div>
-      <div className="mb-2.5 font-mono text-[11.5px] text-ink-faint">
-        <Link to="/" className="text-accent-text hover:underline">
-          &larr; Today's Brief
-        </Link>{" "}
-        / Finding
-      </div>
+      <BackNav back={{ to: "/", label: "Today's Brief" }} crumbs={[{ label: "Dashboard", to: "/" }, { label: "Finding" }]} />
       <div className="mb-1 flex flex-wrap items-center gap-2.5">
         <SeverityChip severity={severity} />
         <h1 className="text-xl font-semibold text-balance">{finding.summary}</h1>

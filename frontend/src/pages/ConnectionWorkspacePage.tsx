@@ -1,9 +1,10 @@
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { Connection } from "../api/types";
+import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
 import { CalendarIcon, DriveIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
 import { ServiceCard } from "../components/ServiceCard";
@@ -37,9 +38,7 @@ export function ConnectionWorkspacePage() {
 
   return (
     <div className="max-w-3xl">
-      <Link to="/" className="mb-4 inline-block font-mono text-[12px] text-ink-faint underline underline-offset-2 hover:text-ink">
-        &larr; Dashboard
-      </Link>
+      <BackNav back={{ to: "/", label: "Dashboard" }} crumbs={meta ? [{ label: "Dashboard", to: "/" }, { label: "Connections", to: "/" }, { label: meta.label }] : undefined} />
 
       {!meta ? (
         <div className="rounded-md border border-dashed border-border p-8 text-center text-[13px] text-ink-faint">

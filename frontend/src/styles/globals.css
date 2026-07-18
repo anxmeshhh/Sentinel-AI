@@ -8,6 +8,14 @@ body,
   height: 100%;
 }
 
+html {
+  /* This app is dark-only (no light theme toggle exists) - without this,
+     native form controls (the datetime-local picker popup, its calendar
+     icon) render with light-mode assumptions and end up unreadable
+     (dark text on a dark surface) against this UI. */
+  color-scheme: dark;
+}
+
 body {
   @apply bg-ground text-ink font-sans antialiased;
   font-size: 14px;

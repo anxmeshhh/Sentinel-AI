@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { api } from "../api/client";
 import type { AgentRun, LogLine, SystemStats } from "../api/types";
+import { BackNav } from "../components/BackNav";
 
 const POLL_MS = 5000;
 
@@ -53,6 +54,7 @@ export function AdminPage() {
 
   return (
     <div>
+      <BackNav back={{ to: "/", label: "Dashboard" }} />
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="mb-1 text-xl font-semibold text-balance">Admin &amp; Observability</h1>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { Connection, MailAskResult, MailBody, MailItem, MailSummary } from "../api/types";
+import { BackNav } from "../components/BackNav";
 import { Markdown } from "../components/Markdown";
 
 type Tab = { key: string; label: string; filter: string; category?: string };
@@ -156,6 +157,7 @@ export function MailPage() {
   if (connected === false) {
     return (
       <div className="max-w-lg rounded-md border border-dashed border-border p-10 text-center text-ink-dim">
+        <BackNav back={{ to: "/connections/google", label: "Google Workspace" }} crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Gmail" }]} />
         <p className="mb-3 text-[14px]">Gmail isn't connected yet.</p>
         <Link to="/settings" className="font-mono text-[13px] font-semibold text-accent-text hover:underline">
           Connect Gmail &rarr;
@@ -166,6 +168,10 @@ export function MailPage() {
 
   return (
     <div>
+      <BackNav
+        back={{ to: "/connections/google", label: "Google Workspace" }}
+        crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Gmail" }]}
+      />
       <h1 className="mb-1 text-xl font-semibold text-balance">Mail</h1>
       <p className="mb-5 text-[13px] text-ink-dim">
         Click an email to read it — original content only, no AI call. Summarize is optional, on demand.

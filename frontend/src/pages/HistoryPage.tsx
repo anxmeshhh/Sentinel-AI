@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { api } from "../api/client";
 import type { BriefSummary } from "../api/types";
+import { BackNav } from "../components/BackNav";
 
 export function HistoryPage() {
   const [briefs, setBriefs] = useState<BriefSummary[]>([]);
@@ -16,6 +17,7 @@ export function HistoryPage() {
 
   return (
     <div>
+      <BackNav back={{ to: "/", label: "Dashboard" }} />
       <h1 className="mb-1 text-xl font-semibold text-balance">Brief History</h1>
       <p className="mb-5 text-[13px] text-ink-dim">
         Every brief Sentinel has generated for this repository.

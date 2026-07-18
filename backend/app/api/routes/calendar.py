@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -99,14 +100,25 @@ def create_event(
         raise HTTPException(status_code=404, detail="Google Calendar is not connected")
 
     access_token = get_valid_access_token(session, connection)
-    with GoogleCalendarClient(access_token) as client:
-        result = client.create_event(
-            title=payload.title,
-            start=payload.start,
-            end=payload.end,
-            attendee_emails=payload.attendee_emails,
-            create_meet_link=payload.create_meet_link,
-        )
+    try:
+        with GoogleCalendarClient(access_token) as client:
+            result = client.create_event(
+                title=payload.title,
+                start=payload.start,
+                end=payload.end,
+                attendee_emails=payload.attendee_emails,
+                create_meet_link=payload.create_meet_link,
+            )
+    except httpx.HTTPStatusError as exc:
+        # Confirmed real: previously uncaught, so any rejection from Google
+        # (bad attendee address, disabled conferencing, etc.) crashed as a
+        # raw 500 with no useful message - surface Google's own reason
+        # instead.
+        try:
+            reason = exc.response.json().get("error", {}).get("message", exc.response.text[:200])
+        except ValueError:
+            reason = exc.response.text[:200]
+        raise HTTPException(status_code=exc.response.status_code, detail=f"Google Calendar rejected this: {reason}") from exc
 
     # Without this, the new event wouldn't appear in Month/Week/Day/Agenda
     # until the next scheduled poll (default every 6h, see

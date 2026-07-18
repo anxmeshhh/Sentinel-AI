@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 
 import { api } from "../api/client";
+import { BackNav } from "../components/BackNav";
 
 interface Message {
   role: "user" | "assistant";
@@ -41,6 +42,7 @@ export function AssistantPage() {
 
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-2xl flex-col md:h-[calc(100dvh-6rem)] md:min-h-0">
+      <BackNav back={{ to: "/", label: "Dashboard" }} />
       <div className="mb-8">
         <h1 className="mb-1.5 text-xl font-semibold text-balance">AI Assistant</h1>
         <p className="text-[13px] leading-relaxed text-ink-dim">

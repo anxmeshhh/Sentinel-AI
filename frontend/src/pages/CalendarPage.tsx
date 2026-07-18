@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
 import type { CalendarEvent, Connection, Holiday, HolidayCategory } from "../api/types";
+import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
 
 type View = "month" | "week" | "day" | "agenda";
@@ -136,6 +137,10 @@ export function CalendarPage() {
   if (connected === false) {
     return (
       <div className="max-w-lg rounded-md border border-dashed border-border p-10 text-center text-ink-dim">
+        <BackNav
+          back={{ to: "/connections/google", label: "Google Workspace" }}
+          crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Calendar" }]}
+        />
         <p className="mb-3 text-[14px]">Google Calendar isn't connected yet.</p>
         <Link to="/settings" className="font-mono text-[13px] font-semibold text-accent-text hover:underline">
           Connect Calendar &rarr;
@@ -148,6 +153,10 @@ export function CalendarPage() {
 
   return (
     <div className="max-w-3xl">
+      <BackNav
+        back={{ to: "/connections/google", label: "Google Workspace" }}
+        crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Calendar" }]}
+      />
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="mb-1 text-xl font-semibold text-balance">Calendar</h1>
@@ -413,8 +422,17 @@ function NewEventForm({ onCreated }: { onCreated: () => void }) {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
     setError(null);
+
+    // Catch this before it ever reaches the backend - a round trip just to
+    // learn "end must be after start" is a worse experience than an instant
+    // inline message.
+    if (new Date(end).getTime() <= new Date(start).getTime()) {
+      setError("End time must be after start time.");
+      return;
+    }
+
+    setSubmitting(true);
     try {
       await api.post("/calendar/events", {
         title,
@@ -428,7 +446,7 @@ function NewEventForm({ onCreated }: { onCreated: () => void }) {
       });
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create event");
+      setError(err instanceof ApiError ? err.message : "Couldn't reach Sentinel to create the event - check your connection and try again.");
     } finally {
       setSubmitting(false);
     }

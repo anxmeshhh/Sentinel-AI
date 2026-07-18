@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import structlog
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.llm import LLMClient, LLMError, LLMOverloadedError
@@ -36,9 +37,12 @@ from app.integrations.gmail_client import GmailClient
 from app.integrations.google_auth import get_valid_access_token
 from app.integrations.google_calendar_client import GoogleCalendarClient
 from app.integrations.google_drive_client import GoogleDriveClient
-from app.models.connection import Provider
+from app.models.channel_ai_history import ChannelAIHistoryEntry
+from app.models.channel_connection import ChannelConnection
+from app.models.connection import Connection, Provider
 from app.repositories.connections import ConnectionRepository
 from app.services.calendar_query import find_free_slots, list_calendar, list_calendar_range
+from app.services.channel_connections import is_resource_allowed, list_channel_connections
 from app.services.drive_query import build_drive_query
 from app.services.holiday_query import list_indian_holidays
 from app.services.ingestion import ingest_connection
@@ -49,6 +53,26 @@ logger = structlog.get_logger("sentinel.orchestrator")
 
 MAX_STEPS = 10  # composite workflows (meeting prep, cross-document search) chain more tools than a single lookup
 WRITE_TOOLS = {"create_calendar_event"}
+
+# Which Connection a tool needs - used only when a Channel scopes the
+# request (Phase 2m). Read tools built on ingested Signal data
+# (list_calendar_events, find_free_slot, list_meeting_history, get_holidays)
+# have no per-item "resource" of their own to allow-list against (unlike a
+# specific Drive file or GitHub repo) - gating them at the
+# connection-assignment level is as far as enforcement honestly goes today;
+# see PHASES.md's Phase 2m notes for why finer-grained calendar/email
+# resource permissions aren't built.
+TOOL_PROVIDERS = {
+    "search_emails": Provider.GMAIL,
+    "read_email_body": Provider.GMAIL,
+    "list_calendar_events": Provider.GOOGLE_CALENDAR,
+    "find_free_slot": Provider.GOOGLE_CALENDAR,
+    "get_holidays": Provider.GOOGLE_CALENDAR,
+    "create_calendar_event": Provider.GOOGLE_CALENDAR,
+    "list_meeting_history": Provider.GOOGLE_CALENDAR,
+    "search_drive": Provider.GOOGLE_DRIVE,
+    "read_drive_file": Provider.GOOGLE_DRIVE,
+}
 
 
 def _system_prompt() -> str:
@@ -128,8 +152,14 @@ class OrchestrationResult:
     steps: list[dict] = field(default_factory=list)
 
 
-def _tool_schemas() -> list[dict]:
-    return [
+def _tool_schemas(allowed_providers: set[Provider] | None = None) -> list[dict]:
+    """`allowed_providers=None` means the plain, workspace-wide AI Command
+    (every tool offered, unchanged from before Phase 2m). A Channel-scoped
+    request passes the actual set of providers assigned to that Channel -
+    only those tools are ever offered to the model, so it can't reach a
+    connection the Channel was never given access to in the first place.
+    """
+    schemas = [
         {
             "type": "function",
             "function": {
@@ -303,6 +333,9 @@ def _tool_schemas() -> list[dict]:
             },
         },
     ]
+    if allowed_providers is None:
+        return schemas
+    return [s for s in schemas if TOOL_PROVIDERS.get(s["function"]["name"]) in allowed_providers]
 
 
 STATUS_MESSAGES = {
@@ -317,13 +350,15 @@ STATUS_MESSAGES = {
 }
 
 
-def run_command(session: Session, workspace_id: uuid.UUID, user_command: str) -> OrchestrationResult:
+def run_command(
+    session: Session, workspace_id: uuid.UUID, user_command: str, *, team_id: uuid.UUID | None = None, user_id: uuid.UUID | None = None
+) -> OrchestrationResult:
     """Non-streaming form - drains run_command_stream and returns just the
     final result. Kept for callers that don't need live progress (tests,
     the Assistant's simpler needs) so the loop logic lives in exactly one place.
     """
     final: dict = {}
-    for event in run_command_stream(session, workspace_id, user_command):
+    for event in run_command_stream(session, workspace_id, user_command, team_id=team_id, user_id=user_id):
         if event["type"] == "result":
             final = event
     return OrchestrationResult(
@@ -335,16 +370,34 @@ def run_command(session: Session, workspace_id: uuid.UUID, user_command: str) ->
     )
 
 
-def run_command_stream(session: Session, workspace_id: uuid.UUID, user_command: str):
+def run_command_stream(
+    session: Session, workspace_id: uuid.UUID, user_command: str, *, team_id: uuid.UUID | None = None, user_id: uuid.UUID | None = None
+):
     """Generator form - yields real progress as each tool call actually
     happens, so the UI can show what's genuinely occurring instead of a
     frozen spinner. Two event shapes:
     - {"type": "status", "message": str} - a step just started
     - {"type": "result", "status": ..., ...} - the final (and only) result, always last
+
+    `team_id` (Phase 2m) scopes this to one Channel: only tools backed by a
+    Connection actually assigned to that Channel are ever offered to the
+    model, and Drive file reads are additionally checked against that
+    Channel's resource allow-list. `team_id=None` (the original, still-used
+    plain workspace-wide Google AI Command) behaves exactly as before this
+    phase - every tool available, no resource gating.
     """
     llm = LLMClient()
     messages: list[dict] = [{"role": "user", "content": user_command}]
     steps: list[dict] = []
+
+    allowed_providers: set[Provider] | None = None
+    if team_id is not None:
+        allowed_providers = {connection.provider for _, connection, _ in list_channel_connections(session, team_id)}
+        if not allowed_providers:
+            reply = "This channel doesn't have any Connections assigned yet - ask a Channel Admin to add one before asking Sentinel here."
+            _maybe_log_channel_history(session, team_id, user_id, user_command, reply)
+            yield {"type": "result", "status": "done", "reply": reply, "steps": steps}
+            return
 
     yield {"type": "status", "message": "Analyzing your request…"}
 
@@ -352,7 +405,7 @@ def run_command_stream(session: Session, workspace_id: uuid.UUID, user_command: 
         if step_num > 0:
             yield {"type": "status", "message": "Thinking…"}
         try:
-            message = llm.complete_with_tools(system=_system_prompt(), messages=messages, tools=_tool_schemas())
+            message = llm.complete_with_tools(system=_system_prompt(), messages=messages, tools=_tool_schemas(allowed_providers))
         except LLMOverloadedError as exc:
             yield {"type": "result", "status": "error", "reply": str(exc)}
             return
@@ -370,6 +423,7 @@ def run_command_stream(session: Session, workspace_id: uuid.UUID, user_command: 
             reply = (message.content or "").strip() or (
                 "I wasn't able to put together a clear answer for that - try rephrasing or narrowing the request."
             )
+            _maybe_log_channel_history(session, team_id, user_id, user_command, reply)
             yield {"type": "result", "status": "done", "reply": reply, "steps": steps}
             return
 
@@ -402,16 +456,27 @@ def run_command_stream(session: Session, workspace_id: uuid.UUID, user_command: 
                 return
 
             yield {"type": "status", "message": STATUS_MESSAGES.get(name, f"Running {name}…")}
-            result = _execute_read_tool(session, workspace_id, name, args)
+            result = _execute_read_tool(session, workspace_id, name, args, team_id=team_id)
             steps.append({"tool": name, "arguments": args})
             messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, default=str)})
 
+    reply = "I wasn't able to finish within the step limit - try a more specific request."
+    _maybe_log_channel_history(session, team_id, user_id, user_command, reply)
     yield {
         "type": "result",
         "status": "done",
-        "reply": "I wasn't able to finish within the step limit - try a more specific request.",
+        "reply": reply,
         "steps": steps,
     }
+
+
+def _maybe_log_channel_history(session: Session, team_id: uuid.UUID | None, user_id: uuid.UUID | None, command: str, reply: str) -> None:
+    """Phase 2m's per-Channel AI history - a no-op for the plain,
+    non-Channel-scoped AI Command (team_id/user_id both None there)."""
+    if team_id is None or user_id is None:
+        return
+    session.add(ChannelAIHistoryEntry(team_id=team_id, user_id=user_id, command=command, reply=reply))
+    session.commit()
 
 
 def execute_planned_action(session: Session, workspace_id: uuid.UUID, name: str, arguments: dict) -> dict:
@@ -446,11 +511,32 @@ def execute_planned_action(session: Session, workspace_id: uuid.UUID, name: str,
     return result
 
 
-def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, args: dict) -> dict | list:
+def _get_connection(session: Session, workspace_id: uuid.UUID, team_id: uuid.UUID | None, provider: Provider) -> Connection | None:
+    """`team_id=None` (the plain, workspace-wide AI Command) behaves exactly
+    as before Phase 2m - just the Workspace's Connection for this provider.
+    A Channel-scoped request additionally requires that exact Connection to
+    actually be assigned to this Channel (models/channel_connection.py) -
+    the tool schema filtering in _tool_schemas already stops the model from
+    calling an unavailable tool in the first place, this is the second,
+    real enforcement layer in case that ever gets bypassed.
+    """
+    connection = ConnectionRepository(session, workspace_id).get_by_provider(provider)
+    if connection is None:
+        return None
+    if team_id is not None:
+        assigned = session.execute(
+            select(ChannelConnection).where(ChannelConnection.team_id == team_id, ChannelConnection.connection_id == connection.id)
+        ).scalar_one_or_none()
+        if assigned is None:
+            return None
+    return connection
+
+
+def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, args: dict, *, team_id: uuid.UUID | None = None) -> dict | list:
     if name == "search_emails":
-        connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GMAIL)
+        connection = _get_connection(session, workspace_id, team_id, Provider.GMAIL)
         if connection is None:
-            return {"error": "gmail not connected"}
+            return {"error": "gmail not connected or not available in this channel"}
         query = build_gmail_query(
             keywords=args.get("keywords"),
             sender=args.get("sender"),
@@ -477,9 +563,9 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
         message_id = args.get("message_id")
         if not message_id:
             return {"error": "missing message_id"}
-        connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GMAIL)
+        connection = _get_connection(session, workspace_id, team_id, Provider.GMAIL)
         if connection is None:
-            return {"error": "gmail not connected"}
+            return {"error": "gmail not connected or not available in this channel"}
         access_token = get_valid_access_token(session, connection)
         with GmailClient(access_token) as client:
             body = client.fetch_message_body(message_id)
@@ -508,9 +594,9 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
         ]
 
     if name == "search_drive":
-        connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GOOGLE_DRIVE)
+        connection = _get_connection(session, workspace_id, team_id, Provider.GOOGLE_DRIVE)
         if connection is None:
-            return {"error": "google drive not connected"}
+            return {"error": "google drive not connected or not available in this channel"}
         query = build_drive_query(
             keywords=args.get("keywords"),
             mime_type=args.get("mime_type"),
@@ -526,9 +612,15 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
         file_id = args.get("file_id")
         if not file_id:
             return {"error": "missing file_id"}
-        connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GOOGLE_DRIVE)
+        connection = _get_connection(session, workspace_id, team_id, Provider.GOOGLE_DRIVE)
         if connection is None:
-            return {"error": "google drive not connected"}
+            return {"error": "google drive not connected or not available in this channel"}
+        if team_id is not None and not is_resource_allowed(session, team_id, connection.id, file_id):
+            # The one place Phase 2m enforces resource-level permission, not
+            # just connection-level - a Drive file has a natural discrete
+            # resource_key (its own id) to allow-list against, unlike a
+            # calendar event or email (see TOOL_PROVIDERS' docstring note).
+            return {"error": "This file isn't authorized for this channel - ask a Channel Admin to allow-list it first."}
         access_token = get_valid_access_token(session, connection)
         with GoogleDriveClient(access_token) as client:
             content, mime_or_reason = client.fetch_file_content(file_id)

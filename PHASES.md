@@ -1323,6 +1323,76 @@ no Channels of its own.**
 
 ---
 
+### Phase 2m — Channel AI Workspace (Backend) ✅ Built and tested (orchestrator scoping only; no dedicated Channel page yet - that's still 2n)
+
+**Objective:** make the existing AI Command orchestrator (Phase 2f onward) actually respect a
+Channel's authorized Connections/resources instead of only ever operating workspace-wide - the
+part of the spec that makes "enter your Channel, ask Sentinel, it knows what's authorized here"
+real rather than aspirational.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2m.1 | `run_command`/`run_command_stream` gain an optional `team_id` - `None` (unchanged, still used by the plain Google AI Command) behaves exactly as before this phase | ✅ |
+| 2m.2 | `_tool_schemas` filters which tools are even offered to the model, by which providers have a Connection actually assigned to the Channel | ✅ |
+| 2m.3 | `_get_connection` - the second, real enforcement layer: even if tool-schema filtering were ever bypassed, a Channel-scoped tool call re-checks the Connection is genuinely assigned to that Channel, not just present in the Workspace | ✅ |
+| 2m.4 | `read_drive_file` additionally checked against `is_resource_allowed` - the one tool with a natural per-item resource_key to allow-list against | ✅ |
+| 2m.5 | `ChannelAIHistoryEntry` + `GET /teams/{id}/ai/history`; `POST /teams/{id}/ai/command`/`/stream`/`/execute` | ✅ |
+
+### What actually got built (technical notes)
+
+- **Fail-fast, not fail-silent, when a Channel has nothing assigned.** If `list_channel_connections`
+  returns empty for a Channel, `run_command_stream` returns a clear "ask a Channel Admin to add a
+  Connection" message *before* ever constructing an `LLMClient` call - confirmed by a real test
+  (`test_channel_with_no_connections_assigned_never_reaches_the_llm`) that has zero Groq
+  mock/network access at all and still passes, proving the short-circuit genuinely fires first.
+- **Two independent enforcement layers, not one** - tool-schema filtering stops the model from even
+  seeing an unavailable tool, and `_get_connection`'s Channel-assignment check re-verifies
+  independently inside the tool executor itself. Belt-and-suspenders on purpose: schema filtering
+  is a prompt-engineering-level control (a sufficiently determined or confused model could in
+  theory still emit a call for a tool it wasn't offered), the executor-level check is the one that
+  actually can't be talked around.
+- **Resource-level enforcement is honestly scoped to Drive files only, not applied uniformly.**
+  Gmail/Calendar-backed tools (`list_calendar_events`, `search_emails`, `list_meeting_history`,
+  `get_holidays`) read from already-ingested, workspace-wide `Signal` rows with no per-item
+  "resource" concept to allow-list against (unlike a Drive file or GitHub repo) - documented
+  directly in `TOOL_PROVIDERS`' docstring rather than silently only-partially enforcing it. Those
+  tools are still gated at the coarser connection-assignment level (unavailable entirely if
+  Calendar/Gmail isn't assigned to the Channel), just not filterable to "only these specific events"
+  the way Drive files can be filtered to "only these specific files."
+- **The plain, non-Channel-scoped AI Command (`/connections/google/command/*`) is untouched
+  behavior** - `team_id=None` takes every code path exactly as it did before this phase (same tool
+  set, same connection lookup, no history logging). Confirmed both by 11 new unit tests and a real
+  request against the live connected account ("what's my next upcoming calendar event?") returning
+  a correct, unchanged answer after all the shared-code edits.
+- **Verified with 11 real tests** (`tests/test_channel_ai_scoping.py`): tool-schema filtering in
+  both directions (unfiltered when unscoped, filtered to exactly the assigned providers, empty when
+  nothing's assigned), connection lookup honoring Channel assignment, Drive resource rejection and
+  passthrough, the no-connections short-circuit, and history logging (including confirming the
+  unscoped path logs nothing at all).
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **No dedicated Channel workspace page yet** - this phase is the orchestrator/API layer only, on
+  purpose (per the phased build the user confirmed): a Channel is still only a sidebar entry today,
+  with no `/groups/:id/channels/:id` page showing the AI conversation + connections + members
+  layout the spec describes. That's Phase 2n.
+- **No proactive resource recommendations tied to calendar events** (spec section 8) - Channel AI
+  answers on-request only, same pattern as the rest of this codebase's "ask, don't push" design.
+- **Write actions (`create_calendar_event`) inherit the existing confirm-before-execute safety
+  model unchanged** but aren't independently re-checked against Channel Connection assignment at
+  the moment of `execute` - only at the moment the model proposed the plan. Low real risk (the tool
+  couldn't have been offered in the first place without the Connection being assigned), noted for
+  completeness rather than left unstated.
+
+**Exit criteria:** a Channel with a Drive Connection assigned (and a specific file allow-listed) can
+answer questions about that file; a Channel with nothing assigned gets a clear message instead of a
+confusing failure; the original workspace-wide AI Command is provably unaffected. **Confirmed
+against real data for the unscoped path; the Channel-scoped path confirmed via unit tests only, no
+live Channel-with-a-real-Connection exists yet to test end-to-end against (same underlying reason
+as Phase 2l - the connected account's Connections live in a Personal workspace with no Channels).**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

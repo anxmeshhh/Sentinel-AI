@@ -521,14 +521,32 @@ OAuth app, narrower audience, lower priority than getting Gmail/Calendar working
   requested and stored.
 - **`ingestion.py` refactored to dispatch by provider** rather than being GitHub-only — `Provider.GITHUB`/`GOOGLE_CALENDAR`/`GMAIL` each get their own handler function, sharing the same `SignalRepository.upsert()` idempotency guarantee Phase 1 established.
 
+### Real bug found by your click-through (not caught by review or the API-level testing above)
+
+**`Data truncated for column 'provider'` / MySQL `DataError` on the actual callback.** Root cause:
+`connections.provider` and `signals.type` are native MySQL `ENUM` columns, and **Alembic's
+autogenerate compares `sa.Enum` columns by name, not by member list** — adding
+`GOOGLE_CALENDAR`/`GMAIL` to the `Provider` enum and `CALENDAR_EVENT`/`EMAIL` to `SignalType` in
+the Python models produced a migration (`5e907f8f2c91`) with an **empty `upgrade()`** — autogenerate
+saw nothing to change. The MySQL columns silently stayed at `enum('GITHUB')` and
+`enum('PR','REVIEW_SUBMITTED','COMMIT','ISSUE')` the whole time; every test up to this point used
+`GITHUB`/existing signal types, so nothing exercised the gap until a real `GOOGLE_CALENDAR` insert
+hit the database for the first time — which only happens once you actually complete the Google
+consent flow, i.e. exactly the step "verified via the API directly" couldn't reach.
+
+Fixed with a hand-written migration (`a57135e90e41`) that explicitly widens both MySQL enums via
+`op.alter_column`. Verified the fix directly (`SHOW COLUMNS` before/after) and confirmed the failed
+insert correctly rolled back the whole transaction rather than leaving a half-written row.
+
+**The general lesson, worth remembering for any future enum change**: adding a member to a Python
+`enum.Enum` backing a MySQL-mapped `sa.Enum` column *always* needs a hand-checked migration —
+autogenerate cannot be trusted for this specific case, confirmed twice now (this is the same class
+of gap as the `UTCDateTime` custom-type rendering bug from Phase 1.5, just a different Alembic blind
+spot). `git grep "sa.Enum"` across future migrations is worth a glance whenever a `*Type`/`*Status`/
+`Provider`-style Python enum gains a new member.
+
 ### Known gaps (deliberately deferred, not oversights)
 
-- **Not click-tested end to end** — every step up to and including the real redirect to Google's
-  consent screen (with the correct scopes, correct `access_type=offline`) is verified via the API
-  directly. The actual consent screen → callback → token exchange round trip needs a real browser
-  and `http://localhost:8000/integrations/google/callback` registered as an authorized redirect URI
-  in Google Cloud Console (separate from `/auth/google/callback`, which Phase 1.6's login flow
-  already needed).
 - **Zoom** — still fully deferred, not started.
 - **No UI surfaces the ingested Gmail/Calendar signals yet** — Settings shows connection status, but
   the Personal Workspace's Tasks/Calendar/Insights pages (stubbed since Phase 1.5) still don't

@@ -654,6 +654,66 @@ against the live account.**
 
 ---
 
+### Phase 2e — Dashboard Redesign: Groups, Channels, Connections as one command center ✅ Built and tested
+
+**Objective:** the connections hub (Phase 2d's card grid) started life on the Settings page, then
+moved to the dashboard on its own. This phase gives it siblings: **My Groups** and **My Channels**,
+so the dashboard becomes a genuine command center — every group you're in, every channel you've
+joined across all of them, and every external connection, all one click away, without first
+navigating into a specific workspace to see any of it.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2e.1 | `role` added to `GET /workspaces` (was fetched but never returned) | ✅ |
+| 2e.2 | `GET /teams/mine` — every channel the user belongs to, across every workspace | ✅ |
+| 2e.3 | My Groups card section — click switches the active workspace | ✅ |
+| 2e.4 | My Channels card section + detail panel (member count, role, invite, leave) | ✅ |
+| 2e.5 | Slack/Notion added as disabled "coming soon" cards alongside Zoom | ✅ |
+| 2e.6 | Dashboard re-fetches its own data when the active workspace changes | ✅ |
+
+### What actually got built (technical notes)
+
+- **A real, previously-invisible bug fixed as a side effect**: `BriefPage` fetched connections/brief
+  exactly once on mount (`useEffect(load, [])`) - switching the active workspace (from the sidebar,
+  or now from a Group/Channel card) never re-fetched, so the dashboard silently kept showing the
+  *previous* workspace's connections and brief after a switch. Fixed by re-running `load()` whenever
+  `active?.id` changes - the click-to-switch UX this phase adds would have been visibly broken
+  without this fix, which is how it got caught.
+- **"My Channels" needed a genuinely new query shape**: every existing team endpoint is scoped to
+  one workspace (`GET /workspaces/{id}/teams`), because until now nothing needed "all of a user's
+  channels regardless of which workspace they're in." `GET /teams/mine` joins `TeamMembership ->
+  Team -> Workspace -> Membership` (the last join pulls the user's *workspace-level* role, since
+  `TeamMembership` itself carries no role of its own - access level has always come from the parent
+  Workspace's `Membership.role`, per Phase 2a's design). Verified against real multi-workspace data:
+  a second test account with real memberships in "Acme Corporation" returned both its channels with
+  correct workspace names, member counts, and roles.
+- **Channel detail panel scoped honestly, not aspirationally**: channels don't have a content
+  feed yet (that's what a future "Project" entity would be - still unbuilt). Rather than fake a
+  feed or silently do nothing, clicking a channel opens a real, useful panel with what actually
+  exists today - member count, the user's role, invite, and leave - and switches workspace context
+  so everything else on the dashboard (brief, connections) reflects that channel's workspace. This
+  was an explicit scope call, not an oversight - see the "known gaps" note below.
+- **Groups reuses `WorkspaceContext` directly** rather than fetching its own copy - `setActiveId` is
+  the same function the sidebar's workspace switcher already calls, so a Group Card and the sidebar
+  dropdown are just two entry points to the same state, never two sources of truth.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **No real "channel content" to show** - the detail panel is honest about this (member count, role,
+  invite, leave), not a placeholder pretending there's more. A future Project/feed entity would give
+  channels something to actually show beyond membership.
+- **Not yet click-tested in a real browser** - every layer (new endpoints, role propagation, the
+  `active?.id` re-fetch fix) was verified directly against real multi-workspace, multi-channel data
+  via the API; the actual dashboard hasn't been clicked through in a browser yet.
+- **Search/filter is a plain client-side substring match**, only shown once there are more than 3
+  groups or channels - deliberately simple, no fuzzy matching or backend search endpoint.
+
+**Exit criteria:** see every group and every channel you belong to as cards without navigating into
+a workspace first; click a channel card and land in the right workspace with that channel's real
+info. **Confirmed via direct API testing against a real multi-workspace account.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

@@ -3,8 +3,11 @@ import { useSearchParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
 import type { Brief, Connection } from "../api/types";
+import { ChannelCards } from "../components/ChannelCards";
 import { FindingCard } from "../components/FindingCard";
+import { GroupCards } from "../components/GroupCards";
 import { IntegrationCardGrid } from "../components/IntegrationCardGrid";
+import { useWorkspace } from "../context/WorkspaceContext";
 
 const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
   session_expired: "That connect link expired — try again.",
@@ -12,6 +15,7 @@ const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
 };
 
 export function BriefPage() {
+  const { workspaces, active, setActiveId } = useWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [brief, setBrief] = useState<Brief | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -39,8 +43,12 @@ export function BriefPage() {
   }
 
   useEffect(() => {
-    load();
-  }, []);
+    // Re-fetch whenever the active workspace changes (Group/Channel cards
+    // switch it) - previously this only ran once on mount, so switching
+    // workspaces via the sidebar left this page showing stale data.
+    if (active) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.id]);
 
   async function triggerRun() {
     const githubConnection = connections.find((c) => c.provider === "github");
@@ -72,6 +80,10 @@ export function BriefPage() {
         </Banner>
       )}
 
+      <GroupCards workspaces={workspaces} activeId={active?.id ?? null} onSelect={setActiveId} />
+      <ChannelCards onSelectWorkspace={setActiveId} />
+
+      <div className="mb-2.5 font-mono text-[13px] font-bold uppercase tracking-wide text-ink-dim">My Connections</div>
       <IntegrationCardGrid connections={connections} onChanged={load} />
 
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">

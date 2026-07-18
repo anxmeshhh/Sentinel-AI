@@ -86,6 +86,16 @@ export interface Team {
   is_member: boolean;
 }
 
+export interface MyTeam {
+  id: string;
+  workspace_id: string;
+  workspace_name: string;
+  name: string;
+  slug: string;
+  member_count: number;
+  role: string;
+}
+
 export interface Invite {
   token: string;
   workspace_id: string;

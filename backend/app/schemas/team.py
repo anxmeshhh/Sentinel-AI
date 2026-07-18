@@ -16,3 +16,18 @@ class TeamOut(BaseModel):
     is_member: bool
 
     model_config = {"from_attributes": True}
+
+
+class MyTeamOut(BaseModel):
+    """A team the user actually belongs to, with its parent workspace
+    attached - used by the cross-workspace "My Channels" dashboard section,
+    which has no single active-workspace context to scope a query by.
+    """
+
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    workspace_name: str
+    name: str
+    slug: str
+    member_count: int
+    role: str

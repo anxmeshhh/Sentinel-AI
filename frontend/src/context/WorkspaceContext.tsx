@@ -9,6 +9,7 @@ export interface Workspace {
   name: string;
   slug: string;
   kind: "personal" | "team" | "organization";
+  role: string;
 }
 
 interface WorkspaceContextValue {

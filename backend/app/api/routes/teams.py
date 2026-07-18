@@ -13,7 +13,8 @@ from app.api.deps import get_current_user, get_db, require_workspace_membership
 from app.core.slugs import unique_slug
 from app.models.team import Team, TeamMembership
 from app.models.user import User
-from app.schemas.team import TeamCreate, TeamOut
+from app.models.workspace import Membership, Workspace
+from app.schemas.team import MyTeamOut, TeamCreate, TeamOut
 
 router = APIRouter(tags=["teams"])
 
@@ -29,6 +30,38 @@ def _to_team_out(session: Session, team: Team, user: User) -> TeamOut:
         id=team.id, workspace_id=team.workspace_id, name=team.name, slug=team.slug,
         member_count=member_count, is_member=is_member,
     )
+
+
+@router.get("/teams/mine", response_model=list[MyTeamOut])
+def list_my_teams(
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[MyTeamOut]:
+    """Every team the user belongs to, across every workspace - the "My
+    Channels" dashboard section needs this precisely because it has no
+    single active workspace to scope by (that's the whole point: jump into
+    any channel without first navigating through its parent group).
+    """
+    rows = session.execute(
+        select(Team, Workspace.name, Membership.role)
+        .join(TeamMembership, TeamMembership.team_id == Team.id)
+        .join(Workspace, Workspace.id == Team.workspace_id)
+        .join(Membership, (Membership.workspace_id == Workspace.id) & (Membership.user_id == user.id))
+        .where(TeamMembership.user_id == user.id)
+    ).all()
+
+    result = []
+    for team, workspace_name, role in rows:
+        member_count = session.execute(
+            select(func.count()).select_from(TeamMembership).where(TeamMembership.team_id == team.id)
+        ).scalar_one()
+        result.append(
+            MyTeamOut(
+                id=team.id, workspace_id=team.workspace_id, workspace_name=workspace_name,
+                name=team.name, slug=team.slug, member_count=member_count, role=role.value,
+            )
+        )
+    return result
 
 
 @router.get("/workspaces/{workspace_id}/teams", response_model=list[TeamOut])

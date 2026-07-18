@@ -6,7 +6,7 @@ import type { Connection } from "../api/types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
-type ProviderKey = "google" | "github" | "zoom";
+type ProviderKey = "google" | "github" | "zoom" | "slack" | "notion";
 
 export function IntegrationCardGrid({ connections, onChanged }: { connections: Connection[]; onChanged: () => void }) {
   const [selected, setSelected] = useState<ProviderKey>("google");
@@ -47,6 +47,26 @@ export function IntegrationCardGrid({ connections, onChanged }: { connections: C
           active={selected === "zoom"}
           onClick={() => setSelected("zoom")}
         />
+        <IntegrationCard
+          icon={<SlackIcon />}
+          name="Slack"
+          status="Coming soon"
+          desc="Gaps, unanswered questions, missing approvals — not yet available."
+          connected={false}
+          disabled
+          active={selected === "slack"}
+          onClick={() => setSelected("slack")}
+        />
+        <IntegrationCard
+          icon={<NotionIcon />}
+          name="Notion"
+          status="Coming soon"
+          desc="Stale or missing docs — not yet available."
+          connected={false}
+          disabled
+          active={selected === "notion"}
+          onClick={() => setSelected("notion")}
+        />
       </div>
 
       <div className="mt-3 rounded-md border border-border bg-surface">
@@ -55,6 +75,8 @@ export function IntegrationCardGrid({ connections, onChanged }: { connections: C
         )}
         {selected === "github" && <GitHubDetail connections={githubConnections} onChanged={onChanged} />}
         {selected === "zoom" && <p className="p-4 text-[12.5px] text-ink-faint">Meeting metadata — not yet available.</p>}
+        {selected === "slack" && <p className="p-4 text-[12.5px] text-ink-faint">Gaps, unanswered questions, missing approvals — not yet available.</p>}
+        {selected === "notion" && <p className="p-4 text-[12.5px] text-ink-faint">Stale or missing docs — not yet available.</p>}
       </div>
     </div>
   );
@@ -307,6 +329,25 @@ function ZoomIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
       <rect x="1" y="4" width="16" height="16" rx="4" fill="#2D8CFF" opacity="0.5" />
       <path d="M18 9.5l4.5-2.7a.6.6 0 0 1 .9.5v9.4a.6.6 0 0 1-.9.5L18 14.5v-5z" fill="#2D8CFF" opacity="0.5" />
+    </svg>
+  );
+}
+
+function SlackIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" opacity="0.5">
+      <rect x="9" y="1" width="4" height="9" rx="2" fill="#36C5F0" />
+      <rect x="14" y="9" width="9" height="4" rx="2" fill="#2EB67D" />
+      <rect x="11" y="14" width="4" height="9" rx="2" fill="#ECB22E" />
+      <rect x="1" y="11" width="9" height="4" rx="2" fill="#E01E5A" />
+    </svg>
+  );
+}
+
+function NotionIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-ink opacity-50" aria-hidden="true">
+      <path d="M4 3.5A1.5 1.5 0 0 1 5.5 2h13A1.5 1.5 0 0 1 20 3.5v17a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 20.5v-17zM8 8v9h1.6V10.7L14 17h1.6V8H14v6.3L9.6 8H8z" />
     </svg>
   );
 }

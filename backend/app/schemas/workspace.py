@@ -8,6 +8,7 @@ class WorkspaceOut(BaseModel):
     name: str
     slug: str
     kind: str
+    role: str
 
     model_config = {"from_attributes": True}
 

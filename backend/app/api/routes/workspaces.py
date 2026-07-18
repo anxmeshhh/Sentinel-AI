@@ -23,10 +23,14 @@ def list_workspaces(
     """
     provision_personal_workspace_for_user(session, user)  # safety net for pre-existing accounts
 
-    workspaces = session.execute(
-        select(Workspace).join(Membership, Membership.workspace_id == Workspace.id).where(Membership.user_id == user.id)
-    ).scalars().all()
-    return [WorkspaceOut.model_validate(w) for w in workspaces]
+    rows = session.execute(
+        select(Workspace, Membership.role)
+        .join(Membership, Membership.workspace_id == Workspace.id)
+        .where(Membership.user_id == user.id)
+    ).all()
+    return [
+        WorkspaceOut(id=w.id, name=w.name, slug=w.slug, kind=w.kind.value, role=role.value) for w, role in rows
+    ]
 
 
 @router.post("", response_model=WorkspaceOut, status_code=201)

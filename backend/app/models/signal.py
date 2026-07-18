@@ -18,6 +18,8 @@ class SignalType(str, enum.Enum):
     REVIEW_SUBMITTED = "review_submitted"
     COMMIT = "commit"
     ISSUE = "issue"
+    CALENDAR_EVENT = "calendar_event"
+    EMAIL = "email"
 
 
 class Signal(Base, UUIDPk, TimestampMixin):

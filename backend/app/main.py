@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api.routes import admin, assistant, auth, briefs, connections, findings, invites, runs, teams, workspaces
+from app.api.routes import admin, assistant, auth, briefs, connections, findings, integrations, invites, runs, teams, workspaces
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 
@@ -21,10 +21,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Sentinel AI", version="0.1.0", lifespan=lifespan)
 
-# Required by authlib's OAuth client to hold state/nonce between the
-# /auth/{provider}/login redirect and the /auth/{provider}/callback - not a
-# general-purpose session store, nothing else in the app uses it (auth is
-# otherwise stateless JWT, per api/deps.py's get_current_user).
+# Required by authlib's OAuth client to hold state/nonce between an OAuth
+# redirect and its callback (both /auth/{provider}/login and
+# /integrations/google/connect use this) - not a general-purpose session
+# store, our own auth is otherwise stateless JWT (api/deps.py's get_current_user).
 app.add_middleware(SessionMiddleware, secret_key=get_settings().session_secret_key)
 
 # Dev-only CORS: the Vite dev server runs on a different origin. Tighten this
@@ -46,6 +46,7 @@ app.include_router(admin.router)
 app.include_router(workspaces.router)
 app.include_router(teams.router)
 app.include_router(invites.router)
+app.include_router(integrations.router)
 app.include_router(assistant.router)
 
 

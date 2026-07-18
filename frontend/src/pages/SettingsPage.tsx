@@ -1,16 +1,14 @@
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { Connection } from "../api/types";
 
-const INTEGRATIONS = [
-  { name: "GitHub", desc: "PRs, commits, issues, reviews", available: true },
-  { name: "Gmail", desc: "Threads, participants, timestamps — metadata only", available: false },
-  { name: "Google Calendar", desc: "Meetings, attendees, duration", available: false },
-  { name: "Google Meet", desc: "Meeting metadata via Calendar", available: false },
-  { name: "Zoom", desc: "Meeting metadata", available: false },
-];
+const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
+  session_expired: "That connect link expired — try again.",
+  no_refresh_token: "Google didn't grant offline access — try disconnecting in your Google Account settings and reconnecting.",
+};
 
 const AGENTS = [
   { name: "Engineering", desc: "GitHub bottlenecks, hotspots, inactive contributors, risky deploys", tag: "PHASE 1", on: true },
@@ -22,19 +20,31 @@ const AGENTS = [
   { name: "HR Wellbeing", desc: "Team-level workload patterns only — never individual judgment. Opt-in, off by default.", tag: "OPT-IN", on: false },
 ];
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
 export function SettingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [org, setOrg] = useState("");
   const [repo, setRepo] = useState("");
   const [token, setToken] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [googleConnecting, setGoogleConnecting] = useState(false);
 
   function load() {
     api.get<Connection[]>("/connections").then(setConnections);
   }
 
   useEffect(load, []);
+
+  const githubConnections = connections.filter((c) => c.provider === "github");
+  const googleCalendar = connections.find((c) => c.provider === "google_calendar");
+  const gmail = connections.find((c) => c.provider === "gmail");
+  const googleConnected = Boolean(googleCalendar || gmail);
+
+  const connectedBanner = searchParams.get("connected");
+  const googleError = searchParams.get("google_error");
 
   async function handleConnect(e: FormEvent) {
     e.preventDefault();
@@ -58,6 +68,16 @@ export function SettingsPage() {
     load();
   }
 
+  async function handleConnectGoogle() {
+    setGoogleConnecting(true);
+    try {
+      const { ticket } = await api.post<{ ticket: string }>("/integrations/google/connect-ticket");
+      window.location.href = `${API_BASE}/integrations/google/connect?ticket=${encodeURIComponent(ticket)}`;
+    } catch {
+      setGoogleConnecting(false);
+    }
+  }
+
   return (
     <div className="max-w-2xl">
       <h1 className="mb-1 text-xl font-semibold text-balance">Agents &amp; Connections</h1>
@@ -65,38 +85,46 @@ export function SettingsPage() {
         Control what Sentinel watches and which agents are allowed to run.
       </p>
 
+      {connectedBanner === "google" && (
+        <Banner tone="good" onDismiss={() => setSearchParams({})}>
+          Google connected — Calendar and Gmail will start syncing on the next run.
+        </Banner>
+      )}
+      {googleError && (
+        <Banner tone="crit" onDismiss={() => setSearchParams({})}>
+          {GOOGLE_ERROR_MESSAGES[googleError] ?? "Couldn't connect Google — try again."}
+        </Banner>
+      )}
+
       <SectionLabel>Integrations</SectionLabel>
       <div className="mb-8 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-        {INTEGRATIONS.map((integration) => (
-          <div
-            key={integration.name}
-            className={`flex items-start justify-between gap-3 border p-3.5 ${
-              integration.available ? "border-border bg-surface" : "border-border/60 bg-surface/50"
-            }`}
-          >
-            <div>
-              <div className={`text-[13px] font-semibold ${integration.available ? "text-ink" : "text-ink-faint"}`}>
-                {integration.name}
-              </div>
-              <div className="mt-0.5 text-[11.5px] text-ink-faint">{integration.desc}</div>
-            </div>
-            <span
-              className={`flex-none whitespace-nowrap rounded-full border px-2 py-[3px] text-[10px] font-medium uppercase tracking-wide ${
-                integration.available ? "border-good/40 text-good" : "border-border text-ink-faint"
-              }`}
-            >
-              {integration.available ? "Available" : "Coming soon"}
-            </span>
-          </div>
-        ))}
+        <IntegrationTile name="GitHub" desc="PRs, commits, issues, reviews" status="available" />
+        <IntegrationTile
+          name="Gmail"
+          desc="Subject, participants, timestamps — never message bodies"
+          status={gmail ? "connected" : "available"}
+          detail={gmail?.org}
+          onConnect={handleConnectGoogle}
+          connecting={googleConnecting}
+        />
+        <IntegrationTile
+          name="Google Calendar"
+          desc="Meetings, attendees, duration"
+          status={googleCalendar ? "connected" : "available"}
+          detail={googleCalendar?.org}
+          onConnect={handleConnectGoogle}
+          connecting={googleConnecting}
+        />
+        <IntegrationTile name="Google Meet" desc="Meeting links come from Calendar — no separate connection needed" status={googleConnected ? "connected" : "rides-on-calendar"} />
+        <IntegrationTile name="Zoom" desc="Meeting metadata" status="coming-soon" />
       </div>
 
       <SectionLabel>Connected Repositories</SectionLabel>
       <div className="mb-3 rounded-md border border-border bg-surface">
-        {connections.length === 0 ? (
+        {githubConnections.length === 0 ? (
           <p className="p-4 text-[13px] text-ink-dim">No repository connected yet.</p>
         ) : (
-          connections.map((c) => (
+          githubConnections.map((c) => (
             <div key={c.id} className="flex items-center gap-3 border-b border-border p-3.5 last:border-b-0">
               <div>
                 <div className="font-mono text-[12.5px] font-semibold">
@@ -176,6 +204,66 @@ export function SettingsPage() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+type IntegrationStatus = "available" | "connected" | "coming-soon" | "rides-on-calendar";
+
+function IntegrationTile({
+  name,
+  desc,
+  status,
+  detail,
+  onConnect,
+  connecting,
+}: {
+  name: string;
+  desc: string;
+  status: IntegrationStatus;
+  detail?: string;
+  onConnect?: () => void;
+  connecting?: boolean;
+}) {
+  const dimmed = status === "coming-soon";
+  return (
+    <div className={`flex items-start justify-between gap-3 border p-3.5 ${dimmed ? "border-border/60 bg-surface/50" : "border-border bg-surface"}`}>
+      <div className="min-w-0">
+        <div className={`text-[13px] font-semibold ${dimmed ? "text-ink-faint" : "text-ink"}`}>{name}</div>
+        <div className="mt-0.5 text-[11.5px] text-ink-faint">{status === "connected" && detail ? detail : desc}</div>
+        {status === "available" && onConnect && (
+          <button onClick={onConnect} disabled={connecting} className="mt-2 text-[11.5px] font-semibold text-ink underline underline-offset-2 disabled:opacity-50">
+            {connecting ? "Redirecting…" : "Connect"}
+          </button>
+        )}
+      </div>
+      <StatusBadge status={status} />
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: IntegrationStatus }) {
+  const label = { available: "Available", connected: "Connected", "coming-soon": "Coming soon", "rides-on-calendar": "Via Calendar" }[status];
+  const cls =
+    status === "connected"
+      ? "border-good/40 text-good"
+      : status === "available"
+        ? "border-watch/40 text-watch"
+        : "border-border text-ink-faint";
+  return (
+    <span className={`flex-none whitespace-nowrap rounded-full border px-2 py-[3px] text-[10px] font-medium uppercase tracking-wide ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
+function Banner({ tone, children, onDismiss }: { tone: "good" | "crit"; children: ReactNode; onDismiss: () => void }) {
+  return (
+    <div className={`mb-5 flex items-center justify-between gap-3 border px-3.5 py-2.5 text-[12.5px] ${tone === "good" ? "border-good/40 bg-good/10 text-good" : "border-crit/40 bg-crit/10 text-crit"}`}>
+      <span>{children}</span>
+      <button onClick={onDismiss} className="flex-none opacity-70 hover:opacity-100">
+        ✕
+      </button>
     </div>
   );
 }

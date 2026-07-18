@@ -15,6 +15,7 @@ class ConnectionCreate(BaseModel):
 
 class ConnectionOut(BaseModel):
     id: uuid.UUID
+    provider: str
     org: str
     repo: str
     last_synced_at: datetime | None

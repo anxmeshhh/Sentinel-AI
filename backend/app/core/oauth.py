@@ -25,6 +25,22 @@ if GOOGLE_CONFIGURED:
         client_kwargs={"scope": "openid email profile"},
     )
 
+    # Separate client for the Calendar/Gmail "Connect" flow (as opposed to
+    # login above) - broader data scopes. access_type=offline + prompt=consent
+    # (what makes Google actually issue a refresh_token) are passed explicitly
+    # at the authorize_redirect() call site in routes/integrations.py, not
+    # here - verified directly that client_kwargs doesn't reliably propagate
+    # access_type through to the real redirect URL.
+    oauth.register(
+        name="google_data",
+        client_id=_settings.google_client_id,
+        client_secret=_settings.google_client_secret,
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={
+            "scope": "openid email https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly",
+        },
+    )
+
 if MICROSOFT_CONFIGURED:
     oauth.register(
         name="microsoft",

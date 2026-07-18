@@ -3,6 +3,7 @@
 
 export interface Connection {
   id: string;
+  provider: "github" | "google_calendar" | "gmail";
   org: string;
   repo: string;
   last_synced_at: string | null;

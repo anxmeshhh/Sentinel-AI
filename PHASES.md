@@ -459,28 +459,88 @@ required. **Met** — verified via the API directly; not yet click-tested in a r
 wouldn't have caught themselves, surfaced at least a day before they would have caught it manually
 — now on a workspace the pilot user actually created and invited teammates into, not a seeded one.
 
-### Phase 2c — Broaden Beyond Developers: Gmail, Calendar, Meet, Zoom
+### Phase 2c — Broaden Beyond Developers: Gmail + Calendar ✅ Built, ⏸ not yet click-tested
 
 **Objective:** the pitch was never "engineering tool" — it's an operational layer for anyone in the
-org. Right now everything that exists only serves the engineering-signal side (GitHub). This phase
-is what makes onboarding's "Connect Integrations" step (2a.8) actually mean something for a PM, an
-exec, or anyone whose work lives in email and meetings, not pull requests.
+org. This phase makes onboarding's "Connect Integrations" step (2a.8) actually mean something for
+a PM, an exec, or anyone whose work lives in email and meetings, not pull requests.
 
-Sequenced deliberately *after* Phase 2a (confirmed): the Discord-shaped workspace/channel/invite
-loop ships first as a complete, working thing, rather than leaving it half-done while integration
-breadth gets added.
+**Scoped down from the original plan, deliberately:** Google Meet doesn't need its own integration
+— a Meet link is just a field on a Calendar event, confirmed once the Calendar client existed
+(2c.4's "confirm this" resolved to "yes, no separate work needed"). Zoom stays deferred — separate
+OAuth app, narrower audience, lower priority than getting Gmail/Calendar working first.
 
-| Step | Deliverable | Notes |
+| Step | Deliverable | Status |
 |---|---|---|
-| 2c.1 | Google OAuth scope upgrade | Phase 1.6's Google login OAuth only requested identity scopes (`openid email profile`). Reading Gmail/Calendar needs additional consent scopes (`gmail.readonly`, `calendar.readonly`) — same provider, a broader ask, re-consent required. |
-| 2c.2 | Gmail client + signals | Metadata only, same discipline as GitHub (PRD §7): subject lines, participants, timestamps, thread structure — never message bodies, matching "no source code to the LLM" applied to "no email content to the LLM." |
-| 2c.3 | Google Calendar client + signals | Meeting metadata: attendees, duration, title, recurrence — powers "meeting overload" signals or feeds the HR Wellbeing agent later (`ROADMAP.md` Phase 4), and populates the personal-workspace Calendar page stubbed since Phase 1.5. |
-| 2c.4 | Google Meet | Likely rides on Calendar's data (Meet links are calendar-event metadata) rather than a wholly separate integration — confirm this once Calendar's client exists, may not need its own OAuth app at all. |
-| 2c.5 | Zoom integration | Separate OAuth app (not Google's family) — meeting metadata: duration, participants, recurrence. |
-| 2c.6 | Onboarding step 1 goes live for real | The "coming soon" tiles from 2a.8 become real connect buttons, one per source as each ships — not all four have to land simultaneously. |
+| 2c.1 | Google OAuth scope upgrade (data-connect flow, distinct from login) | ✅ |
+| 2c.2 | Gmail client + signals | ✅ |
+| 2c.3 | Google Calendar client + signals | ✅ |
+| 2c.4 | Google Meet | ✅ — rides on Calendar, no separate integration needed |
+| 2c.6 | Onboarding integrations step goes live for real | ✅ — Gmail/Calendar tiles now show real "Connect" buttons |
+
+### What actually got built (technical notes)
+
+- **A real technical problem, solved properly**: this app's auth is Bearer-JWT (not cookies), but
+  connecting Google requires a full-page redirect to Google and back — and a browser navigation
+  never sends custom headers, so the real session token can't make the trip. Fixed with the
+  standard pattern: `core/auth.py` gained `create_connect_ticket`/`decode_connect_ticket` - an
+  authenticated `POST /integrations/google/connect-ticket` (which *can* carry a real
+  `Authorization` header) mints a short-lived (5 min), single-purpose ticket; that ticket, not the
+  real session token, goes in the redirect URL. `decode_access_token` was hardened to explicitly
+  reject anything carrying the ticket's `typ` claim, and verified directly both directions: a
+  garbage ticket 400s, and — the more important check — a **real session JWT used as a connect
+  ticket is also correctly rejected**, so a leaked ticket could never be upgraded into a full
+  session even if it were somehow captured.
+- **Two separate OAuth client registrations** (`core/oauth.py`): `google` (login, identity-only
+  scopes, unchanged from Phase 1.6) and `google_data` (broader `calendar.readonly` +
+  `gmail.readonly` scopes, `access_type=offline` for a refresh token). **Caught and fixed a real
+  bug via testing, not assumption**: `access_type=offline` set in `client_kwargs` at registration
+  time silently failed to reach the actual redirect URL (confirmed by inspecting the real
+  `Location` header), while `prompt=consent` in the same dict *did* make it through — an
+  inconsistency in what authlib forwards from registration-time config. Fixed by passing
+  `access_type`/`prompt` explicitly at the `authorize_redirect()` call site instead, then
+  re-verified the real header showed `access_type=offline` this time.
+- **One OAuth consent, two Connections**: clicking "Connect" on either the Gmail or Calendar tile
+  triggers the identical flow (both scopes requested together) — the callback creates *both* a
+  `GOOGLE_CALENDAR` and a `GMAIL` `Connection` row from the one token response, so the user never
+  has to click twice.
+- **Token storage generalized**: `Connection.encrypted_token` used to always hold a single PAT
+  string (GitHub). For Google it now holds an encrypted JSON blob
+  (`{access_token, refresh_token, expires_at}`) — same Fernet layer, different plaintext shape,
+  callers decide how to parse what's inside.
+- **`Connection.org`/`repo` reused, not renamed** (avoided a risky migration touching Phase 1's
+  working GitHub integration): for Google connections, `org` holds the connected Google account's
+  email and `repo` holds a fixed label (`"calendar"`/`"gmail"`). `full_name` is now provider-aware.
+- **Automatic token refresh** (`integrations/google_auth.py`): access tokens expire in ~1h;
+  `get_valid_access_token()` checks expiry with a 5-minute buffer and refreshes using the stored
+  refresh_token before every Calendar/Gmail ingestion run, persisting the new access token. A
+  revoked/expired refresh_token raises a clear error rather than retrying forever.
+- **Gmail's metadata discipline, actively enforced**: Gmail's API returns a `snippet` field (a body
+  preview) even in `format=metadata` mode — `_normalize_message` deliberately never reads it, same
+  pattern as the GitHub client discarding the `patch` field. Only Subject/From/To/Date headers are
+  requested and stored.
+- **`ingestion.py` refactored to dispatch by provider** rather than being GitHub-only — `Provider.GITHUB`/`GOOGLE_CALENDAR`/`GMAIL` each get their own handler function, sharing the same `SignalRepository.upsert()` idempotency guarantee Phase 1 established.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **Not click-tested end to end** — every step up to and including the real redirect to Google's
+  consent screen (with the correct scopes, correct `access_type=offline`) is verified via the API
+  directly. The actual consent screen → callback → token exchange round trip needs a real browser
+  and `http://localhost:8000/integrations/google/callback` registered as an authorized redirect URI
+  in Google Cloud Console (separate from `/auth/google/callback`, which Phase 1.6's login flow
+  already needed).
+- **Zoom** — still fully deferred, not started.
+- **No UI surfaces the ingested Gmail/Calendar signals yet** — Settings shows connection status, but
+  the Personal Workspace's Tasks/Calendar/Insights pages (stubbed since Phase 1.5) still don't
+  render this data. The Engineering/Executive agents also don't reason over these new signal types
+  yet — ingestion exists, agent awareness of it doesn't.
+- **No disconnect flow for Google connections** — `DELETE /connections/{id}` works (it's
+  provider-agnostic), but there's no UI button for it on the Gmail/Calendar tiles yet, only on the
+  GitHub repo list.
 
 **Exit criteria:** a non-engineering pilot user (someone whose primary tools are email/calendar, not
 GitHub) can connect at least one of these and get a finding that's actually about their work.
+**Not yet met** — needs the real browser click-through first.
 
 **⏸ Wait for signal before Phase 3.**
 

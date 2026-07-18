@@ -1254,6 +1254,75 @@ since there's no new UI surface in this slice.**
 
 ---
 
+### Phase 2l — Per-Channel Connections + Resource-Level Permissions ✅ Built and tested (backend/API only; no UI yet - that's 2n)
+
+**Objective:** let a Workspace-level Connection be assigned to specific Channels, with allow-listing
+on top for specific resources within it (a GitHub repo, a Drive folder, a Jira project) - spec
+sections 4-6. `Connection` was 100% workspace-wide before this with zero per-channel scoping
+concept anywhere in the schema.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2l.1 | `ChannelConnection` (team_id ↔ connection_id) + `ChannelConnectionResource` (allow-listed resource_key/label per assignment) models | ✅ |
+| 2l.2 | `GET/POST/DELETE /teams/{id}/connections`, `POST/DELETE /teams/{id}/connections/{id}/resources` | ✅ |
+| 2l.3 | `services/channel_connections.py`: `list_channel_connections`, `is_resource_allowed` - reusable by Phase 2m's Channel AI without importing route code | ✅ |
+
+### What actually got built (technical notes)
+
+- **Fail-closed by design, not fail-open** - this is the one part of the new spec's language that's
+  unambiguous ("adding a Connection does not automatically give the Channel access to everything").
+  Assigning a Connection to a Channel grants zero resource access on its own;
+  `is_resource_allowed()` returns `False` unless a `ChannelConnectionResource` row explicitly
+  allow-lists that exact `resource_key`. No separate "block" entry type exists - under
+  default-deny, absence already means blocked, so a block row would add nothing. Verified with a
+  real test (`test_assigning_connection_grants_no_resource_access_by_default`): assigning a real
+  Connection and then immediately checking `is_resource_allowed` for its own resource key returns
+  `False` until a resource row is added.
+- **Workspace boundary enforced on assignment** - a Connection can only be assigned to a Channel
+  within its own Workspace; attempting to assign a Connection belonging to a different Workspace
+  404s (not 403, matching this codebase's "don't confirm existence of things outside the caller's
+  scope" convention) rather than silently succeeding across a tenant boundary.
+- **No credential exposure surface added** - `ChannelConnectionOut` only ever carries `provider` and
+  `Connection.full_name` (the existing, already-safe display label); `encrypted_token` was never
+  in scope for any new schema, matching the existing `ConnectionOut`'s convention.
+- **Read access is for any Channel member, management is Channel-Admin-only** -
+  `GET /teams/{id}/connections` passes both `ChannelRole` values to `require_channel_role` (i.e.
+  "any actual member, or a Workspace admin via its existing bypass"), while assign/unassign/
+  add-resource/remove-resource all pass admin-only. A plain Channel Member can see what's
+  available to them but can't change it - verified in `test_plain_channel_member_can_view_
+  assigned_connections` and `test_plain_member_cannot_remove_resource`.
+- **A migration-discovery gap found and fixed while building this**: the new models were invisible
+  to `alembic revision --autogenerate` at first - `alembic/env.py` maintains an explicit list of
+  model modules to import so `Base.metadata` is fully populated before comparison, and the new
+  `channel_connection` module wasn't in it. The first autogenerate attempt silently produced an
+  empty migration (no error, just nothing to do) - caught by reading the generated file rather than
+  assuming a clean run meant a correct one.
+- **Verified with 7 real tests** (`tests/test_channel_connections.py`) against a throwaway in-memory
+  DB, covering the fail-closed default, cross-workspace rejection, cascade delete of resources when
+  an assignment is removed, and RBAC gating on every management action.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **No UI surface yet** - this phase is schema + API only, by design; Phase 2n is the dedicated
+  admin management interface. Building it before Phase 2m (Channel AI) would mean designing the
+  permission-management UI before knowing exactly what Channel AI actually needs to display.
+- **Not yet wired into the AI orchestrator** - `is_resource_allowed`/`list_channel_connections`
+  exist and are tested, but nothing calls them yet outside tests. That's Phase 2m's entire job:
+  making the Channel AI actually respect these permissions when answering a request.
+- **Only GitHub-shaped resources realistically usable today** - the model is provider-agnostic
+  (`resource_key` is just a string), but only GitHub/Google Calendar/Gmail/Google Drive Connections
+  exist at all in this codebase; Jira/Slack/Notion resource permissions from the spec's examples
+  aren't meaningfully testable until those connections exist.
+
+**Exit criteria:** a Channel Admin can assign a Workspace Connection to their Channel and allow-list
+specific resources; a plain member can see what's assigned but not change it; nothing is
+accessible until explicitly allowed. **Confirmed against real data via the unit test suite; no live
+smoke test against a real Connection since no Connection exists in the specific Workspace tested
+against - the underlying real account currently keeps its Connections in a Personal workspace with
+no Channels of its own.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

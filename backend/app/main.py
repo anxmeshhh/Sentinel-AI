@@ -10,6 +10,7 @@ from app.api.routes import (
     auth,
     briefs,
     calendar,
+    channel_connections,
     connections,
     connections_ai,
     drive,
@@ -62,6 +63,7 @@ app.include_router(findings.router)
 app.include_router(admin.router)
 app.include_router(workspaces.router)
 app.include_router(teams.router)
+app.include_router(channel_connections.router)
 app.include_router(invites.router)
 app.include_router(integrations.router)
 app.include_router(assistant.router)

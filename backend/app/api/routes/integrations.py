@@ -81,7 +81,7 @@ async def google_connect_callback(request: Request, session: Session = Depends(g
     workspace_id_str = request.session.pop("google_connect_workspace_id", None)
     request.session.pop("google_connect_user_id", None)
     if not workspace_id_str:
-        return RedirectResponse(f"{get_settings().frontend_base_url}/settings?google_error=session_expired")
+        return RedirectResponse(f"{get_settings().frontend_base_url}/?google_error=session_expired")
 
     token = await oauth.google_data.authorize_access_token(request)
     access_token = token["access_token"]
@@ -94,7 +94,7 @@ async def google_connect_callback(request: Request, session: Session = Depends(g
         # prompt=consent forces re-consent, which we always request) - if
         # it's still missing, something's off with the app's OAuth config
         # rather than anything the user did wrong.
-        return RedirectResponse(f"{get_settings().frontend_base_url}/settings?google_error=no_refresh_token")
+        return RedirectResponse(f"{get_settings().frontend_base_url}/?google_error=no_refresh_token")
 
     expires_at_ts = token.get("expires_at") or (time.time() + token.get("expires_in", 3600))
     expires_at = datetime.fromtimestamp(expires_at_ts, tz=timezone.utc)
@@ -118,4 +118,4 @@ async def google_connect_callback(request: Request, session: Session = Depends(g
             )
     session.commit()
 
-    return RedirectResponse(f"{get_settings().frontend_base_url}/settings?connected=google")
+    return RedirectResponse(f"{get_settings().frontend_base_url}/?connected=google")

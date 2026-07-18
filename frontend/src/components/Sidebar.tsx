@@ -37,7 +37,7 @@ export function Sidebar() {
     { to: "/mail", label: "Mail", end: false },
     { to: "/calendar", label: "Calendar", end: false },
     { to: "/history", label: "History", end: false },
-    { to: "/settings", label: "Agents & Connections", end: false },
+    { to: "/settings", label: "Agents", end: false },
   ];
 
   return (

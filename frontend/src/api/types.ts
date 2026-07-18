@@ -120,6 +120,7 @@ export interface InvitePreview {
 
 export interface MailItem {
   id: string;
+  thread_id: string | null;
   subject: string;
   sender: string;
   to: string | null;

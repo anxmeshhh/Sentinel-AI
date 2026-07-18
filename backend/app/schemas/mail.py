@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class MailItemOut(BaseModel):
     id: uuid.UUID
+    thread_id: str | None
     subject: str
     sender: str
     to: str | None

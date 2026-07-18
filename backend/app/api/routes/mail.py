@@ -87,6 +87,7 @@ def _to_item(s: Signal) -> MailItemOut:
     labels = set(s.payload.get("label_ids", []))
     return MailItemOut(
         id=s.id,
+        thread_id=s.payload.get("thread_id"),
         subject=s.payload.get("subject", "(no subject)"),
         sender=s.payload.get("from", "unknown"),
         to=s.payload.get("to"),

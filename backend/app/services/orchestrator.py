@@ -33,7 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.llm import LLMClient, LLMError, LLMOverloadedError
-from app.integrations.gmail_client import GmailClient
+from app.integrations.gmail_client import GmailClient, MessageGoneError
 from app.integrations.google_auth import get_valid_access_token
 from app.integrations.google_calendar_client import GoogleCalendarClient
 from app.integrations.google_drive_client import GoogleDriveClient
@@ -456,7 +456,19 @@ def run_command_stream(
                 return
 
             yield {"type": "status", "message": STATUS_MESSAGES.get(name, f"Running {name}…")}
-            result = _execute_read_tool(session, workspace_id, name, args, team_id=team_id)
+            try:
+                result = _execute_read_tool(session, workspace_id, name, args, team_id=team_id)
+            except Exception as exc:
+                # A single tool failing (a stale resource id 404ing at the
+                # provider, a revoked token, a network blip) must never kill
+                # the whole AI Command stream - feed the failure back to the
+                # model as a tool result so it can adapt or explain, exactly
+                # like any other error-shaped result the tools already
+                # return. Confirmed real: a Gmail body fetch for a message
+                # deleted since the last sync crashed the request as an
+                # unhandled 500 before this existed.
+                logger.warning("orchestrator_tool_failed", tool=name, error=str(exc))
+                result = {"error": f"the {name} tool failed: {exc}"}
             steps.append({"tool": name, "arguments": args})
             messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, default=str)})
 
@@ -567,8 +579,11 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
         if connection is None:
             return {"error": "gmail not connected or not available in this channel"}
         access_token = get_valid_access_token(session, connection)
-        with GmailClient(access_token) as client:
-            body = client.fetch_message_body(message_id)
+        try:
+            with GmailClient(access_token) as client:
+                body = client.fetch_message_body(message_id)
+        except MessageGoneError:
+            return {"error": "this email no longer exists in Gmail - it was deleted since it was found"}
         return {"body": (body or "")[:4000]}
 
     if name == "list_calendar_events":

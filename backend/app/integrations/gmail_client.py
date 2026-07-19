@@ -29,6 +29,16 @@ METADATA_HEADERS = ["Subject", "From", "To", "Date"]
 MAX_BODY_CHARS = 20_000  # a live-fetched body is bounded before it ever reaches an LLM prompt
 
 
+class MessageGoneError(Exception):
+    """The message id no longer exists in Gmail (permanently deleted since
+    the last sync) - an entirely expected state for a synced-metadata cache
+    over a live mailbox, not a failure. Confirmed real: a stale Signal row's
+    body fetch 404'd and crashed as an unhandled 500, which the browser then
+    reported as a CORS error (the exception bypasses the CORS middleware, so
+    the 500 response carries no Access-Control-Allow-Origin header).
+    """
+
+
 class GmailClient:
     def __init__(self, access_token: str, timeout: float = 20.0):
         self._client = httpx.Client(
@@ -56,8 +66,15 @@ class GmailClient:
         return messages
 
     def fetch_message_body(self, message_id: str) -> str | None:
-        """Live, on-demand, never-persisted body fetch - see module docstring."""
-        resp = self._get_with_retry(f"/messages/{message_id}", {"format": "full"})
+        """Live, on-demand, never-persisted body fetch - see module docstring.
+        Raises MessageGoneError if the message was deleted from Gmail since
+        the metadata was synced."""
+        try:
+            resp = self._get_with_retry(f"/messages/{message_id}", {"format": "full"})
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                raise MessageGoneError(message_id) from exc
+            raise
         return _extract_body(resp.json())
 
     def search(self, query: str, max_results: int = 20) -> list[dict]:

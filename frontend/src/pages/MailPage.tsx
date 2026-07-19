@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { Connection, MailAskResult, MailBody, MailItem, MailSummary } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { Markdown } from "../components/Markdown";
@@ -37,8 +37,12 @@ export function MailPage() {
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [mobileReaderOpen, setMobileReaderOpen] = useState(false);
 
-  const [bodies, setBodies] = useState<Record<string, MailBody | "loading" | "error">>({});
-  const [summaries, setSummaries] = useState<Record<string, MailSummary | "loading" | "error">>({});
+  // The error side of these unions carries the backend's actual `detail`
+  // message - a stale email (deleted from Gmail since the last sync) now
+  // returns a specific 410 explanation, which is far more useful than the
+  // old generic "couldn't fetch" (or, before that, a mystery CORS error).
+  const [bodies, setBodies] = useState<Record<string, MailBody | "loading" | { error: string }>>({});
+  const [summaries, setSummaries] = useState<Record<string, MailSummary | "loading" | { error: string }>>({});
   const [summaryOpen, setSummaryOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -120,14 +124,14 @@ export function MailPage() {
     try {
       const body = await api.get<MailBody>(`/mail/${item.id}/body`);
       setBodies((b) => ({ ...b, [item.id]: body }));
-    } catch {
-      setBodies((b) => ({ ...b, [item.id]: "error" }));
+    } catch (e) {
+      setBodies((b) => ({ ...b, [item.id]: { error: e instanceof ApiError ? e.message : "Couldn't fetch this email's content." } }));
     }
   }
 
   async function fetchSummary(item: MailItem) {
     const existing = summaries[item.id];
-    if (existing && existing !== "error") {
+    if (existing && !(typeof existing === "object" && "error" in existing)) {
       setSummaryOpen((o) => ({ ...o, [item.id]: true }));
       return;
     }
@@ -136,8 +140,8 @@ export function MailPage() {
       const summary = await api.get<MailSummary>(`/mail/${item.id}/summary`);
       setSummaries((s) => ({ ...s, [item.id]: summary }));
       setSummaryOpen((o) => ({ ...o, [item.id]: true }));
-    } catch {
-      setSummaries((s) => ({ ...s, [item.id]: "error" }));
+    } catch (e) {
+      setSummaries((s) => ({ ...s, [item.id]: { error: e instanceof ApiError ? e.message : "Couldn't generate a summary — try again." } }));
     }
   }
 
@@ -298,8 +302,8 @@ function EmailReader({
   group: ThreadGroup;
   selected: MailItem;
   onSelectMessage: (item: MailItem) => void;
-  bodyState: MailBody | "loading" | "error" | undefined;
-  summaryState: MailSummary | "loading" | "error" | undefined;
+  bodyState: MailBody | "loading" | { error: string } | undefined;
+  summaryState: MailSummary | "loading" | { error: string } | undefined;
   summaryIsOpen: boolean;
   onSummarize: () => void;
   onToggleSummary: () => void;
@@ -357,7 +361,7 @@ function EmailReader({
           </div>
         </div>
 
-        {summaryState && summaryState !== "error" && (
+        {summaryState && !(typeof summaryState === "object" && "error" in summaryState) && (
           <div className="mb-4 rounded-md border border-accent/30 bg-accent/5">
             <button
               onClick={onToggleSummary}
@@ -393,13 +397,15 @@ function EmailReader({
             )}
           </div>
         )}
-        {summaryState === "error" && <p className="mb-4 text-[12px] text-crit">Couldn't generate a summary — try again.</p>}
+        {typeof summaryState === "object" && "error" in summaryState && (
+          <p className="mb-4 text-[12px] text-crit">{summaryState.error}</p>
+        )}
 
         <div className="font-mono text-[10.5px] font-bold uppercase tracking-wide text-ink-faint">Original Email</div>
         <div className="mt-2 text-[13px] leading-relaxed text-ink-dim">
           {bodyState === "loading" && "Fetching…"}
-          {bodyState === "error" && <span className="text-crit">Couldn't fetch this email's content.</span>}
-          {bodyState && bodyState !== "loading" && bodyState !== "error" && (
+          {typeof bodyState === "object" && "error" in bodyState && <span className="text-crit">{bodyState.error}</span>}
+          {bodyState && bodyState !== "loading" && !("error" in bodyState) && (
             <Markdown text={bodyState.body_text ?? "(no readable body)"} />
           )}
         </div>

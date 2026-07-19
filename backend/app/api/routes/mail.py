@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_workspace_id
-from app.integrations.gmail_client import GmailClient
+from app.integrations.gmail_client import GmailClient, MessageGoneError
 from app.integrations.google_auth import get_valid_access_token
 from app.models.connection import Provider
 from app.models.email_summary import EmailSummary
@@ -76,8 +76,14 @@ def get_mail_body(
         raise HTTPException(status_code=404, detail="Gmail is not connected")
 
     access_token = get_valid_access_token(session, connection)
-    with GmailClient(access_token) as client:
-        body_text = client.fetch_message_body(signal.external_id)
+    try:
+        with GmailClient(access_token) as client:
+            body_text = client.fetch_message_body(signal.external_id)
+    except MessageGoneError:
+        raise HTTPException(
+            status_code=410,
+            detail="This email no longer exists in Gmail - it was deleted since Sentinel last synced. It will disappear from this list on the next sync.",
+        )
 
     return MailBodyOut(
         subject=signal.payload.get("subject", "(no subject)"),
@@ -112,8 +118,14 @@ def get_mail_summary(
     if connection is None:
         raise HTTPException(status_code=404, detail="Gmail is not connected")
     access_token = get_valid_access_token(session, connection)
-    with GmailClient(access_token) as client:
-        body_text = client.fetch_message_body(signal.external_id)
+    try:
+        with GmailClient(access_token) as client:
+            body_text = client.fetch_message_body(signal.external_id)
+    except MessageGoneError:
+        raise HTTPException(
+            status_code=410,
+            detail="This email no longer exists in Gmail - it was deleted since Sentinel last synced.",
+        )
 
     if cached is not None:
         return MailSummaryOut(

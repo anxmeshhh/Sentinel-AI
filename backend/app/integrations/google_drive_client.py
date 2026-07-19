@@ -71,6 +71,11 @@ class GoogleDriveClient:
         Sentinel only ever reads text, never renders a file visually).
         """
         meta_resp = self._client.get(f"/files/{file_id}", params={"fields": "name,mimeType"})
+        if meta_resp.status_code == 404:
+            # Same stale-cache reality as Gmail's MessageGoneError: a file id
+            # from an earlier search can stop existing at any time. Fits this
+            # method's existing (None, reason) contract - no exception needed.
+            return None, "This file no longer exists in Google Drive - it may have been deleted or had its sharing revoked."
         meta_resp.raise_for_status()
         mime_type = meta_resp.json().get("mimeType", "")
 

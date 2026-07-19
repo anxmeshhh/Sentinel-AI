@@ -1,13 +1,15 @@
+import uuid
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_workspace_membership
 from app.core.bootstrap import provision_personal_workspace_for_user
 from app.core.slugs import unique_slug
 from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
-from app.schemas.workspace import WorkspaceCreate, WorkspaceOut
+from app.schemas.workspace import WorkspaceCreate, WorkspaceMemberOut, WorkspaceOut
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -52,3 +54,22 @@ def create_workspace(
     session.commit()
     session.refresh(workspace)
     return workspace
+
+
+@router.get("/{workspace_id}/members", response_model=list[WorkspaceMemberOut])
+def list_workspace_members(
+    workspace_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[WorkspaceMemberOut]:
+    """Phase 2o: the member picker in the Create Channel modal needs the
+    parent Group's roster - any workspace member may see it (same openness
+    as Discord's member list), it exposes nothing beyond name/email/role.
+    """
+    require_workspace_membership(session, user, workspace_id)
+    rows = session.execute(
+        select(User.id, User.name, User.email, Membership.role)
+        .join(Membership, Membership.user_id == User.id)
+        .where(Membership.workspace_id == workspace_id)
+    ).all()
+    return [WorkspaceMemberOut(user_id=uid, name=name, email=email, role=role.value) for uid, name, email, role in rows]

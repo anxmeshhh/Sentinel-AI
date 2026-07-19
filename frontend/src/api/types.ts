@@ -77,6 +77,8 @@ export interface SystemStats {
   runs_running: number;
 }
 
+export type ChannelPrivacy = "public" | "invite_only" | "private";
+
 export interface Team {
   id: string;
   workspace_id: string;
@@ -85,6 +87,18 @@ export interface Team {
   member_count: number;
   is_member: boolean;
   my_channel_role: "channel_admin" | "channel_member" | null;
+  description: string | null;
+  icon: string | null;
+  category: string | null;
+  privacy: ChannelPrivacy;
+  is_archived: boolean;
+}
+
+export interface WorkspaceMember {
+  user_id: string;
+  name: string;
+  email: string;
+  role: string;
 }
 
 export interface MyTeam {

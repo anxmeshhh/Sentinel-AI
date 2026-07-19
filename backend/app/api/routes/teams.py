@@ -9,14 +9,34 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, require_channel_role, require_workspace_membership
-from app.core.slugs import unique_slug
-from app.models.team import ChannelRole, Team, TeamMembership
+from app.api.deps import get_current_user, get_db, require_channel_role, require_workspace_membership, require_workspace_role
+from app.models.team import ChannelPrivacy, ChannelRole, Team, TeamMembership
 from app.models.user import User
-from app.models.workspace import Membership, Workspace
-from app.schemas.team import MyTeamOut, TeamCreate, TeamMemberOut, TeamMemberRoleUpdate, TeamOut
+from app.models.workspace import Membership, Role, Workspace
+from app.schemas.team import MyTeamOut, TeamCreate, TeamMemberOut, TeamMemberRoleUpdate, TeamOut, TeamUpdate
+from app.services.channel_management import (
+    ChannelConfigError,
+    create_channel,
+    delete_channel,
+    set_archived,
+    update_channel,
+    visible_teams_filter,
+)
 
 router = APIRouter(tags=["teams"])
+
+# Spec (Phase 2o): creating channels is a Group Owner/Admin capability, not
+# an every-member one - team_manager included since managing team structure
+# is literally that role's purpose.
+CHANNEL_CREATOR_ROLES = [Role.SUPER_ADMIN, Role.ORG_ADMIN, Role.TEAM_MANAGER]
+WORKSPACE_ADMIN_ROLES = (Role.SUPER_ADMIN, Role.ORG_ADMIN)
+
+
+def _parse_privacy(value: str) -> ChannelPrivacy:
+    try:
+        return ChannelPrivacy(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid privacy: {value} (use public, invite_only, or private)")
 
 
 def _to_team_out(session: Session, team: Team, user: User) -> TeamOut:
@@ -30,6 +50,8 @@ def _to_team_out(session: Session, team: Team, user: User) -> TeamOut:
         id=team.id, workspace_id=team.workspace_id, name=team.name, slug=team.slug,
         member_count=member_count, is_member=my_membership is not None,
         my_channel_role=my_membership.role.value if my_membership else None,
+        description=team.description, icon=team.icon, category=team.category,
+        privacy=team.privacy.value, is_archived=team.is_archived,
     )
 
 
@@ -48,7 +70,7 @@ def list_my_teams(
         .join(TeamMembership, TeamMembership.team_id == Team.id)
         .join(Workspace, Workspace.id == Team.workspace_id)
         .join(Membership, (Membership.workspace_id == Workspace.id) & (Membership.user_id == user.id))
-        .where(TeamMembership.user_id == user.id)
+        .where(TeamMembership.user_id == user.id, Team.is_archived.is_(False))
     ).all()
 
     result = []
@@ -72,8 +94,10 @@ def list_teams(
     session: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[TeamOut]:
-    require_workspace_membership(session, user, workspace_id)
-    teams = session.execute(select(Team).where(Team.workspace_id == workspace_id)).scalars().all()
+    membership = require_workspace_membership(session, user, workspace_id)
+    teams = visible_teams_filter(
+        session, workspace_id, user.id, is_workspace_admin=membership.role in WORKSPACE_ADMIN_ROLES
+    )
     return [_to_team_out(session, t, user) for t in teams]
 
 
@@ -85,12 +109,76 @@ def get_team(
 ) -> TeamOut:
     """Direct single-Channel lookup (Phase 2n) - the Channel workspace page
     is reachable by URL, so it needs to load its own header info without
-    first fetching every Team in the Workspace."""
+    first fetching every Team in the Workspace. A PRIVATE channel 404s for
+    non-members (Phase 2o) - same don't-confirm-existence convention as
+    everywhere else; workspace admins excepted."""
     team = session.get(Team, team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")
-    require_workspace_membership(session, user, team.workspace_id)
+    membership = require_workspace_membership(session, user, team.workspace_id)
+
+    if team.privacy == ChannelPrivacy.PRIVATE and membership.role not in WORKSPACE_ADMIN_ROLES:
+        is_member = session.execute(
+            select(TeamMembership).where(TeamMembership.team_id == team_id, TeamMembership.user_id == user.id)
+        ).scalar_one_or_none() is not None
+        if not is_member:
+            raise HTTPException(status_code=404, detail="Team not found")
     return _to_team_out(session, team, user)
+
+
+@router.patch("/teams/{team_id}", response_model=TeamOut)
+def update_team(
+    team_id: uuid.UUID,
+    payload: TeamUpdate,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> TeamOut:
+    require_channel_role(session, user, team_id, allowed=[ChannelRole.CHANNEL_ADMIN])
+    team = session.get(Team, team_id)
+    try:
+        team = update_channel(
+            session, team,
+            name=payload.name,
+            description=payload.description,
+            icon=payload.icon,
+            category=payload.category,
+            privacy=_parse_privacy(payload.privacy) if payload.privacy is not None else None,
+        )
+    except ChannelConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _to_team_out(session, team, user)
+
+
+@router.post("/teams/{team_id}/archive", response_model=TeamOut)
+def archive_team(
+    team_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> TeamOut:
+    require_channel_role(session, user, team_id, allowed=[ChannelRole.CHANNEL_ADMIN])
+    team = set_archived(session, session.get(Team, team_id), True)
+    return _to_team_out(session, team, user)
+
+
+@router.post("/teams/{team_id}/unarchive", response_model=TeamOut)
+def unarchive_team(
+    team_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> TeamOut:
+    require_channel_role(session, user, team_id, allowed=[ChannelRole.CHANNEL_ADMIN])
+    team = set_archived(session, session.get(Team, team_id), False)
+    return _to_team_out(session, team, user)
+
+
+@router.delete("/teams/{team_id}", status_code=204)
+def delete_team(
+    team_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    require_channel_role(session, user, team_id, allowed=[ChannelRole.CHANNEL_ADMIN])
+    delete_channel(session, session.get(Team, team_id))
 
 
 @router.post("/workspaces/{workspace_id}/teams", response_model=TeamOut, status_code=201)
@@ -100,14 +188,23 @@ def create_team(
     session: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> TeamOut:
-    require_workspace_membership(session, user, workspace_id)
-
-    team = Team(workspace_id=workspace_id, name=payload.name, slug=unique_slug(payload.name), created_by_user_id=user.id)
-    session.add(team)
-    session.flush()
-    session.add(TeamMembership(team_id=team.id, user_id=user.id, role=ChannelRole.CHANNEL_ADMIN))  # creator auto-joins as admin
-    session.commit()
-    session.refresh(team)
+    require_workspace_role(session, user, workspace_id, allowed=CHANNEL_CREATOR_ROLES)
+    try:
+        team = create_channel(
+            session,
+            workspace_id=workspace_id,
+            creator=user,
+            name=payload.name,
+            description=payload.description,
+            icon=payload.icon,
+            category=payload.category,
+            privacy=_parse_privacy(payload.privacy),
+            member_user_ids=payload.member_user_ids,
+            admin_user_ids=payload.admin_user_ids,
+            connection_ids=payload.connection_ids,
+        )
+    except ChannelConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return _to_team_out(session, team, user)
 
 
@@ -126,6 +223,13 @@ def join_team(
         select(TeamMembership).where(TeamMembership.team_id == team_id, TeamMembership.user_id == user.id)
     ).scalar_one_or_none()
     if existing is None:
+        # Phase 2o: open self-join is a PUBLIC-channel behavior only.
+        # INVITE_ONLY/PRIVATE entry paths are an accepted invite (which
+        # creates the TeamMembership itself) or an admin adding you.
+        if team.is_archived:
+            raise HTTPException(status_code=400, detail="This channel is archived")
+        if team.privacy != ChannelPrivacy.PUBLIC:
+            raise HTTPException(status_code=403, detail="This channel can only be joined by invite")
         session.add(TeamMembership(team_id=team_id, user_id=user.id))
         session.commit()
     return _to_team_out(session, team, user)

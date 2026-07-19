@@ -1443,6 +1443,80 @@ place. **API layer fully verified; visual layer pending click-through.**
 
 ---
 
+### Phase 2o — Manual Channel Creation & Management ✅ Built and tested end-to-end (full lifecycle verified live against the real DB)
+
+**Objective:** the user's "Full Manual Channel Creation & Management System" spec - complete
+manual ownership of channel architecture. Much of it already existed (member/connection/resource
+management from 2k-2n); the genuinely new ground is channel metadata (description/icon/category),
+privacy levels, archive/delete, category-grouped sidebar, the full creation modal, and - the
+spec's one hard architecture rule - a single shared channel-management service that a future
+AI-assisted creation flow must reuse ("Do NOT create separate Channel management logic for manual
+and AI workflows").
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2o.1 | `Team` gains description/icon/category/privacy/is_archived; migration defaults every existing channel to PUBLIC (exactly preserves their current open-join behavior - no grandfather UPDATE needed this time) | ✅ |
+| 2o.2 | `services/channel_management.py`: create (full config: members, admins, connections), update, archive, delete-with-cascade, visibility filter - routes gate RBAC, the service validates config and writes | ✅ |
+| 2o.3 | Privacy enforcement: PUBLIC = open join (unchanged); INVITE_ONLY = listed but join 403s (invite-accept is the entry path); PRIVATE = hidden from list AND direct lookup 404s for non-members (workspace admins excepted) | ✅ |
+| 2o.4 | Channel creation now role-gated to super_admin/org_admin/team_manager (spec's explicit instruction - a deliberate behavior change from 2a's any-member creation) | ✅ |
+| 2o.5 | Full Create Channel modal: icon/name/description/category, privacy radio, member picker (with per-member admin toggle; needs the new `GET /workspaces/{id}/members`), connection checkboxes; navigates into the new channel on create | ✅ |
+| 2o.6 | Channel Settings (⚙ tab, admin-only): general fields, privacy, Danger Zone (archive/unarchive + permanent delete, both `confirm()`-gated) | ✅ |
+| 2o.7 | Sidebar: channels grouped under category headers, channel icon shown, 🔒 on non-public, "invite only" replaces the Join button where joining isn't allowed, + Create Channel hidden from non-creator roles | ✅ |
+
+### What actually got built (technical notes)
+
+- **One service, two future entry points.** `create_channel()` takes the complete configuration
+  (name/description/icon/category/privacy/members/admins/connections) and does all integrity
+  validation itself: every member must already belong to the parent Workspace (a channel can't
+  smuggle someone into a Group), every connection must belong to the Workspace (2l's tenant
+  boundary, enforced at creation too), and the creator is always written as a Channel Admin - a
+  channel can never be born without someone able to manage it, which is what makes 2k's
+  last-admin rule sound from the very first row. When AI-assisted creation arrives, its tool call
+  lands on this exact function.
+- **Privacy semantics are deliberately asymmetric.** INVITE_ONLY stays *visible* (people should
+  know the channel exists and ask for an invite) but self-join 403s; PRIVATE is a 404 on both the
+  list and direct lookup for non-members - the same "don't confirm existence" convention as every
+  other boundary in deps.py. The invite-accept path (which creates the TeamMembership itself) is
+  untouched and is precisely how INVITE_ONLY/PRIVATE entry is supposed to work.
+- **Archive is read-only, not gone**: hidden from every list (sidebar, My Channels), self-join
+  blocked, Channel AI command routes 400 with an explicit "unarchive to use" message - but the
+  page stays loadable by direct link (with a banner), history stays viewable, and settings stay
+  reachable so an admin can unarchive. Delete is the hard path: explicit cascade over memberships,
+  connection assignments (+ their allow-listed resources), AI history, and team-scoped invites -
+  none of these tables have DB-level cascades (codebase convention), so the service deletes each
+  explicitly, and a test proves the workspace Connection itself survives (it belongs to the
+  Group; the channel only referenced it).
+- **A real behavior change, called out rather than buried**: channel creation was any-member since
+  Phase 2a; the spec explicitly restricts it to Group Owner/Admin, so it's now role-gated
+  (team_manager included - managing team structure is that role's whole purpose) and the sidebar
+  button hides for everyone else. Existing members with `employee` role lose the ability to
+  create channels in workspaces they don't admin.
+- **Verified twice over**: 9 new unit tests (`tests/test_channel_management.py` - full-config
+  creation, outsider/foreign-connection rejection, role gating, all three privacy behaviors,
+  archive exclusion, delete cascade) and a live TestClient lifecycle against the real MySQL DB
+  acting as the real org_admin account: create → update → archive (AI 400s, hidden) → unarchive →
+  delete → 404, self-cleaning with zero residual rows.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **Channel Types (General/Team/Project) not modeled** - the spec itself says not to overcomplicate
+  if backend logic doesn't need them yet; `category` covers the visible grouping, and a `kind`
+  column can be added additively when a type actually changes behavior.
+- **Drag-and-drop reordering** - spec marks it optional; category grouping is alphabetical.
+- **Resource selection at creation time** - the modal assigns Connections; allow-listing specific
+  resources happens immediately after in the (already-built) channel panel, which the spec
+  explicitly permits ("during Channel creation **or later through Channel Settings**").
+- **AI-assisted creation itself** - future work by design; the service contract it needs is now
+  the only creation path, so adding it is a tool schema + confirm flow, not new management logic.
+- **No browser click-through yet** - same standing caveat as every UI phase.
+
+**Exit criteria:** an authorized user manually creates a fully-configured channel (privacy,
+members, admins, connections) from one modal and lands in it; admins edit everything later,
+archive reversibly, delete permanently with confirmation; privacy is enforced by the backend, not
+the UI. **Full lifecycle confirmed live against the real database.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

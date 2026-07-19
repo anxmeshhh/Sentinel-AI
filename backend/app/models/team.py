@@ -13,7 +13,7 @@ person can be a Channel Admin of #development while just a plain member of
 import enum
 import uuid
 
-from sqlalchemy import Enum, ForeignKey, String, UniqueConstraint, Uuid
+from sqlalchemy import Boolean, Enum, ForeignKey, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPk
@@ -24,6 +24,21 @@ class ChannelRole(str, enum.Enum):
     CHANNEL_MEMBER = "channel_member"
 
 
+class ChannelPrivacy(str, enum.Enum):
+    """Phase 2o. PUBLIC keeps Phase 2a's open-join behavior (any workspace
+    member sees + joins freely). INVITE_ONLY stays visible in the channel
+    list but the join route rejects - entry is only via an accepted invite.
+    PRIVATE is additionally hidden from non-members entirely (list and
+    direct lookup both 404, same don't-confirm-existence convention as the
+    rest of deps.py) - workspace admins excepted, since a Group Owner/Admin
+    has full control over every Channel.
+    """
+
+    PUBLIC = "public"
+    INVITE_ONLY = "invite_only"
+    PRIVATE = "private"
+
+
 class Team(Base, UUIDPk, TimestampMixin):
     __tablename__ = "teams"
     __table_args__ = (UniqueConstraint("workspace_id", "slug", name="uq_team_workspace_slug"),)
@@ -32,6 +47,15 @@ class Team(Base, UUIDPk, TimestampMixin):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(200), nullable=False)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    icon: Mapped[str | None] = mapped_column(String(16), nullable=True)  # an emoji, not an image
+    category: Mapped[str | None] = mapped_column(String(100), nullable=True)  # free-form grouping label ("Teams", "Projects")
+    privacy: Mapped[ChannelPrivacy] = mapped_column(
+        Enum(ChannelPrivacy, name="channel_privacy"), nullable=False,
+        default=ChannelPrivacy.PUBLIC, server_default=ChannelPrivacy.PUBLIC.name,
+    )
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
 
 
 class TeamMembership(Base, UUIDPk, TimestampMixin):

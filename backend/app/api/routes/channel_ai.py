@@ -30,6 +30,10 @@ def _get_team_or_404(session: Session, team_id: uuid.UUID) -> Team:
     team = session.get(Team, team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")
+    # Phase 2o: an archived channel is read-only - its AI history stays
+    # viewable (separate route, no archived check) but no new AI activity.
+    if team.is_archived:
+        raise HTTPException(status_code=400, detail="This channel is archived - unarchive it to use Channel AI")
     return team
 
 

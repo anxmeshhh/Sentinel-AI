@@ -209,7 +209,54 @@ function ChannelRail({
   onInviteTeam: (teamId: string, teamName: string) => void;
 }) {
   const { teams, loading, join, leave } = useTeams();
+  const { active } = useWorkspace();
   const navigate = useNavigate();
+
+  // Spec (Phase 2o): channel creation is a Group Owner/Admin capability -
+  // hidden here for everyone else, and the backend 403s regardless.
+  const canCreate = active != null && ["super_admin", "org_admin", "team_manager"].includes(active.role);
+
+  // Group channels under their category headers, Discord-style; channels
+  // without a category list first under the plain "Channels" header.
+  const uncategorized = teams.filter((t) => !t.category);
+  const categories = [...new Set(teams.filter((t) => t.category).map((t) => t.category as string))].sort();
+
+  const renderTeam = (team: (typeof teams)[number]) => (
+    <div key={team.id} className="group flex items-center gap-1.5 px-2.5 py-1.5">
+      <span className="text-ink-faint">{team.icon || "#"}</span>
+      <button
+        onClick={() => team.is_member && navigate(`/channels/${team.id}`)}
+        disabled={!team.is_member}
+        title={team.is_member ? `Open #${team.name}` : "Join to open this channel"}
+        className={`flex-1 truncate text-left text-[13px] ${team.is_member ? "text-ink hover:underline" : "cursor-default text-ink-dim"}`}
+      >
+        {team.name}
+        {team.privacy !== "public" && <span className="ml-1.5 text-[10px] text-ink-faint">🔒</span>}
+      </button>
+      <span className="text-[10.5px] text-ink-faint">{team.member_count}</span>
+      {team.is_member ? (
+        <button
+          onClick={() => leave(team.id)}
+          className="hidden text-[11px] text-ink-faint underline underline-offset-2 hover:text-crit group-hover:inline"
+        >
+          Leave
+        </button>
+      ) : team.privacy === "public" ? (
+        <button onClick={() => join(team.id)} className="text-[11px] font-medium text-ink-dim underline underline-offset-2 hover:text-ink">
+          Join
+        </button>
+      ) : (
+        <span className="text-[10px] text-ink-faint">invite only</span>
+      )}
+      <button
+        onClick={() => onInviteTeam(team.id, team.name)}
+        className="hidden text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink group-hover:inline"
+        aria-label={`Invite people to ${team.name}`}
+      >
+        Invite
+      </button>
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-1">
@@ -222,47 +269,24 @@ function ChannelRail({
 
       {loading && <div className="h-8 animate-pulse bg-surface-2" />}
 
+      {!loading && uncategorized.map(renderTeam)}
+
       {!loading &&
-        teams.map((team) => (
-          <div key={team.id} className="group flex items-center gap-1.5 px-2.5 py-1.5">
-            <span className="text-ink-faint">#</span>
-            <button
-              onClick={() => team.is_member && navigate(`/channels/${team.id}`)}
-              disabled={!team.is_member}
-              title={team.is_member ? `Open #${team.name}` : "Join to open this channel"}
-              className={`flex-1 truncate text-left text-[13px] ${team.is_member ? "text-ink hover:underline" : "cursor-default text-ink-dim"}`}
-            >
-              {team.name}
-            </button>
-            <span className="text-[10.5px] text-ink-faint">{team.member_count}</span>
-            {team.is_member ? (
-              <button
-                onClick={() => leave(team.id)}
-                className="hidden text-[11px] text-ink-faint underline underline-offset-2 hover:text-crit group-hover:inline"
-              >
-                Leave
-              </button>
-            ) : (
-              <button onClick={() => join(team.id)} className="text-[11px] font-medium text-ink-dim underline underline-offset-2 hover:text-ink">
-                Join
-              </button>
-            )}
-            <button
-              onClick={() => onInviteTeam(team.id, team.name)}
-              className="hidden text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink group-hover:inline"
-              aria-label={`Invite people to ${team.name}`}
-            >
-              Invite
-            </button>
+        categories.map((cat) => (
+          <div key={cat}>
+            <div className="px-2.5 pb-1 pt-2.5 text-[10px] uppercase tracking-[0.14em] text-ink-faint">{cat}</div>
+            {teams.filter((t) => t.category === cat).map(renderTeam)}
           </div>
         ))}
 
-      <button
-        onClick={onCreateTeam}
-        className="flex items-center gap-2 px-2.5 py-1.5 text-left text-[12.5px] text-ink-faint hover:text-ink"
-      >
-        <span className="text-[14px] leading-none">+</span> Create channel
-      </button>
+      {canCreate && (
+        <button
+          onClick={onCreateTeam}
+          className="flex items-center gap-2 px-2.5 py-1.5 text-left text-[12.5px] text-ink-faint hover:text-ink"
+        >
+          <span className="text-[14px] leading-none">+</span> Create Channel
+        </button>
+      )}
     </div>
   );
 }

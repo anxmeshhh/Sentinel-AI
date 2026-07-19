@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
-import type { ChannelAIHistoryItem, ChannelConnection, Connection, Team, TeamMember } from "../api/types";
+import type { ChannelAIHistoryItem, ChannelConnection, ChannelPrivacy, Connection, Team, TeamMember } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
+import { useTeams } from "../context/TeamContext";
 import { useWorkspace } from "../context/WorkspaceContext";
 
-type PanelTab = "connections" | "members" | "activity";
+type PanelTab = "connections" | "members" | "activity" | "settings";
 
 export function ChannelWorkspacePage() {
   const { teamId = "" } = useParams<{ teamId: string }>();
@@ -79,19 +80,48 @@ export function ChannelWorkspacePage() {
 
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="mb-1 text-xl font-semibold text-balance">#{team.name}</h1>
+          <h1 className="mb-1 text-xl font-semibold text-balance">
+            {team.icon ? `${team.icon} ` : ""}#{team.name}
+          </h1>
+          {team.description && <p className="mb-1 text-[13px] text-ink-dim">{team.description}</p>}
           <p className="text-[13px] text-ink-dim">
             {team.member_count} member{team.member_count === 1 ? "" : "s"}
+            {team.category && <span className="ml-2 font-mono text-[10.5px] text-ink-faint">{team.category}</span>}
+            {team.privacy !== "public" && (
+              <span className="ml-2 rounded-full border border-border px-2 py-0.5 font-mono text-[10px] text-ink-faint">
+                {team.privacy === "private" ? "PRIVATE" : "INVITE ONLY"}
+              </span>
+            )}
             {isAdmin && <span className="ml-2 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent-text">CHANNEL ADMIN</span>}
           </p>
         </div>
-        <button
-          onClick={() => setPanelOpen((o) => !o)}
-          className="rounded-md border border-border bg-surface px-3 py-1.5 font-mono text-[11.5px] text-ink-dim hover:border-accent hover:text-ink"
-        >
-          {panelOpen ? "Hide" : "Show"} channel info
-        </button>
+        <div className="flex gap-2">
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setPanelOpen(true);
+                setPanelTab("settings");
+              }}
+              className="rounded-md border border-border bg-surface px-3 py-1.5 font-mono text-[11.5px] text-ink-dim hover:border-accent hover:text-ink"
+            >
+              ⚙ Channel Settings
+            </button>
+          )}
+          <button
+            onClick={() => setPanelOpen((o) => !o)}
+            className="rounded-md border border-border bg-surface px-3 py-1.5 font-mono text-[11.5px] text-ink-dim hover:border-accent hover:text-ink"
+          >
+            {panelOpen ? "Hide" : "Show"} channel info
+          </button>
+        </div>
       </div>
+
+      {team.is_archived && (
+        <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-[12.5px] text-watch">
+          This channel is archived — Channel AI is disabled and it's hidden from the sidebar.
+          {isAdmin && " Unarchive it from Channel Settings to bring it back."}
+        </div>
+      )}
 
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="min-w-0 flex-1">
@@ -110,18 +140,20 @@ export function ChannelWorkspacePage() {
             </div>
           )}
 
-          <div className="rounded-md border border-border bg-surface">
-            <GoogleAICommand
-              endpointBase={`/teams/${teamId}/ai`}
-              placeholder={`Ask Sentinel about #${team.name}…`}
-              helpText={
-                <>
-                  Sentinel only uses Connections and resources authorized for <strong>#{team.name}</strong> - never the rest of the
-                  Workspace. Actions that change anything are shown as a plan you confirm first.
-                </>
-              }
-            />
-          </div>
+          {!team.is_archived && (
+            <div className="rounded-md border border-border bg-surface">
+              <GoogleAICommand
+                endpointBase={`/teams/${teamId}/ai`}
+                placeholder={`Ask Sentinel about #${team.name}…`}
+                helpText={
+                  <>
+                    Sentinel only uses Connections and resources authorized for <strong>#{team.name}</strong> - never the rest of the
+                    Workspace. Actions that change anything are shown as a plan you confirm first.
+                  </>
+                }
+              />
+            </div>
+          )}
 
           {history.length > 0 && (
             <div className="mt-5">
@@ -146,7 +178,7 @@ export function ChannelWorkspacePage() {
           <div className="w-full flex-none lg:w-[340px]">
             <div className="rounded-md border border-border bg-surface">
               <div className="flex border-b border-border">
-                {(["connections", "members", "activity"] as PanelTab[]).map((tab) => (
+                {(["connections", "members", "activity", ...(isAdmin ? (["settings"] as PanelTab[]) : [])] as PanelTab[]).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setPanelTab(tab)}
@@ -155,7 +187,7 @@ export function ChannelWorkspacePage() {
                     }`}
                     style={panelTab === tab ? { borderBottom: "2px solid var(--accent, #7c9)" } : undefined}
                   >
-                    {tab}
+                    {tab === "settings" ? "⚙" : tab}
                   </button>
                 ))}
               </div>
@@ -165,6 +197,7 @@ export function ChannelWorkspacePage() {
                 )}
                 {panelTab === "members" && <MembersTab teamId={teamId} isAdmin={isAdmin} members={members} onChanged={loadAll} />}
                 {panelTab === "activity" && <ActivityTab history={history} />}
+                {panelTab === "settings" && isAdmin && <SettingsTab team={team} onChanged={loadAll} />}
               </div>
             </div>
           </div>
@@ -409,6 +442,126 @@ function MembersTab({
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SettingsTab({ team, onChanged }: { team: Team; onChanged: () => void }) {
+  const navigate = useNavigate();
+  const { refresh } = useTeams();
+  const [name, setName] = useState(team.name);
+  const [description, setDescription] = useState(team.description ?? "");
+  const [icon, setIcon] = useState(team.icon ?? "");
+  const [category, setCategory] = useState(team.category ?? "");
+  const [privacy, setPrivacy] = useState<ChannelPrivacy>(team.privacy);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function save() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await api.patch(`/teams/${team.id}`, { name, description, icon, category, privacy });
+      await refresh();
+      onChanged();
+      setMessage("Saved.");
+    } catch (e) {
+      setMessage(e instanceof ApiError ? e.message : "Failed to save");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleArchive() {
+    const verb = team.is_archived ? "unarchive" : "archive";
+    if (!team.is_archived && !window.confirm(`Archive #${team.name}? It will be hidden from the sidebar and Channel AI will be disabled. You can unarchive it later.`)) return;
+    setBusy(true);
+    try {
+      await api.post(`/teams/${team.id}/${verb}`);
+      await refresh();
+      onChanged();
+    } catch (e) {
+      setMessage(e instanceof ApiError ? e.message : `Failed to ${verb}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteChannel() {
+    if (!window.confirm(`Permanently delete #${team.name}? This removes its members, connection assignments, and AI history. This cannot be undone.`)) return;
+    setBusy(true);
+    try {
+      await api.delete(`/teams/${team.id}`);
+      await refresh();
+      navigate("/");
+    } catch (e) {
+      setMessage(e instanceof ApiError ? e.message : "Failed to delete");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="font-mono text-[10px] uppercase tracking-wide text-ink-faint">General</div>
+      <div className="flex gap-1.5">
+        <input
+          value={icon}
+          onChange={(e) => setIcon(e.target.value)}
+          placeholder="#"
+          aria-label="Channel icon"
+          className="w-12 rounded-md border border-border bg-ground px-2 py-1.5 text-center text-[13px] outline-none focus:border-accent"
+        />
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          aria-label="Channel name"
+          className="flex-1 rounded-md border border-border bg-ground px-2.5 py-1.5 text-[12.5px] outline-none focus:border-accent"
+        />
+      </div>
+      <input
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Description"
+        className="rounded-md border border-border bg-ground px-2.5 py-1.5 text-[12px] outline-none focus:border-accent"
+      />
+      <input
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        placeholder="Category (e.g. Teams, Projects)"
+        className="rounded-md border border-border bg-ground px-2.5 py-1.5 text-[12px] outline-none focus:border-accent"
+      />
+
+      <div className="font-mono text-[10px] uppercase tracking-wide text-ink-faint">Privacy</div>
+      <select
+        value={privacy}
+        onChange={(e) => setPrivacy(e.target.value as ChannelPrivacy)}
+        className="rounded-md border border-border bg-ground px-2.5 py-1.5 text-[12px] outline-none focus:border-accent"
+      >
+        <option value="public">Public to Group</option>
+        <option value="invite_only">Invite Only</option>
+        <option value="private">Private</option>
+      </select>
+
+      <button
+        onClick={save}
+        disabled={busy || !name.trim()}
+        className="rounded-md bg-accent px-3 py-1.5 font-mono text-[11px] font-bold text-ground disabled:opacity-50"
+      >
+        {busy ? "Saving…" : "Save changes"}
+      </button>
+      {message && <p className={`text-[11px] ${message === "Saved." ? "text-good" : "text-crit"}`}>{message}</p>}
+
+      <div className="mt-2 rounded-md border border-crit/30 p-2.5">
+        <div className="mb-2 font-mono text-[10px] uppercase tracking-wide text-crit">Danger Zone</div>
+        <div className="flex flex-col gap-1.5">
+          <button onClick={toggleArchive} disabled={busy} className="text-left text-[11.5px] text-ink-dim underline underline-offset-2 hover:text-watch">
+            {team.is_archived ? "Unarchive this channel" : "Archive this channel"}
+          </button>
+          <button onClick={deleteChannel} disabled={busy} className="text-left text-[11.5px] text-crit underline underline-offset-2">
+            Delete this channel permanently
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

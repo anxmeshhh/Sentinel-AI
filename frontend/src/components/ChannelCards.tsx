@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { MyTeam } from "../api/types";
@@ -122,6 +123,12 @@ function ChannelDetailPanel({ team, onClose, onLeave }: { team: MyTeam; onClose:
       </div>
 
       <div className="mt-4 flex gap-2.5">
+        <Link
+          to={`/channels/${team.id}`}
+          className="rounded-md bg-accent px-3 py-1.5 font-mono text-[11.5px] font-bold text-ground hover:opacity-90"
+        >
+          Open channel &rarr;
+        </Link>
         <button
           onClick={() => setInviteOpen(true)}
           className="rounded-md border border-border px-3 py-1.5 font-mono text-[11.5px] text-ink-dim hover:border-accent hover:text-ink"

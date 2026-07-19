@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { api, ApiError } from "../api/client";
@@ -24,7 +25,20 @@ type StreamEvent =
   | { type: "status"; message: string }
   | { type: "result"; status: TurnStatus; reply?: string | null; plan?: Record<string, unknown> | null; pending_action?: PendingAction | null };
 
-export function GoogleAICommand({ contextPrefix, placeholder }: { contextPrefix?: string; placeholder?: string }) {
+export function GoogleAICommand({
+  contextPrefix,
+  placeholder,
+  endpointBase = "/connections/google",
+  helpText,
+}: {
+  contextPrefix?: string;
+  placeholder?: string;
+  /** Lets Channel AI (Phase 2m/2n) reuse this exact streaming/confirm UI
+   * against /teams/{id}/ai instead of the original /connections/google -
+   * same loop, same safety model, just a different scope on the backend. */
+  endpointBase?: string;
+  helpText?: ReactNode;
+}) {
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [sending, setSending] = useState(false);
@@ -43,7 +57,7 @@ export function GoogleAICommand({ contextPrefix, placeholder }: { contextPrefix?
     setTurns((t) => [...t, { command: question, status: "streaming", statusMessage: "Starting…" }]);
 
     try {
-      await api.postStream("/connections/google/command/stream", { command }, (raw) => {
+      await api.postStream(`${endpointBase}/command/stream`, { command }, (raw) => {
         const event = raw as StreamEvent;
         if (event.type === "status") {
           setTurns((t) => t.map((x, i) => (i === index ? { ...x, statusMessage: event.message } : x)));
@@ -71,7 +85,7 @@ export function GoogleAICommand({ contextPrefix, placeholder }: { contextPrefix?
     if (!turn.pendingAction) return;
     setTurns((t) => t.map((x, i) => (i === index ? { ...x, status: "executing" } : x)));
     try {
-      const res = await api.post<{ result: Record<string, unknown> }>("/connections/google/command/execute", turn.pendingAction);
+      const res = await api.post<{ result: Record<string, unknown> }>(`${endpointBase}/command/execute`, turn.pendingAction);
       setTurns((t) => t.map((x, i) => (i === index ? { ...x, status: "executed", executedResult: res.result } : x)));
     } catch (err) {
       setTurns((t) =>
@@ -88,9 +102,13 @@ export function GoogleAICommand({ contextPrefix, placeholder }: { contextPrefix?
     <div className="border-t border-border p-3.5">
       <div className="mb-1 text-[11.5px] font-semibold text-ink-dim">AI Command</div>
       <p className="mb-3 text-[11px] leading-relaxed text-ink-faint">
-        Ask across Gmail + Calendar together — e.g. "summarize my important emails and schedule a follow-up
-        meeting." Actions that change anything (like creating an event) are shown as a plan you confirm first,
-        never run automatically.
+        {helpText ?? (
+          <>
+            Ask across Gmail + Calendar together — e.g. "summarize my important emails and schedule a follow-up
+            meeting." Actions that change anything (like creating an event) are shown as a plan you confirm first,
+            never run automatically.
+          </>
+        )}
       </p>
 
       {turns.length > 0 && (

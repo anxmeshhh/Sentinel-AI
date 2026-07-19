@@ -105,6 +105,30 @@ export interface TeamMember {
   channel_role: "channel_admin" | "channel_member";
 }
 
+export interface ChannelConnectionResource {
+  id: string;
+  resource_key: string;
+  resource_label: string;
+}
+
+export interface ChannelConnection {
+  id: string;
+  team_id: string;
+  connection_id: string;
+  provider: string;
+  label: string;
+  resources: ChannelConnectionResource[];
+}
+
+export interface ChannelAIHistoryItem {
+  id: string;
+  user_id: string;
+  user_name: string;
+  command: string;
+  reply: string;
+  created_at: string;
+}
+
 export interface Invite {
   token: string;
   workspace_id: string;

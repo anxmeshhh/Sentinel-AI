@@ -1393,6 +1393,56 @@ as Phase 2l - the connected account's Connections live in a Personal workspace w
 
 ---
 
+### Phase 2n — Channel Workspace Page + Admin Management UI ✅ Built and tested (API-verified; browser click-through pending, consistent with every other UI phase)
+
+**Objective:** give a Channel an actual place to live - until now everything from 2k-2m was
+API-only and a Channel was still just a sidebar row. This phase adds the dedicated
+`/channels/:teamId` page: Channel AI conversation front and center, with a collapsible context
+panel (Connections / Members / Activity) implementing the spec's "Left = where am I, Center = what
+am I doing, Right = what does Sentinel have access to here" principle.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2n.1 | `ChannelWorkspacePage` at `/channels/:teamId` - AI command area, assigned-connection chips, recent Channel AI activity | ✅ |
+| 2n.2 | Context panel: Connections tab (assign/unassign, allow-list resources - admin-gated), Members tab (promote/demote/remove - admin-gated), Activity tab | ✅ |
+| 2n.3 | `GoogleAICommand` gains `endpointBase`/`helpText` - Channel AI reuses the exact same streaming/confirm UI against `/teams/{id}/ai` | ✅ |
+| 2n.4 | Sidebar channel names + dashboard Channel cards now navigate to the page; `GET /teams/{id}` single-lookup route for direct URL loads | ✅ |
+
+### What actually got built (technical notes)
+
+- **One AI Command component, two scopes.** Rather than a parallel Channel AI chat implementation,
+  `GoogleAICommand` took an optional `endpointBase` (default unchanged, `/connections/google`) -
+  the Channel page passes `/teams/{id}/ai`, and the entire streaming/status/confirm-execute flow
+  works identically because the backend routes deliberately share the same event shapes.
+- **Cross-workspace navigation handled explicitly**: a Channel is reachable from the "My Channels"
+  dashboard card even when its parent Workspace isn't the active one - the page syncs the active
+  workspace to the Channel's own `workspace_id` on load, so the global `X-Workspace-Id`-dependent
+  calls (like listing assignable Connections) target the right Workspace instead of silently using
+  whichever one happened to be active.
+- **Admin actions are visibility-gated in the UI and enforcement-gated on the backend** - the
+  panel hides Promote/Demote/Remove/Assign/allow-list controls from non-admins, but every one of
+  those routes was already `require_channel_role`-gated in 2k/2l, so hiding is UX, not security.
+- **A real bug caught before commit**: the members tab called `POST /teams/{id}/members/{uid}/role`
+  but the backend route is `PATCH` - the api client simply had no `patch` method until now, and
+  the mismatch would have 405'd on first real use. Caught by re-reading the route while writing
+  the page against it.
+- **Verified live against the real DB**: `GET /teams/{id}`, `/members`, `/connections`,
+  `/ai/history` all exercised via TestClient with a real JWT against real rows (correct
+  `my_channel_role: channel_admin` from the 2k grandfather migration, empty connections/history as
+  expected for a never-used channel).
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **No browser click-through yet** - same standing caveat as every UI phase in this file.
+- **Channel AI history rendering is text-only** (line-clamped) - full Markdown rendering of past
+  replies deferred until someone actually wants to re-read long answers from history.
+
+**Exit criteria:** click a channel anywhere → land in its workspace page → ask Channel AI something
+→ see it use only that channel's Connections; admins manage members/connections/resources in
+place. **API layer fully verified; visual layer pending click-through.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

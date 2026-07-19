@@ -7,6 +7,7 @@ import { AdminPage } from "./pages/AdminPage";
 import { AssistantPage } from "./pages/AssistantPage";
 import { BriefPage } from "./pages/BriefPage";
 import { CalendarPage } from "./pages/CalendarPage";
+import { ChannelWorkspacePage } from "./pages/ChannelWorkspacePage";
 import { ConnectionWorkspacePage } from "./pages/ConnectionWorkspacePage";
 import { DrivePage } from "./pages/DrivePage";
 import { FindingDetailPage } from "./pages/FindingDetailPage";
@@ -56,6 +57,7 @@ export function App() {
       <Route path="/drive" element={<RequireAuth><DrivePage /></RequireAuth>} />
       <Route path="/meet" element={<RequireAuth><MeetPage /></RequireAuth>} />
       <Route path="/connections/:provider" element={<RequireAuth><ConnectionWorkspacePage /></RequireAuth>} />
+      <Route path="/channels/:teamId" element={<RequireAuth><ChannelWorkspacePage /></RequireAuth>} />
     </Routes>
   );
 }

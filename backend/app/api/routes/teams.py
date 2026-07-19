@@ -77,6 +77,22 @@ def list_teams(
     return [_to_team_out(session, t, user) for t in teams]
 
 
+@router.get("/teams/{team_id}", response_model=TeamOut)
+def get_team(
+    team_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> TeamOut:
+    """Direct single-Channel lookup (Phase 2n) - the Channel workspace page
+    is reachable by URL, so it needs to load its own header info without
+    first fetching every Team in the Workspace."""
+    team = session.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=404, detail="Team not found")
+    require_workspace_membership(session, user, team.workspace_id)
+    return _to_team_out(session, team, user)
+
+
 @router.post("/workspaces/{workspace_id}/teams", response_model=TeamOut, status_code=201)
 def create_team(
     workspace_id: uuid.UUID,

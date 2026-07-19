@@ -209,6 +209,7 @@ function ChannelRail({
   onInviteTeam: (teamId: string, teamName: string) => void;
 }) {
   const { teams, loading, join, leave } = useTeams();
+  const navigate = useNavigate();
 
   return (
     <div className="flex flex-col gap-1">
@@ -225,7 +226,14 @@ function ChannelRail({
         teams.map((team) => (
           <div key={team.id} className="group flex items-center gap-1.5 px-2.5 py-1.5">
             <span className="text-ink-faint">#</span>
-            <span className={`flex-1 truncate text-[13px] ${team.is_member ? "text-ink" : "text-ink-dim"}`}>{team.name}</span>
+            <button
+              onClick={() => team.is_member && navigate(`/channels/${team.id}`)}
+              disabled={!team.is_member}
+              title={team.is_member ? `Open #${team.name}` : "Join to open this channel"}
+              className={`flex-1 truncate text-left text-[13px] ${team.is_member ? "text-ink hover:underline" : "cursor-default text-ink-dim"}`}
+            >
+              {team.name}
+            </button>
             <span className="text-[10.5px] text-ink-faint">{team.member_count}</span>
             {team.is_member ? (
               <button

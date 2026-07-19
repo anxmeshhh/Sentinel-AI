@@ -14,6 +14,7 @@ from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionS
 from app.models.user import User
 from app.schemas.attention import AttentionItemOut, AttentionStateUpdate, ManualReminderCreate
 from app.services.attention_engine import list_attention, refresh_attention
+from app.services.catchup import build_catchup
 
 router = APIRouter(prefix="/attention", tags=["attention"])
 
@@ -44,6 +45,18 @@ def get_attention(
 ) -> list[AttentionItemOut]:
     items = list_attention(session, workspace_id, states=_parse_states(state))
     return [_to_out(i) for i in items]
+
+
+@router.get("/catchup")
+def catch_me_up(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """What changed since this user last looked at this workspace - see
+    services/catchup.py. Calling this advances the last-seen marker, so the
+    frontend calls it once per dashboard load."""
+    return build_catchup(session, workspace_id, user.id)
 
 
 @router.post("/refresh", response_model=list[AttentionItemOut])

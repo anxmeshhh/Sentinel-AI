@@ -33,6 +33,7 @@ export function Sidebar() {
 
   const workspaceNav = [
     { to: "/", label: "Dashboard", end: true },
+    { to: "/attention", label: "Attention", end: false },
     ...(active?.kind === "personal" ? [{ to: "/assistant", label: "AI Assistant", end: false }] : []),
     { to: "/mail", label: "Mail", end: false },
     { to: "/calendar", label: "Calendar", end: false },

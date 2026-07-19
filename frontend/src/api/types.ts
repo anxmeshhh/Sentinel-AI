@@ -249,6 +249,28 @@ export interface Holiday {
   states: string[] | null;
 }
 
+export interface AttentionItem {
+  id: string;
+  type: "important_email" | "upcoming_meeting" | "stale_pr" | "finding" | "manual";
+  origin: "detected" | "manual";
+  state: "new" | "done" | "snoozed" | "dismissed";
+  source_provider: string | null;
+  title: string;
+  why: string;
+  evidence_url: string | null;
+  priority: number;
+  due_at: string | null;
+  snoozed_until: string | null;
+  created_at: string;
+}
+
+export interface CatchUp {
+  since: string;
+  gap_hours: number;
+  narrative: string | null;
+  facts: Record<string, unknown>;
+}
+
 export type Severity = "crit" | "warn" | "watch";
 
 export function severityBand(severity: number): Severity {

@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
 import type { Brief, Connection } from "../api/types";
+import { AttentionStrip, CatchMeUpCard } from "../components/AttentionStrip";
 import { ChannelCards } from "../components/ChannelCards";
 import { FindingCard } from "../components/FindingCard";
 import { GroupCards } from "../components/GroupCards";
@@ -79,6 +80,12 @@ export function BriefPage() {
           {GOOGLE_ERROR_MESSAGES[googleError] ?? "Couldn't connect Google — try again."}
         </Banner>
       )}
+
+      {/* The attention loop leads the dashboard (Phase 2q): what changed
+          while you were away, then what needs you now - everything else
+          comes after. Keyed by workspace so switching re-fetches. */}
+      <CatchMeUpCard key={`catchup-${active?.id}`} />
+      <AttentionStrip key={`attention-${active?.id}`} />
 
       <GroupCards workspaces={workspaces} activeId={active?.id ?? null} onSelect={setActiveId} />
       <ChannelCards onSelectWorkspace={setActiveId} />

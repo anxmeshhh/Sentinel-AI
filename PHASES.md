@@ -1577,6 +1577,51 @@ duplicate or resurrect. **All confirmed against the real connected workspace.**
 
 ---
 
+### Phase 2q — Attention Dashboard + Catch Me Up ✅ Built and tested (Catch Me Up verified live with a real LLM narrative; UI click-through pending as usual)
+
+**Objective:** make the Attention Engine the product's front door. The dashboard now leads with
+the daily loop - "what changed while I was away" then "what needs me now" - and the full Attention
+hub gets its own page.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2q.1 | `Membership.last_seen_at` + `GET /attention/catchup`: deterministic since-you-were-away diff (counts + real titles), LLM-narrated into ≤3 sentences with a deterministic fallback when the LLM is rate-limited/unavailable | ✅ |
+| 2q.2 | Dashboard: `CatchMeUpCard` (only when away >12h, dismissible) + `AttentionStrip` (top 5, Done/Snooze/Open, optimistic with restore-on-failure) lead the page | ✅ |
+| 2q.3 | `/attention` hub: state filters, ✨ AI-detected vs 📌 manual distinction, snooze menu (3h/tomorrow/next week), dismiss, reopen, manual reminder form with optional due date | ✅ |
+| 2q.4 | "Ask Sentinel ✨" on any item → side panel reusing `GoogleAICommand` with the item as `contextPrefix` - investigation lands in the real orchestrator, zero new AI plumbing | ✅ |
+| 2q.5 | "Attention" added to sidebar nav, directly under Dashboard | ✅ |
+
+### What actually got built (technical notes)
+
+- **The LLM is exactly where the strategy said it should be**: narrating Catch Me Up (one small
+  `complete_json` call per genuinely-new visit) and investigating on demand. Verified live: with
+  no prior `last_seen_at`, the real workspace produced a real 7-day narrative citing only real
+  facts (176 emails, 89 important, the actual hackathon-kickoff/domain-expiry subjects, 1
+  finding) - and the immediate second call correctly returned `narrative: None` (gap 0h), so the
+  card never nags someone who was just here.
+- **Rate-limit resilience by design**: `LLMError` → deterministic sentence built from the same
+  facts. The feature degrades to "less charming", never to "broken" - a direct lesson from the
+  Groq-tier incidents earlier in this project.
+- **last-seen is per-membership, not per-user** - the same person can be away from one workspace
+  while active daily in another; anchoring on `Membership` gets that for free.
+- **Catch Me Up windows are capped at 7 days** so a month away produces a summary, not a novel.
+- **Optimistic UI with honesty**: Done/Snooze remove the row instantly but restore it if the
+  PATCH fails - never silently pretend an action stuck.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- Strategy items not in this slice: channel briefings (Phase D), demo-workspace seed + persona
+  onboarding (2r, expo insurance), deadline detection, dismissal-learning.
+- Catch Me Up doesn't yet enumerate *changed* meetings (moved/cancelled) - only upcoming ones;
+  needs event-revision tracking the Calendar sync doesn't store yet.
+- No browser click-through yet - standing caveat.
+
+**Exit criteria:** open Sentinel → see what changed and the ≤5 things that matter, each with a
+factual why → act (done/snooze/dismiss/open/investigate) in place → tomorrow it's fresh again.
+**Backend + live Catch Me Up verified against the real workspace; visual pass pending.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

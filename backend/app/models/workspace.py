@@ -9,11 +9,12 @@ core/bootstrap.py, not a schema migration.
 
 import enum
 import uuid
+from datetime import datetime  # noqa: TC003 - used in Mapped annotation
 
 from sqlalchemy import Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin, UUIDPk
+from app.models.base import Base, TimestampMixin, UTCDateTime, UUIDPk
 
 
 class WorkspaceKind(str, enum.Enum):
@@ -52,5 +53,11 @@ class Membership(Base, UUIDPk, TimestampMixin):
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     role: Mapped[Role] = mapped_column(Enum(Role, name="membership_role"), nullable=False)
+
+    # Phase 2q: when this user last looked at this workspace's dashboard -
+    # the anchor for "Catch Me Up" (what changed since you were last here).
+    # Per-membership, not per-user, because the same person can be away
+    # from one workspace while active daily in another.
+    last_seen_at: Mapped["datetime | None"] = mapped_column(UTCDateTime, nullable=True)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="memberships")

@@ -16,6 +16,7 @@ from app.db.session import SessionLocal
 from app.models.agent_run import TriggeredBy
 from app.models.connection import Connection
 from app.services import agent_orchestration, ingestion
+from app.services.attention_engine import refresh_attention
 
 logger = structlog.get_logger("sentinel.workers")
 
@@ -56,6 +57,14 @@ def ingest_connection(self, connection_id: str, triggered_by: str = TriggeredBy.
             logger.warning("ingest_connection_missing", connection_id=connection_id)
             return
         ingestion.ingest_connection(session, connection)
+        # Attention detection rides every sync (Phase 2p) - fresh signals in,
+        # fresh attention items out, no separate schedule to keep aligned.
+        # Deterministic and cheap (no LLM), so running it per-connection-sync
+        # costs milliseconds. Never lets a detection bug fail the sync itself.
+        try:
+            refresh_attention(session, connection.workspace_id)
+        except Exception:
+            logger.exception("attention_refresh_failed", workspace_id=str(connection.workspace_id))
         run_agents_for_connection.delay(str(connection.id), triggered_by)
     finally:
         session.close()

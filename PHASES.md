@@ -1517,6 +1517,66 @@ the UI. **Full lifecycle confirmed live against the real database.**
 
 ---
 
+### Phase 2p — Attention Engine (backend) ✅ Built and tested end-to-end (real detection verified against the live workspace)
+
+**Objective:** the first slice of the agreed next-phase strategy ("Sentinel tells you the five
+things that matter today - and can prove why"). One new primitive - `AttentionItem` - unifying
+everything actionable across sources (important emails, imminent meetings, stale PRs, agent
+findings, manual reminders) into a single feed with a real lifecycle
+(new/done/snoozed/dismissed). This is deliberately a *materialized* list, not a live query:
+"done" and "dismissed" are user decisions that must survive every re-detection pass.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2p.1 | `AttentionItem` model + migration: type/origin/state, dedupe key unique per workspace, priority, due_at, snoozed_until | ✅ |
+| 2p.2 | `services/attention_engine.py`: four deterministic detectors + idempotent reconcile (update in place / auto-resolve / never resurrect) | ✅ |
+| 2p.3 | `/attention` API: list (with lazy snooze resurfacing), on-demand refresh, manual reminders, state transitions | ✅ |
+| 2p.4 | Detection rides every sync cycle (guarded so a detection bug can never fail ingestion itself) | ✅ |
+
+### What actually got built (technical notes)
+
+- **Deterministic radar, AI brain - enforced, not just stated.** No LLM anywhere in detection or
+  in the `why` lines, which are factual templates ("Starred, still unread — from Alice, 2d ago").
+  This is simultaneously the precision play (never hallucinate an urgent thing), the
+  rate-limit play (zero tokens per sync on the free Groq tier), and the trust play. The LLM
+  budget is reserved for Phase 2q's Catch-Me-Up narration and on-demand investigation, where AI
+  genuinely adds value.
+- **Precision over recall, concretely**: emails require UNREAD + (STARRED, or IMPORTANT outside
+  promotional/social categories - Gmail marks a lot of routine bulk mail IMPORTANT); meetings
+  only within 24h and not cancelled; PRs only open >4 days; findings only severity ≥0.6 within
+  3 days. Emails and PRs are capped at 5 each.
+- **The dedupe key is the trust mechanism.** Same fact → same row, forever:
+  `email:{id}`, `meeting:{id}:{date}` (each recurring occurrence gets its own row),
+  `pr:{id}`, `finding:{id}`. Re-detection updates facts in place on NEW/SNOOZED rows only -
+  DONE/DISMISSED rows are never touched again, so dismissing a noisy sender's mail is permanent.
+- **Auto-resolution keeps the list honest**: a detected item whose underlying fact stops
+  qualifying (email read in Gmail, meeting over, PR merged) auto-completes on the next refresh -
+  the user never garbage-collects stale urgency. Verified by test: flipping an email's labels to
+  read auto-completed its item.
+- **Snooze needs no scheduler**: resurfacing happens lazily on read (snoozed_until elapsed →
+  state flips back to NEW). Zero new infrastructure.
+- **Verified against real data, not just the 11 unit tests**: live detection on the actual
+  connected workspace produced 6 real items (1 communication-agent finding at 70% severity + 5
+  genuinely-unread important emails, including a real domain-expiry warning), zero false
+  meetings/PRs (correctly none in their windows). Live API lifecycle exercised end-to-end:
+  list → done → snooze-validation 400 → manual reminder create → correct list membership.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **No UI yet** - Phase 2q is the dashboard strip + Attention hub + Catch Me Up.
+- **Dismissals don't teach the detectors** (a dismissed sender's next email can re-qualify) -
+  sender-level learning is logged as future tuning, after real usage shows which noise survives.
+- **No deadline detector** - Drive deadline extraction is on-demand LLM work, not stored; wiring
+  it in belongs with the "add to calendar" action flow (Phase E of the strategy).
+- **Detection is workspace-scoped, not per-user** - correct for personal workspaces (one user);
+  channel/team-scoped attention arrives with channel briefings (strategy Phase D).
+
+**Exit criteria:** one API returns the ranked, deduplicated, lifecycle-aware list of what needs
+attention across Gmail/Calendar/GitHub/agents; marking done sticks forever; re-syncs never
+duplicate or resurrect. **All confirmed against the real connected workspace.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

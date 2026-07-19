@@ -8,6 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.api.routes import (
     admin,
     assistant,
+    attention,
     auth,
     briefs,
     calendar,
@@ -81,6 +82,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(attention.router)
 app.include_router(connections.router)
 app.include_router(runs.router)
 app.include_router(briefs.router)

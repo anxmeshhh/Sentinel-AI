@@ -24,9 +24,15 @@ export function setAuthToken(token: string | null): void {
   authToken = token;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, workspaceIdOverride?: string): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (activeWorkspaceId) headers["X-Workspace-Id"] = activeWorkspaceId;
+  // The override exists for pages that operate on a specific workspace
+  // regardless of which one is globally active (e.g. a Channel page reached
+  // cross-workspace from "My Channels") - silently *switching* the global
+  // active workspace instead was a real bug: it made the user's Mail page
+  // go blank because their Gmail lives in the Personal workspace.
+  const workspaceId = workspaceIdOverride ?? activeWorkspaceId;
+  if (workspaceId) headers["X-Workspace-Id"] = workspaceId;
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
 
   const res = await fetch(`${BASE_URL}${path}`, { headers, ...init });
@@ -74,7 +80,7 @@ async function postStream(path: string, body: unknown, onEvent: (data: unknown) 
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string, opts?: { workspaceId?: string }) => request<T>(path, undefined, opts?.workspaceId),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) =>

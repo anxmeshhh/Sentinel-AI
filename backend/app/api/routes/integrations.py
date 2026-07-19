@@ -16,6 +16,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -27,8 +28,12 @@ from app.core.config import get_settings
 from app.core.oauth import GOOGLE_CONFIGURED, oauth
 from app.core.security import encrypt_token
 from app.models.connection import Connection, Provider
+from app.models.email_summary import EmailSummary
+from app.models.signal import Signal
 from app.models.user import User
 from app.schemas.integration import ConnectTicketOut
+
+logger = structlog.get_logger("sentinel.integrations")
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -103,19 +108,42 @@ async def google_connect_callback(request: Request, session: Session = Depends(g
         json.dumps({"access_token": access_token, "refresh_token": refresh_token, "expires_at": expires_at.isoformat()})
     )
 
-    workspace_id = uuid.UUID(workspace_id_str)
-    for provider, label in [(Provider.GOOGLE_CALENDAR, "calendar"), (Provider.GMAIL, "gmail"), (Provider.GOOGLE_DRIVE, "drive")]:
-        existing = session.execute(
-            select(Connection).where(
-                Connection.workspace_id == workspace_id, Connection.provider == provider, Connection.org == google_email
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            existing.encrypted_token = encrypted
-        else:
-            session.add(
-                Connection(workspace_id=workspace_id, provider=provider, org=google_email, repo=label, encrypted_token=encrypted)
-            )
-    session.commit()
+    upsert_google_connections(session, workspace_id=uuid.UUID(workspace_id_str), google_email=google_email, encrypted_token=encrypted)
 
     return RedirectResponse(f"{get_settings().frontend_base_url}/?connected=google")
+
+
+def upsert_google_connections(session: Session, *, workspace_id: uuid.UUID, google_email: str, encrypted_token: str) -> None:
+    """One Google account per provider per workspace, enforced.
+
+    Matches on (workspace, provider) alone - NOT org. Matching org too (the
+    original code) meant connecting a *different* Google account stacked a
+    second connection beside the first instead of replacing it, leaving the
+    workspace half account-A (synced signals) and half account-B (fresh
+    token), with get_by_provider picking one arbitrarily - confirmed real:
+    body fetches then 404'd for emails that genuinely exist, just in the
+    *other* account's mailbox. On an account switch, the old account's
+    synced signals (and cached email summaries) describe a mailbox/calendar
+    this workspace can no longer read - purged rather than mixed.
+    """
+    for provider, label in [(Provider.GOOGLE_CALENDAR, "calendar"), (Provider.GMAIL, "gmail"), (Provider.GOOGLE_DRIVE, "drive")]:
+        existing = session.execute(
+            select(Connection).where(Connection.workspace_id == workspace_id, Connection.provider == provider)
+        ).scalars().first()
+        if existing is not None:
+            if existing.org != google_email:
+                logger.info(
+                    "google_account_replaced",
+                    provider=provider.value, old=existing.org, new=google_email, workspace_id=str(workspace_id),
+                )
+                session.query(Signal).filter(Signal.connection_id == existing.id).delete()
+                if provider == Provider.GMAIL:
+                    session.query(EmailSummary).filter(EmailSummary.workspace_id == workspace_id).delete()
+                existing.org = google_email
+                existing.last_synced_at = None
+            existing.encrypted_token = encrypted_token
+        else:
+            session.add(
+                Connection(workspace_id=workspace_id, provider=provider, org=google_email, repo=label, encrypted_token=encrypted_token)
+            )
+    session.commit()

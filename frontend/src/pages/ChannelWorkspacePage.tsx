@@ -6,14 +6,11 @@ import type { ChannelAIHistoryItem, ChannelConnection, ChannelPrivacy, Connectio
 import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
 import { useTeams } from "../context/TeamContext";
-import { useWorkspace } from "../context/WorkspaceContext";
 
 type PanelTab = "connections" | "members" | "activity" | "settings";
 
 export function ChannelWorkspacePage() {
   const { teamId = "" } = useParams<{ teamId: string }>();
-  const { active, setActiveId } = useWorkspace();
-
   const [team, setTeam] = useState<Team | null>(null);
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [connections, setConnections] = useState<ChannelConnection[]>([]);
@@ -37,12 +34,11 @@ export function ChannelWorkspacePage() {
       setTeam(t);
       setMembers(m);
       setConnections(c);
-      // A Channel can belong to a Workspace other than the currently active
-      // one (reachable cross-workspace via the "My Channels" dashboard
-      // card) - keep the active workspace in sync so anything else on this
-      // page that relies on the global X-Workspace-Id header (picking a
-      // Connection to assign) targets the right Workspace.
-      if (active?.id !== t.workspace_id) setActiveId(t.workspace_id);
+      // Deliberately NOT switching the global active workspace here - an
+      // earlier version did, and silently flipping it made the user's
+      // Mail/Calendar/Drive pages (scoped to their Personal workspace) go
+      // blank after visiting any org channel. The one call that needs this
+      // channel's workspace (the connection picker) passes it explicitly.
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to load this channel");
     } finally {
@@ -227,7 +223,7 @@ function ConnectionsTab({
 
   useEffect(() => {
     if (!showPicker) return;
-    api.get<Connection[]>("/connections").then(setAvailable).catch(() => setAvailable([]));
+    api.get<Connection[]>("/connections", { workspaceId }).then(setAvailable).catch(() => setAvailable([]));
   }, [showPicker, workspaceId]);
 
   const assignedConnectionIds = new Set(connections.map((c) => c.connection_id));

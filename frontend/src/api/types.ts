@@ -279,6 +279,13 @@ export interface DemoWorkspace {
   signals_seeded: number;
 }
 
+export interface ChannelBriefing {
+  items: AttentionItem[];
+  narrative: string | null;
+  connection_labels: string[];
+  no_connections: boolean;
+}
+
 export interface CatchUp {
   since: string;
   gap_hours: number;

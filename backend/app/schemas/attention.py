@@ -24,6 +24,16 @@ class AttentionStateUpdate(BaseModel):
     snoozed_until: datetime | None = None  # required when state == snoozed
 
 
+class ChannelBriefingOut(BaseModel):
+    """Read-only by design - lifecycle actions live in the personal
+    Attention hub (see services/channel_briefing.py's docstring)."""
+
+    items: list[AttentionItemOut]
+    narrative: str | None
+    connection_labels: list[str]
+    no_connections: bool
+
+
 class ManualReminderCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     why: str | None = Field(default=None, max_length=500)

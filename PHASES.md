@@ -1691,6 +1691,64 @@ for my next meeting" to watch Sentinel reason across mail, calendar and document
 
 ---
 
+### Phase 2s — Channel Briefings ✅ Built and tested (scoping verified live, widening and excluding correctly)
+
+**Objective:** extend the attention loop into Channels - "what needs this channel's attention" -
+scoped strictly to the Connections and resources that channel is actually authorized for. Reuses
+the Phase 2p engine entirely; no new detection.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2s.1 | `services/channel_briefing.py`: channel scope resolution + per-item visibility rules | ✅ |
+| 2s.2 | `GET /teams/{id}/briefing` (any channel member) + `channel_pending_count` for header chips | ✅ |
+| 2s.3 | LLM narrative with deterministic fallback, same discipline as Catch Me Up | ✅ |
+| 2s.4 | Briefing card on the channel page, above the AI box | ✅ |
+
+### What actually got built (technical notes)
+
+- **Enforcement happens at selection time, never by hiding in the UI.** An item is only visible if
+  a Connection for its source provider is assigned to that Channel. Verified live: a channel with
+  only GitHub assigned showed exactly its 2 stale PRs; adding Gmail widened it to 5; and the
+  upcoming meeting stayed **excluded throughout** because Calendar was never assigned.
+- **Findings are attributed through their agent run's connection**, not assumed workspace-wide -
+  a finding about the GitHub connection stays invisible in a channel that only has Gmail. This
+  needed a join (`Finding → AgentRun.connection_id`) rather than a provider guess.
+- **Personal manual reminders never leak into a channel.** They belong to whoever created them; a
+  shared team view is the wrong place for "call the dentist".
+- **A deliberate, documented asymmetry in resource scoping.** Drive-backed items are fail-closed
+  (hidden until a document is explicitly allow-listed). Email/calendar/PR items are
+  connection-gated only - not as a shortcut, but because their Connections are already 1:1 with
+  their scope here (a GitHub Connection *is* one repo; a Gmail Connection *is* one mailbox), and
+  an email that hasn't arrived yet cannot be pre-allow-listed by an admin. This mirrors the
+  orchestrator's existing split exactly, where `search_emails`/`search_drive` are
+  connection-gated and only *reading a specific document* is resource-gated. The reasoning is
+  written into the module docstring so the next person doesn't "fix" it into something that makes
+  email briefings structurally impossible.
+- **Briefings are read-only, on purpose.** Done/snooze/dismiss stay in the personal Attention hub,
+  because an item's lifecycle belongs to the person acting on it - one member marking something
+  done shouldn't silently clear it from a teammate's view. A shared lifecycle deserves a real
+  decision, not a default that falls out of implementation convenience.
+- **`channel_pending_count` never narrates**, so a header chip can't quietly spend an LLM call on
+  every channel page load - proven by a test that would fail if it tried.
+- **9 new tests, mostly about what a channel must NOT see**: unassigned connections, another
+  connection's findings, personal reminders, un-allow-listed documents, resolved items, and
+  cross-channel isolation.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **No channel-level "since you were last here"** - the briefing is current-state only. Per-member
+  per-channel last-seen is the same shape as `Membership.last_seen_at`, worth adding when someone
+  actually asks for it.
+- **No pending-count chip in the sidebar channel rail yet** - the count helper exists and is
+  tested; wiring it into the rail means a fan-out query per channel, which needs a batched
+  endpoint first rather than N requests.
+
+**Exit criteria:** a channel with connections assigned shows exactly the attention items those
+connections authorize, narrated in a sentence or two, and shows nothing at all when nothing is
+assigned. **Confirmed live, including correct exclusion of an unassigned source.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

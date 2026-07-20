@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
-import type { ChannelAIHistoryItem, ChannelConnection, ChannelPrivacy, Connection, Team, TeamMember } from "../api/types";
+import type { ChannelAIHistoryItem, ChannelBriefing, ChannelConnection, ChannelPrivacy, Connection, Team, TeamMember } from "../api/types";
+import { attentionIcon, EvidenceLink } from "../components/AttentionStrip";
 import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
 import { useTeams } from "../context/TeamContext";
@@ -15,6 +16,7 @@ export function ChannelWorkspacePage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [connections, setConnections] = useState<ChannelConnection[]>([]);
   const [history, setHistory] = useState<ChannelAIHistoryItem[]>([]);
+  const [briefing, setBriefing] = useState<ChannelBriefing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -54,9 +56,18 @@ export function ChannelWorkspacePage() {
     }
   }
 
+  async function loadBriefing() {
+    try {
+      setBriefing(await api.get<ChannelBriefing>(`/teams/${teamId}/briefing`));
+    } catch {
+      setBriefing(null);
+    }
+  }
+
   useEffect(() => {
     void loadAll();
     void loadHistory();
+    void loadBriefing();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId]);
 
@@ -133,6 +144,33 @@ export function ChannelWorkspacePage() {
                   {c.provider} · {c.label}
                 </span>
               ))}
+            </div>
+          )}
+
+          {briefing && !briefing.no_connections && briefing.items.length > 0 && (
+            <div className="mb-4 rounded-md border border-accent/30 bg-accent/5 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="font-mono text-[10.5px] font-bold uppercase tracking-wide text-accent-text">
+                  Channel Briefing ✨ · {briefing.items.length} item{briefing.items.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              {briefing.narrative && <p className="mb-3 text-[12.5px] leading-relaxed text-ink-dim">{briefing.narrative}</p>}
+              <div className="flex flex-col gap-1.5">
+                {briefing.items.slice(0, 5).map((item) => (
+                  <div key={item.id} className="flex items-start gap-2.5 text-[12px]">
+                    <span className="mt-px flex-none">{attentionIcon(item)}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-semibold text-ink">{item.title}</div>
+                      <div className="truncate text-[11px] text-ink-faint">{item.why}</div>
+                    </div>
+                    <EvidenceLink item={item} className="flex-none font-mono text-[10px] font-semibold text-accent-text hover:underline" />
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-[10.5px] text-ink-faint">
+                Scoped to this channel's authorized connections{briefing.connection_labels.length > 0 && `: ${briefing.connection_labels.join(", ")}`}.
+                Mark items done in your personal <Link to="/attention" className="underline underline-offset-2 hover:text-ink">Attention</Link> hub.
+              </p>
             </div>
           )}
 

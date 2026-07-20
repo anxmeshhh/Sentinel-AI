@@ -17,8 +17,11 @@ from app.api.deps import get_current_user, get_db, require_channel_role
 from app.models.channel_ai_history import ChannelAIHistoryEntry
 from app.models.team import ChannelRole, Team
 from app.models.user import User
+from app.api.routes.attention import _to_out as _attention_out
+from app.schemas.attention import ChannelBriefingOut
 from app.schemas.channel_ai import ChannelAIHistoryOut
 from app.schemas.orchestrator import CommandRequest, CommandResponse, ExecuteActionRequest, ExecuteActionResponse
+from app.services.channel_briefing import build_channel_briefing
 from app.services.orchestrator import execute_planned_action, run_command, run_command_stream
 
 router = APIRouter(tags=["channel-ai"])
@@ -83,6 +86,30 @@ def channel_ai_command_execute(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to execute action: {exc}")
     return ExecuteActionResponse(result=result)
+
+
+@router.get("/teams/{team_id}/briefing", response_model=ChannelBriefingOut)
+def channel_briefing(
+    team_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChannelBriefingOut:
+    """Phase 2s: what needs this Channel's attention, scoped strictly to the
+    Connections (and, where applicable, resources) assigned to it. Any
+    channel member may read it; scoping is enforced at selection time, not
+    by hiding things in the UI."""
+    require_channel_role(session, user, team_id, allowed=_ANY_MEMBER)
+    team = session.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    result = build_channel_briefing(session, team_id, team.workspace_id)
+    return ChannelBriefingOut(
+        items=[_attention_out(i) for i in result["items"]],
+        narrative=result["narrative"],
+        connection_labels=result["connection_labels"],
+        no_connections=result["no_connections"],
+    )
 
 
 @router.get("/teams/{team_id}/ai/history", response_model=list[ChannelAIHistoryOut])

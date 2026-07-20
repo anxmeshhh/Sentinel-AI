@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { Connection } from "../api/types";
 import { BackNav } from "../components/BackNav";
+import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
 
 interface Meeting {
   id: string;
@@ -30,6 +31,8 @@ export function MeetPage() {
   const [search, setSearch] = useState("");
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
+  const [prepId, setPrepId] = useState<string | null>(null);
+  const brief = useMeetingBrief();
 
   useEffect(() => {
     api.get<Connection[]>("/connections").then((conns) => {
@@ -161,7 +164,40 @@ export function MeetPage() {
                       Open Meet Link
                     </a>
                   )}
+                  {m.status === "upcoming" && (
+                    <button
+                      onClick={() => {
+                        setPrepId(m.id);
+                        brief.clear();
+                        void brief.load(`/meetings/${m.id}/prepare`);
+                      }}
+                      disabled={brief.loading && prepId === m.id}
+                      className={`font-mono text-[11px] underline underline-offset-2 disabled:opacity-50 ${
+                        prepId === m.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
+                      }`}
+                    >
+                      {brief.loading && prepId === m.id ? "Preparing…" : "Prepare Me ✨"}
+                    </button>
+                  )}
                 </div>
+
+                {prepId === m.id && (brief.brief || brief.error) && (
+                  <div className="mt-3">
+                    {brief.error ? (
+                      <p className="text-[12px] text-crit">{brief.error}</p>
+                    ) : (
+                      <MeetingBriefPanel
+                        brief={brief.brief!}
+                        refreshing={brief.refreshing}
+                        onRefresh={() => brief.load(`/meetings/${m.id}/prepare`, { refresh: true })}
+                        onClose={() => {
+                          setPrepId(null);
+                          brief.clear();
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

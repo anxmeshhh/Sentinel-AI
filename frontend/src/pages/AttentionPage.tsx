@@ -6,6 +6,7 @@ import type { AttentionItem, CalendarPlan } from "../api/types";
 import { attentionIcon, EvidenceLink } from "../components/AttentionStrip";
 import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
+import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
 
 const STATE_FILTERS = [
   { key: "new", label: "Open" },
@@ -33,6 +34,8 @@ export function AttentionPage() {
   const [plan, setPlan] = useState<{ item: AttentionItem; plan: CalendarPlan } | null>(null);
   const [planBusy, setPlanBusy] = useState(false);
   const [planResult, setPlanResult] = useState<string | null>(null);
+  const [prepItemId, setPrepItemId] = useState<string | null>(null);
+  const meetingBrief = useMeetingBrief();
 
   const [newTitle, setNewTitle] = useState("");
   const [newDue, setNewDue] = useState("");
@@ -74,6 +77,12 @@ export function AttentionPage() {
     } finally {
       setRefreshing(false);
     }
+  }
+
+  async function prepareFor(item: AttentionItem) {
+    setPrepItemId(item.id);
+    meetingBrief.clear();
+    await meetingBrief.load(`/attention/${item.id}/prepare`);
   }
 
   async function proposeCalendar(item: AttentionItem) {
@@ -257,7 +266,18 @@ export function AttentionPage() {
                         <button onClick={() => setState(item, "dismissed")} className="text-ink-faint underline underline-offset-2 hover:text-crit">
                           Dismiss
                         </button>
-                        {item.due_at && (
+                        {item.type === "upcoming_meeting" && (
+                          <button
+                            onClick={() => prepareFor(item)}
+                            disabled={meetingBrief.loading && prepItemId === item.id}
+                            className={`underline underline-offset-2 disabled:opacity-50 ${
+                              prepItemId === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
+                            }`}
+                          >
+                            {meetingBrief.loading && prepItemId === item.id ? "Preparing…" : "Prepare Me ✨"}
+                          </button>
+                        )}
+                        {item.due_at && item.type !== "upcoming_meeting" && (
                           <button
                             onClick={() => proposeCalendar(item)}
                             className="text-ink-faint underline underline-offset-2 hover:text-ink"
@@ -280,6 +300,24 @@ export function AttentionPage() {
                     )}
                     <EvidenceLink item={item} className="font-semibold text-accent-text hover:underline" />
                   </div>
+
+                  {prepItemId === item.id && (meetingBrief.brief || meetingBrief.error) && (
+                    <div className="mt-3">
+                      {meetingBrief.error ? (
+                        <p className="text-[12px] text-crit">{meetingBrief.error}</p>
+                      ) : (
+                        <MeetingBriefPanel
+                          brief={meetingBrief.brief!}
+                          refreshing={meetingBrief.refreshing}
+                          onRefresh={() => meetingBrief.load(`/attention/${item.id}/prepare`, { refresh: true })}
+                          onClose={() => {
+                            setPrepItemId(null);
+                            meetingBrief.clear();
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

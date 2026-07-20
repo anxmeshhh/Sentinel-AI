@@ -1817,6 +1817,90 @@ the propose-confirm flow.**
 
 ---
 
+### Phase 2u — "Prepare Me": structured meeting briefs ✅ Built and tested (10× cheaper than the orchestrator path, verified on real and demo data)
+
+**Objective:** the first Goal-Based Intelligence workflow. The user asked for a "Goal Engine"
+(intent → connections → permissions → retrieval → synthesis); analysis showed **6.5 of those 8
+steps already existed** in the orchestrator, which had already produced good meeting briefs twice
+in testing. So this phase deliberately did *not* build a goal engine.
+
+**What was actually missing** was (a) discoverability - the capability was reachable only by
+typing the right sentence into a text box, and (b) cost - the orchestrator path takes ~7
+sequential LLM round-trips, which against this project's real 200k/day ceiling is roughly seven
+briefs per day.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2u.1 | `services/meeting_prep.py`: deterministic progressive retrieval + one synthesis call | ✅ |
+| 2u.2 | `MeetingBrief` cache table (EmailSummary's precedent) | ✅ |
+| 2u.3 | `POST /attention/{id}/prepare` and `POST /meetings/{id}/prepare` - two entry points, one implementation | ✅ |
+| 2u.4 | `Prepare Me ✨` button on meeting attention items and upcoming meetings on the Meet page | ✅ |
+
+### What actually got built (technical notes)
+
+- **The core decision: for a known goal shape, don't make the LLM plan - make it synthesize.**
+  Meeting prep has a fixed shape (the meeting → attendee emails → title-matched documents → prior
+  meetings), so retrieval is deterministic Python and the LLM is called **once**. Measured on the
+  same demo meeting the orchestrator handled earlier: **1.7s and 1 LLM call** versus ~7 calls,
+  producing a brief of comparable quality (it found the same clause-7.2 contract question, the
+  proposal, and the demo script). Cached re-open: **0.002s, zero tokens.**
+- **This is the codebase's own pattern, not a new one** ("detection is deterministic, the LLM
+  narrates"). The orchestrator remains the deliberate exception for open-ended questions - it is
+  explicitly *not* replaced. Two retrieval strategies, one intelligence architecture; no fifth
+  chatbot.
+- **Progressive retrieval is enforced in code, not suggested in a prompt.** No attendees → the
+  email and prior-meeting searches never run. Generic title ("Meeting", "Sync", "1:1") → Drive is
+  never queried, because searching for "Sync" returns noise the user pays for in tokens. Nothing
+  found → the LLM call is skipped entirely and an honest "nothing to review" message is returned,
+  since filler that reads like insight is worse than an honest blank. **Proved on real data**: a
+  generic-titled solo meeting produced its brief in **0.01s with zero API and zero LLM calls.**
+- **Attendee-based email search, not keyword guessing.** Searching Gmail for the attendees' real
+  addresses is both more precise and closer to what a person actually does before a meeting than
+  searching for words from the title.
+- **Two real bugs caught by running it, not by tests.** (1) `structlog` reserves `event` as its
+  own parameter name, so passing `event=` as a log kwarg raised at runtime. (2) A blanket
+  `len(word) > 2` keyword filter silently discarded exactly the short tokens that carry the most
+  meaning in work titles - `Q3`, `AI`, `UX`, `v2` - while a bare `1` from tokenizing "1:1" slipped
+  through. The rule now keeps long words, digit-bearing tokens and all-caps acronyms, and drops
+  short bare numbers.
+- **Permissions are reused, not reimplemented**: retrieval goes through the orchestrator's
+  existing `_get_connection`, so a brief requested inside a Channel can only read that Channel's
+  authorized connections.
+- **Every claim is traceable.** The brief lists each source (meeting, email, document, prior
+  meeting) with a link out, so the user can verify rather than trust.
+- **13 new tests**, focused on the cost controls and honesty guarantees: skip rules actually skip,
+  an empty result spends no LLM call (proved by the test having no Groq access at all), briefs
+  cache and rebuild in place, and prior-meeting matching excludes future events.
+
+### What was deliberately NOT built (and why)
+
+- **A generic goal parser / intent classifier** - the orchestrator already is one.
+- **A multi-goal workflow registry** - premature abstraction at N=1. If a second structured
+  workflow earns its place, the shape can be extracted then, from two real examples.
+- **"What's happening with Project X?"** - needs Jira and project↔channel linkage that doesn't
+  exist yet.
+- **An autonomous next-action engine** - the brief states concrete prep points as text; acting on
+  them stays the user's decision, and the one existing write path is already confirm-gated.
+- **"Help me understand this item"** - already shipped as "Ask Sentinel ✨" in Phase 2q.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **The cache never self-invalidates.** If the meeting or its context changes, the brief is stale
+  until someone clicks Rebuild. Time-based expiry is trivial to add but would spend tokens on
+  briefs nobody reopened; a rebuild button the user controls seemed the better default.
+- **Prior meetings come only from locally-synced Signals**, so history is bounded by what
+  ingestion has seen (currently ~6-hourly).
+- **No channel-scoped entry point yet** - `team_id` is plumbed through `prepare_meeting` and
+  respected, but nothing in the Channel UI calls it. Wiring it is small once channel meetings
+  matter.
+- **No browser click-through** - standing caveat.
+
+**Exit criteria:** one click on an upcoming meeting produces a grounded brief with linked sources
+in seconds, costs at most one LLM call, costs nothing at all when there's no context to find, and
+costs nothing on re-open. **All four confirmed, on both real and demo data.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

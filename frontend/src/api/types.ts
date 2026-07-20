@@ -249,6 +249,22 @@ export interface Holiday {
   states: string[] | null;
 }
 
+export interface BriefSource {
+  kind: "meeting" | "email" | "document" | "prior_meeting";
+  label: string;
+  url: string | null;
+}
+
+export interface MeetingBrief {
+  id: string;
+  title: string;
+  narrative: string;
+  prep_points: string[];
+  sources: BriefSource[];
+  created_at: string;
+  cached: boolean;
+}
+
 export interface CalendarPlan {
   title: string;
   start: string;

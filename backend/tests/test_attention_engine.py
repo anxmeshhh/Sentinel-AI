@@ -194,6 +194,47 @@ def test_snoozed_future_item_stays_hidden(session, workspace):
     assert list_attention(session, workspace.id) == []
 
 
+def test_deadline_detected_from_email_subject(session, workspace):
+    session.add(_email_signal(workspace, "m1", ["INBOX"], subject="Invoice INV-2291 is due in 3 days"))
+    session.commit()
+
+    items = refresh_attention(session, workspace.id)
+    assert len(items) == 1
+    assert items[0].type == AttentionType.DEADLINE
+    assert items[0].due_at is not None
+    assert "in 3 days" in items[0].why
+
+
+def test_deadline_supersedes_the_plain_email_item_for_the_same_message(session, workspace):
+    """One fact, one item. A dated important email trips two detectors; the
+    deadline carries more information, so it wins."""
+    session.add(
+        _email_signal(workspace, "m1", ["UNREAD", "STARRED", "INBOX"], subject="Contract expires in 5 days")
+    )
+    session.commit()
+
+    items = refresh_attention(session, workspace.id)
+    assert len(items) == 1
+    assert items[0].type == AttentionType.DEADLINE
+
+
+def test_ordinary_email_subject_produces_no_deadline(session, workspace):
+    session.add(_email_signal(workspace, "m1", ["UNREAD", "STARRED"], subject="Notes from Friday's review"))
+    session.commit()
+
+    items = refresh_attention(session, workspace.id)
+    assert [i.type for i in items] == [AttentionType.IMPORTANT_EMAIL]
+
+
+def test_imminent_deadline_outranks_a_starred_email(session, workspace):
+    session.add(_email_signal(workspace, "m1", ["UNREAD", "STARRED"], subject="Please review the deck"))
+    session.add(_email_signal(workspace, "m2", ["INBOX"], subject="Renewal deadline tomorrow"))
+    session.commit()
+
+    items = refresh_attention(session, workspace.id)
+    assert items[0].type == AttentionType.DEADLINE
+
+
 def test_sorted_by_priority_then_due(session, workspace):
     session.add(_email_signal(workspace, "m1", ["UNREAD", "IMPORTANT", "INBOX"]))  # 0.6
     session.add(_meeting_signal(workspace, "e1", NOW + timedelta(hours=2)))  # 0.8

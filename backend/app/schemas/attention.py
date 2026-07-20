@@ -34,6 +34,17 @@ class ChannelBriefingOut(BaseModel):
     no_connections: bool
 
 
+class CalendarPlanOut(BaseModel):
+    """A *proposal*, not a booking. The client shows this for confirmation
+    and only then calls the existing execute endpoint - same
+    confirm-before-write model as every other external action."""
+
+    title: str
+    start: datetime
+    end: datetime
+    action: str = "create_calendar_event"
+
+
 class ManualReminderCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     why: str | None = Field(default=None, max_length=500)

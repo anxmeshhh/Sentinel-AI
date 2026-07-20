@@ -2,7 +2,7 @@ import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 
 import { api, ApiError } from "../api/client";
-import type { AttentionItem } from "../api/types";
+import type { AttentionItem, CalendarPlan } from "../api/types";
 import { attentionIcon, EvidenceLink } from "../components/AttentionStrip";
 import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
@@ -28,6 +28,11 @@ export function AttentionPage() {
   const [snoozeMenuFor, setSnoozeMenuFor] = useState<string | null>(null);
   const [askItem, setAskItem] = useState<AttentionItem | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Add-to-Calendar is propose-then-confirm: the plan is shown, and nothing
+  // is written until the user explicitly confirms it.
+  const [plan, setPlan] = useState<{ item: AttentionItem; plan: CalendarPlan } | null>(null);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planResult, setPlanResult] = useState<string | null>(null);
 
   const [newTitle, setNewTitle] = useState("");
   const [newDue, setNewDue] = useState("");
@@ -68,6 +73,35 @@ export function AttentionPage() {
       await load();
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function proposeCalendar(item: AttentionItem) {
+    setPlanResult(null);
+    try {
+      const proposed = await api.post<CalendarPlan>(`/attention/${item.id}/calendar-plan`);
+      setPlan({ item, plan: proposed });
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't build a calendar plan for this.");
+    }
+  }
+
+  async function confirmCalendar() {
+    if (!plan) return;
+    setPlanBusy(true);
+    try {
+      // Reuses the same execute endpoint every other confirmed write goes
+      // through - one confirm-before-write path, not a second one.
+      await api.post("/connections/google/command/execute", {
+        name: "create_calendar_event",
+        arguments: { title: plan.plan.title, start: plan.plan.start, end: plan.plan.end },
+      });
+      setPlanResult("Added to your calendar.");
+      setPlan(null);
+    } catch (e) {
+      setPlanResult(e instanceof ApiError ? e.message : "Couldn't add it to your calendar.");
+    } finally {
+      setPlanBusy(false);
     }
   }
 
@@ -135,6 +169,37 @@ export function AttentionPage() {
       </div>
 
       {error && <p className="mb-4 text-[12.5px] text-crit">{error}</p>}
+      {planResult && (
+        <p className={`mb-4 text-[12.5px] ${planResult.startsWith("Added") ? "text-good" : "text-crit"}`}>{planResult}</p>
+      )}
+
+      {plan && (
+        <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 p-3.5">
+          <div className="mb-2 font-mono text-[10.5px] font-bold uppercase tracking-wide text-watch">
+            Sentinel plans to create this event
+          </div>
+          <div className="mb-1 text-[13px] font-semibold text-ink">{plan.plan.title}</div>
+          <div className="mb-3 text-[11.5px] text-ink-dim">
+            {new Date(plan.plan.start).toLocaleString()} — {new Date(plan.plan.end).toLocaleTimeString()}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={confirmCalendar}
+              disabled={planBusy}
+              className="rounded-md bg-accent px-3 py-1.5 font-mono text-[11px] font-bold text-ground disabled:opacity-50"
+            >
+              {planBusy ? "Adding…" : "Confirm & Add"}
+            </button>
+            <button
+              onClick={() => setPlan(null)}
+              disabled={planBusy}
+              className="rounded-md border border-border px-3 py-1.5 font-mono text-[11px] text-ink-dim hover:border-crit hover:text-crit disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="min-w-0 flex-1">
@@ -192,6 +257,14 @@ export function AttentionPage() {
                         <button onClick={() => setState(item, "dismissed")} className="text-ink-faint underline underline-offset-2 hover:text-crit">
                           Dismiss
                         </button>
+                        {item.due_at && (
+                          <button
+                            onClick={() => proposeCalendar(item)}
+                            className="text-ink-faint underline underline-offset-2 hover:text-ink"
+                          >
+                            Add to Calendar
+                          </button>
+                        )}
                         <button
                           onClick={() => setAskItem(askItem?.id === item.id ? null : item)}
                           className={`underline underline-offset-2 ${askItem?.id === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"}`}

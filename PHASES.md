@@ -1749,6 +1749,74 @@ assigned. **Confirmed live, including correct exclusion of an unassigned source.
 
 ---
 
+### Phase 2t — Deadline Detection + Add to Calendar ✅ Built and tested (real deadline found in the live inbox; full propose-confirm flow verified)
+
+**Objective:** turn dated commitments buried in subjects and documents into first-class attention
+items, and let the user put any of them on their real calendar through the existing
+confirm-before-write flow.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2t.1 | `services/deadline_parser.py`: keyword-gated, deterministic date extraction (ISO, written months, relative, weekday, tomorrow/today) | ✅ |
+| 2t.2 | `AttentionType.DEADLINE` + detector over email subjects and document text, priority scaled by urgency | ✅ |
+| 2t.3 | Duplicate suppression - one underlying fact yields exactly one item | ✅ |
+| 2t.4 | `POST /attention/{id}/calendar-plan` → propose; existing execute endpoint → write | ✅ |
+| 2t.5 | "Add to Calendar" button + confirmation panel on the Attention hub | ✅ |
+
+### What actually got built (technical notes)
+
+- **A date alone is never a deadline.** The rule doing the real work is that a deadline *keyword*
+  must be present: "Sprint planning on Friday" is not a commitment, "Respond by Friday" is. This
+  keeps the parser silent across the enormous volume of ordinary dated text. Verified against the
+  live inbox: it correctly found "IPO closing today" (keyword + resolvable date) while correctly
+  *rejecting* "You have domain(s) expiring soon" - keyword present, but "soon" is not a date.
+- **No LLM anywhere in detection**, for three converging reasons: a hallucinated deadline sends
+  someone chasing a commitment that doesn't exist; this runs over every subject on every sync and
+  would exhaust the free-tier budget; and patterns are auditable in a way a model's guess isn't.
+- **Ambiguous numeric dates are deliberately unsupported.** `11/12` is 11 December or November 12
+  depending on the writer's locale, and guessing produces a *confidently wrong* deadline - the
+  exact failure this module exists to prevent. Covered by a test asserting silence.
+- **Duplicate suppression was a real bug caught by looking at output, not by a test.** An email
+  like "Invoice INV-2291 is due in 3 days" legitimately trips two detectors, and the first live run
+  showed it listed twice - precisely the noise that makes an attention list feel untrustworthy.
+  The deadline (which carries the date and the higher priority) now wins and the plain email item
+  is dropped, before anything is written.
+- **What's detectable is bounded by what's stored, honestly.** Email *bodies* are never stored (a
+  deliberate privacy property since Phase 2c), so subject lines are the real surface. Document
+  text is scanned only where it already exists rather than re-downloading every file each sync;
+  deadline extraction from live Drive documents remains an on-demand AI action.
+- **Add to Calendar reuses the one confirm-before-write path.** `calendar-plan` is deterministic
+  and writes nothing - title and time come straight from the item, so what the user confirms is
+  exactly what they already saw. The write goes through the same execute endpoint every other
+  external action uses, so the demo workspace's refusal applies here too (verified: 400 with an
+  explicit message, rather than pretending).
+- **A channel-scoping refactor fell out of this.** Deadlines can originate from Gmail *or* Drive,
+  which broke the assumption that an item's type implies its provider. Channel visibility now keys
+  off each item's own `source_provider`, so an email-sourced deadline is connection-gated while a
+  document-sourced one is resource-gated - matching the rule already documented in Phase 2s
+  instead of quietly contradicting it.
+- **17 new tests** (13 parser boundary cases, 4 detector/suppression), most asserting what must
+  *not* be detected.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **Precision needs real-usage tuning.** The live run surfaced "IPO closing today" from a
+  promotional mail - technically a correct parse, but arguably not the user's commitment. Sender
+  reputation or category weighting is the obvious lever, and it should be driven by which items
+  people actually dismiss, not guessed at now.
+- **No recurring-deadline understanding** ("due every Friday") - single dates only.
+- **Periods aren't parsed** ("by end of quarter", "before the holidays") - deliberately, since
+  resolving them requires assumptions about someone's fiscal calendar.
+- **Add to Calendar creates a 30-minute block** at the deadline time; it doesn't try to infer how
+  long the work takes, because it has no basis to.
+
+**Exit criteria:** a dated commitment in an email subject or document becomes a ranked attention
+item with its due date, appears once and only once, and can be put on the real calendar in two
+clicks with an explicit confirmation. **Confirmed against real inbox data and end-to-end through
+the propose-confirm flow.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

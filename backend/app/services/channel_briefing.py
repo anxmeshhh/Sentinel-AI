@@ -49,20 +49,16 @@ from app.services.attention_engine import list_attention
 
 logger = structlog.get_logger("sentinel.channel_briefing")
 
-# Which provider backs each attention type. `FINDING` is absent on purpose -
-# findings are attributed through their agent run's connection instead (an
-# agent isn't a Connection), and MANUAL items have no provider at all.
-TYPE_PROVIDERS: dict[AttentionType, Provider] = {
-    AttentionType.IMPORTANT_EMAIL: Provider.GMAIL,
-    AttentionType.UPCOMING_MEETING: Provider.GOOGLE_CALENDAR,
-    AttentionType.STALE_PR: Provider.GITHUB,
-}
+# Items carry their own `source_provider`, so visibility keys off that
+# rather than off the item type - a DEADLINE can come from Gmail *or* from
+# a document, and each must be gated by its own connection.
+PROVIDER_BY_NAME: dict[str, Provider] = {p.value: p for p in Provider}
 
-# Item types whose dedupe key points at a resource an admin could plausibly
-# allow-list. Drive-backed items (deadlines extracted from documents, Phase
-# 2t) are the real case; see rule 3 in the module docstring for why email /
-# calendar / PR items are not in here.
-RESOURCE_SCOPED_PREFIXES = ("drive:", "deadline:")
+# The one provider whose items are additionally resource-gated: a Drive
+# Connection covers many documents, so an admin's allow-list is the only
+# thing that says *which* documents this channel may see. Every other
+# provider here is 1:1 with its scope - see rule 3 in the module docstring.
+RESOURCE_SCOPED_PROVIDERS = {Provider.GOOGLE_DRIVE}
 
 
 def build_channel_briefing(session: Session, team_id: uuid.UUID, workspace_id: uuid.UUID) -> dict:
@@ -130,11 +126,11 @@ def _is_visible_in_channel(session: Session, item: AttentionItem, scope: dict) -
     if item.type == AttentionType.FINDING:
         return _finding_connection_is_assigned(session, item, scope)
 
-    provider = TYPE_PROVIDERS.get(item.type)
+    provider = PROVIDER_BY_NAME.get(item.source_provider or "")
     if provider is None or provider not in scope["providers"]:
         return False
 
-    if item.dedupe_key.startswith(RESOURCE_SCOPED_PREFIXES):
+    if provider in RESOURCE_SCOPED_PROVIDERS:
         return _resource_is_allowed(item, scope)
     return True
 

@@ -5,6 +5,7 @@ actions (done/snooze/dismiss), manual reminders, and an on-demand refresh.
 """
 
 import uuid
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState, AttentionType
 from app.models.user import User
-from app.schemas.attention import AttentionItemOut, AttentionStateUpdate, ManualReminderCreate
+from app.schemas.attention import AttentionItemOut, AttentionStateUpdate, CalendarPlanOut, ManualReminderCreate
 from app.services.attention_engine import list_attention, refresh_attention
 from app.services.catchup import build_catchup
 
@@ -95,6 +96,31 @@ def create_manual_reminder(
     session.commit()
     session.refresh(item)
     return _to_out(item)
+
+
+@router.post("/{item_id}/calendar-plan", response_model=CalendarPlanOut)
+def build_calendar_plan(
+    item_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+) -> CalendarPlanOut:
+    """Phase 2t: turn a dated item into a *proposed* calendar event.
+
+    Deliberately deterministic - the title and time come straight from the
+    item, so what the user confirms is exactly what they already saw. This
+    endpoint writes nothing; the client sends the returned plan to
+    /connections/google/command/execute after the user confirms.
+    """
+    item = session.get(AttentionItem, item_id)
+    if item is None or item.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="Attention item not found")
+    if item.due_at is None:
+        raise HTTPException(status_code=400, detail="This item has no date, so there's nothing to put on a calendar")
+
+    # A deadline is a point in time; a 30-minute block gives it presence in
+    # the day without pretending to know how long the work takes.
+    start = item.due_at
+    return CalendarPlanOut(title=item.title[:200], start=start, end=start + timedelta(minutes=30))
 
 
 @router.patch("/{item_id}", response_model=AttentionItemOut)

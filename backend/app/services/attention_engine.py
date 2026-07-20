@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState, AttentionType
 from app.models.finding import Finding
 from app.models.signal import Signal, SignalType
+from app.services.deadline_parser import find_deadline
 
 logger = structlog.get_logger("sentinel.attention")
 
@@ -33,6 +34,7 @@ EMAIL_CAP = 5
 MEETING_HORIZON_HOURS = 24
 STALE_PR_DAYS = 4
 STALE_PR_CAP = 5
+DEADLINE_CAP = 8
 FINDING_MIN_SEVERITY = 0.6
 FINDING_LOOKBACK_DAYS = 3
 MEETING_EXPIRY_GRACE_HOURS = 2
@@ -50,8 +52,11 @@ def refresh_attention(session: Session, workspace_id: uuid.UUID) -> list[Attenti
         + _detect_upcoming_meetings(session, workspace_id, now)
         + _detect_stale_prs(session, workspace_id, now)
         + _detect_findings(session, workspace_id, now)
+        + _detect_deadlines(session, workspace_id, now)
     ):
         detected[candidate["dedupe_key"]] = candidate
+
+    _suppress_weaker_duplicates(detected)
 
     existing_detected = session.execute(
         select(AttentionItem).where(
@@ -90,6 +95,21 @@ def refresh_attention(session: Session, workspace_id: uuid.UUID) -> list[Attenti
 
     session.commit()
     return list_attention(session, workspace_id)
+
+
+def _suppress_weaker_duplicates(detected: dict[str, dict]) -> None:
+    """One underlying fact must produce exactly one item.
+
+    An email like "Invoice INV-2291 is due in 3 days" legitimately trips two
+    detectors - it's both unread-and-important *and* a dated commitment.
+    Showing it twice is precisely the noise that makes an attention list
+    feel untrustworthy, so the deadline (which carries the date and the
+    higher priority) wins and the plain email item is dropped. Mutates in
+    place, before anything is written.
+    """
+    deadline_sources = {key.split(":", 1)[1] for key in detected if key.startswith("deadline:")}
+    for source_id in deadline_sources:
+        detected.pop(f"email:{source_id}", None)
 
 
 def list_attention(session: Session, workspace_id: uuid.UUID, *, states: list[AttentionState] | None = None) -> list[AttentionItem]:
@@ -230,6 +250,100 @@ def _detect_stale_prs(session: Session, workspace_id: uuid.UUID, now: datetime) 
         if len(candidates) >= STALE_PR_CAP:
             break
     return candidates
+
+
+def _detect_deadlines(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """Phase 2t. Reads email *subjects* (bodies are never stored - see
+    gmail_client.py) and document text where it exists. Extraction is
+    deterministic and keyword-gated; see deadline_parser.py for why.
+
+    A deadline outranks a plain important-email item, so it wins the dedupe
+    when the same message produces both: `deadline:` keys are distinct from
+    `email:` keys, and the higher priority sorts it above.
+    """
+    since = now - timedelta(days=EMAIL_LOOKBACK_DAYS)
+    candidates: list[dict] = []
+
+    emails = session.execute(
+        select(Signal).where(
+            Signal.workspace_id == workspace_id, Signal.type == SignalType.EMAIL, Signal.occurred_at >= since
+        ).order_by(Signal.occurred_at.desc())
+    ).scalars().all()
+    for s in emails:
+        subject = s.payload.get("subject") or ""
+        due = find_deadline(subject, now=now)
+        if due is None:
+            continue
+        sender = (s.payload.get("from") or "unknown").split("<")[0].strip().strip('"')
+        candidates.append(
+            {
+                "dedupe_key": f"deadline:{s.external_id}",
+                "type": AttentionType.DEADLINE,
+                "source_provider": "gmail",
+                "title": subject,
+                "why": f"Deadline {_humanize_due(now, due)} — from {sender}",
+                "evidence_url": f"https://mail.google.com/mail/u/0/#all/{s.external_id}",
+                "priority": _deadline_priority(now, due),
+                "due_at": due,
+            }
+        )
+
+    # Documents: only where content is already present (the seeded demo
+    # workspace today). Real Drive content is fetched live and never stored,
+    # so scanning it on every sync would mean re-downloading every file -
+    # deadline extraction from live documents stays an on-demand AI action.
+    documents = session.execute(
+        select(Signal).where(Signal.workspace_id == workspace_id, Signal.type == SignalType.DRIVE_FILE)
+    ).scalars().all()
+    for s in documents:
+        content = s.payload.get("content") or ""
+        if not content:
+            continue
+        due = None
+        for line in content.splitlines():
+            due = find_deadline(line, now=now)
+            if due is not None:
+                break
+        if due is None:
+            continue
+        candidates.append(
+            {
+                "dedupe_key": f"deadline:{s.external_id}",
+                "type": AttentionType.DEADLINE,
+                "source_provider": "google_drive",
+                "title": f"Deadline in “{s.payload.get('name') or 'a document'}”",
+                "why": f"Deadline {_humanize_due(now, due)} — found in the document",
+                "evidence_url": s.payload.get("url"),
+                "priority": _deadline_priority(now, due),
+                "due_at": due,
+            }
+        )
+
+    return candidates[:DEADLINE_CAP]
+
+
+def _humanize_due(now: datetime, due: datetime) -> str:
+    days = (due.date() - now.date()).days
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "tomorrow"
+    if days <= 14:
+        return f"in {days} days"
+    return f"on {due.strftime('%d %b')}"
+
+
+def _deadline_priority(now: datetime, due: datetime) -> float:
+    """Closer deadlines rank higher, topping out just under a meeting that's
+    already starting - an imminent commitment should lead the list."""
+    days = max(0, (due.date() - now.date()).days)
+    if days <= 1:
+        return 0.9
+    if days <= 3:
+        return 0.78
+    if days <= 7:
+        return 0.68
+    return 0.58
 
 
 def _detect_findings(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:

@@ -249,9 +249,16 @@ export interface Holiday {
   states: string[] | null;
 }
 
+export interface CalendarPlan {
+  title: string;
+  start: string;
+  end: string;
+  action: string;
+}
+
 export interface AttentionItem {
   id: string;
-  type: "important_email" | "upcoming_meeting" | "stale_pr" | "finding" | "manual";
+  type: "important_email" | "upcoming_meeting" | "stale_pr" | "finding" | "manual" | "deadline";
   origin: "detected" | "manual";
   state: "new" | "done" | "snoozed" | "dismissed";
   source_provider: string | null;

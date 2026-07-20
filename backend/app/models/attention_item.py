@@ -30,6 +30,7 @@ class AttentionType(str, enum.Enum):
     STALE_PR = "stale_pr"
     FINDING = "finding"
     MANUAL = "manual"
+    DEADLINE = "deadline"  # a dated commitment found in an email subject or document (Phase 2t)
 
 
 class AttentionState(str, enum.Enum):

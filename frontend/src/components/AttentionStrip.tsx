@@ -6,6 +6,7 @@ import type { AttentionItem, CatchUp } from "../api/types";
 
 export function attentionIcon(item: AttentionItem): string {
   if (item.origin === "manual") return "📌";
+  if (item.type === "deadline") return "⏳";
   switch (item.source_provider) {
     case "gmail":
       return "📧";

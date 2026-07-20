@@ -64,10 +64,23 @@ def env(session):
     return {"workspace": workspace, "user": user, "team": team, "gmail": gmail, "github": github, "drive": drive}
 
 
-def _item(workspace, *, type_, dedupe_key, title="Item", origin=AttentionOrigin.DETECTED, priority=0.6):
+# Visibility keys off source_provider (every real detected item carries
+# one), so the fixture mirrors what the detectors actually produce.
+_DEFAULT_PROVIDER = {
+    AttentionType.IMPORTANT_EMAIL: "gmail",
+    AttentionType.UPCOMING_MEETING: "google_calendar",
+    AttentionType.STALE_PR: "github",
+    AttentionType.DEADLINE: "gmail",
+    AttentionType.FINDING: "agent",
+    AttentionType.MANUAL: None,
+}
+
+
+def _item(workspace, *, type_, dedupe_key, title="Item", origin=AttentionOrigin.DETECTED, priority=0.6, provider="__default__"):
     return AttentionItem(
         workspace_id=workspace.id, type=type_, origin=origin, state=AttentionState.NEW,
         dedupe_key=dedupe_key, title=title, why="because", priority=priority,
+        source_provider=_DEFAULT_PROVIDER[type_] if provider == "__default__" else provider,
     )
 
 
@@ -121,12 +134,17 @@ def test_personal_manual_reminders_never_appear_in_a_channel(session, env):
     assert build_channel_briefing(session, env["team"].id, env["workspace"].id)["items"] == []
 
 
-def test_resource_scoped_item_hidden_until_allow_listed(session, env):
-    """Fail-closed for documents: a Drive-backed item stays invisible until
-    an admin explicitly authorizes that document for the channel."""
-    session.add(_item(env["workspace"], type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="drive:doc-1", title="Deadline in spec"))
+def test_drive_item_hidden_until_that_document_is_allow_listed(session, env):
+    """Fail-closed for documents: a Drive Connection covers many files, so
+    assigning it grants nothing until an admin authorizes specific ones."""
+    session.add(
+        _item(
+            env["workspace"], type_=AttentionType.DEADLINE, dedupe_key="deadline:doc-1",
+            title="Deadline in spec", provider="google_drive",
+        )
+    )
     session.commit()
-    channel_connection = _assign(session, env["team"], env["gmail"], env["user"])
+    channel_connection = _assign(session, env["team"], env["drive"], env["user"])
 
     assert build_channel_briefing(session, env["team"].id, env["workspace"].id)["items"] == []
 
@@ -135,6 +153,19 @@ def test_resource_scoped_item_hidden_until_allow_listed(session, env):
 
     items = build_channel_briefing(session, env["team"].id, env["workspace"].id)["items"]
     assert [i.title for i in items] == ["Deadline in spec"]
+
+
+def test_email_deadline_is_connection_gated_not_resource_gated(session, env):
+    """The documented asymmetry: an email-sourced deadline can't be
+    pre-allow-listed by an admin, so Gmail assignment alone must surface it."""
+    session.add(
+        _item(env["workspace"], type_=AttentionType.DEADLINE, dedupe_key="deadline:m9", title="Invoice due Friday")
+    )
+    session.commit()
+    _assign(session, env["team"], env["gmail"], env["user"])
+
+    titles = [i.title for i in build_channel_briefing(session, env["team"].id, env["workspace"].id)["items"]]
+    assert titles == ["Invoice due Friday"]
 
 
 def test_finding_visible_only_when_its_own_connection_is_assigned(session, env):

@@ -22,6 +22,7 @@ from app.api.routes import (
     invites,
     mail,
     meet,
+    onboarding,
     runs,
     teams,
     workspaces,
@@ -83,6 +84,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(attention.router)
+app.include_router(onboarding.router)
 app.include_router(connections.router)
 app.include_router(runs.router)
 app.include_router(briefs.router)

@@ -40,6 +40,8 @@ from app.integrations.google_drive_client import GoogleDriveClient
 from app.models.channel_ai_history import ChannelAIHistoryEntry
 from app.models.channel_connection import ChannelConnection
 from app.models.connection import Connection, Provider
+from app.models.signal import Signal, SignalType
+from app.models.workspace import Workspace
 from app.repositories.connections import ConnectionRepository
 from app.services.calendar_query import find_free_slots, list_calendar, list_calendar_range
 from app.services.channel_connections import is_resource_allowed, list_channel_connections
@@ -500,6 +502,13 @@ def execute_planned_action(session: Session, workspace_id: uuid.UUID, name: str,
     if name != "create_calendar_event":
         raise ValueError(f"Unknown or non-executable action: {name}")
 
+    if _is_demo_workspace(session, workspace_id):
+        # The demo workspace holds no real credentials. The whole
+        # propose-then-confirm flow is still exercised (the plan renders,
+        # the user confirms) - only the external write is refused, rather
+        # than silently pretending an event was created somewhere.
+        raise ValueError("This is the demo workspace - Sentinel won't create a real calendar event here. Connect your own Google account to enable this.")
+
     connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GOOGLE_CALENDAR)
     if connection is None:
         raise ValueError("Google Calendar is not connected")
@@ -544,7 +553,106 @@ def _get_connection(session: Session, workspace_id: uuid.UUID, team_id: uuid.UUI
     return connection
 
 
+def _is_demo_workspace(session: Session, workspace_id: uuid.UUID) -> bool:
+    workspace = session.get(Workspace, workspace_id)
+    return bool(workspace and workspace.is_demo)
+
+
+def _execute_demo_read_tool(session: Session, workspace_id: uuid.UUID, name: str, args: dict) -> dict | list | None:
+    """Phase 2r: in the seeded Explore workspace the model runs its real
+    tool-calling loop, but the tools that would normally hit Gmail/Drive
+    read seeded Signals instead (there are no real credentials to use).
+    Calendar/Meet tools already read Signals, so they need no branch here.
+    Returns None for tools with no demo-specific behavior.
+    """
+    if name == "search_emails":
+        keywords = (args.get("keywords") or "").lower()
+        sender = (args.get("sender") or "").lower()
+        label_filter = args.get("label_filter")
+        signals = session.execute(
+            select(Signal).where(Signal.workspace_id == workspace_id, Signal.type == SignalType.EMAIL)
+            .order_by(Signal.occurred_at.desc())
+        ).scalars().all()
+
+        results = []
+        for s in signals:
+            subject = s.payload.get("subject", "")
+            from_addr = s.payload.get("from", "")
+            labels = s.payload.get("label_ids") or []
+            haystack = f"{subject} {from_addr} {s.payload.get('body', '')}".lower()
+            if keywords and keywords not in haystack and not any(w in haystack for w in keywords.split()):
+                continue
+            if sender and sender not in from_addr.lower():
+                continue
+            if label_filter and label_filter.upper() not in [str(x).upper() for x in labels]:
+                continue
+            results.append(
+                {
+                    "id": s.external_id, "subject": subject, "from": from_addr,
+                    "occurred_at": s.occurred_at.isoformat(), "labels": labels,
+                    "url": f"https://mail.google.com/mail/u/0/#all/{s.external_id}",
+                }
+            )
+        return results[: min(args.get("limit", 10), 30)]
+
+    if name == "read_email_body":
+        signal = session.execute(
+            select(Signal).where(
+                Signal.workspace_id == workspace_id, Signal.type == SignalType.EMAIL,
+                Signal.external_id == args.get("message_id", ""),
+            )
+        ).scalar_one_or_none()
+        if signal is None:
+            return {"error": "email not found in this demo workspace"}
+        return {"body": (signal.payload.get("body") or "")[:4000]}
+
+    if name == "search_drive":
+        keywords = (args.get("keywords") or "").lower()
+        signals = session.execute(
+            select(Signal).where(Signal.workspace_id == workspace_id, Signal.type == SignalType.DRIVE_FILE)
+            .order_by(Signal.occurred_at.desc())
+        ).scalars().all()
+        results = []
+        for s in signals:
+            name_field = s.payload.get("name", "")
+            haystack = f"{name_field} {s.payload.get('content', '')}".lower()
+            if keywords and keywords not in haystack and not any(w in haystack for w in keywords.split()):
+                continue
+            results.append(
+                {
+                    "id": s.external_id, "name": name_field, "mime_type": s.payload.get("mime_type"),
+                    "modified_at": s.occurred_at.isoformat(), "url": s.payload.get("url"),
+                    "owner": s.payload.get("owner"), "shared": s.payload.get("shared", False),
+                }
+            )
+        return results[: min(args.get("limit", 10), 30)]
+
+    if name == "read_drive_file":
+        signal = session.execute(
+            select(Signal).where(
+                Signal.workspace_id == workspace_id, Signal.type == SignalType.DRIVE_FILE,
+                Signal.external_id == args.get("file_id", ""),
+            )
+        ).scalar_one_or_none()
+        if signal is None:
+            return {"error": "file not found in this demo workspace"}
+        return {"content": signal.payload.get("content", ""), "mime_type": signal.payload.get("mime_type")}
+
+    if name == "get_holidays":
+        # Reads Google's public holiday calendar for real - no credentials
+        # in demo, and faking public holiday dates would be exactly the kind
+        # of invented fact this codebase refuses to produce.
+        return {"holidays": [], "note": "holiday lookup isn't available in the demo workspace"}
+
+    return None
+
+
 def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, args: dict, *, team_id: uuid.UUID | None = None) -> dict | list:
+    if _is_demo_workspace(session, workspace_id):
+        demo_result = _execute_demo_read_tool(session, workspace_id, name, args)
+        if demo_result is not None:
+            return demo_result
+
     if name == "search_emails":
         connection = _get_connection(session, workspace_id, team_id, Provider.GMAIL)
         if connection is None:

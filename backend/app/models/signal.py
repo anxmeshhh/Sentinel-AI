@@ -20,6 +20,12 @@ class SignalType(str, enum.Enum):
     ISSUE = "issue"
     CALENDAR_EVENT = "calendar_event"
     EMAIL = "email"
+    # Drive files are never ingested from a real account (Drive is always
+    # searched live - see google_drive_client.py). This type exists so the
+    # seeded demo workspace can carry documents through the same Signal
+    # pipeline everything else uses, keeping demo mode a data difference
+    # rather than a second code path. Phase 2r.
+    DRIVE_FILE = "drive_file"
 
 
 class Signal(Base, UUIDPk, TimestampMixin):

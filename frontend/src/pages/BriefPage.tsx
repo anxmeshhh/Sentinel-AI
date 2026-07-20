@@ -55,6 +55,14 @@ export function BriefPage() {
         </Banner>
       )}
 
+      {active?.is_demo && (
+        <div className="mb-5 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-[12.5px] text-watch">
+          <b>Sample workspace.</b> Everything here is realistic demo data — no real account is connected, and nothing
+          you do here touches your own mail, calendar or files. Sentinel's detection and AI are genuinely running
+          against it.
+        </div>
+      )}
+
       {/* The attention loop leads the dashboard (Phase 2q): what changed
           while you were away, then what needs you now - everything else
           comes after. Keyed by workspace so switching re-fetches. */}

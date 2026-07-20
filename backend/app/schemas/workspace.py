@@ -9,6 +9,7 @@ class WorkspaceOut(BaseModel):
     slug: str
     kind: str
     role: str
+    is_demo: bool = False
 
     model_config = {"from_attributes": True}
 

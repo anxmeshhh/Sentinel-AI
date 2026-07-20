@@ -264,6 +264,21 @@ export interface AttentionItem {
   created_at: string;
 }
 
+export type Persona = "individual" | "developer" | "team" | "business" | "explorer";
+
+export interface OnboardingState {
+  persona: Persona | null;
+  onboarded_at: string | null;
+  suggested_providers: string[];
+  show_channels: boolean;
+}
+
+export interface DemoWorkspace {
+  workspace_id: string;
+  name: string;
+  signals_seeded: number;
+}
+
 export interface CatchUp {
   since: string;
   gap_hours: number;

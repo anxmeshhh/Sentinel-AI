@@ -31,7 +31,8 @@ def list_workspaces(
         .where(Membership.user_id == user.id)
     ).all()
     return [
-        WorkspaceOut(id=w.id, name=w.name, slug=w.slug, kind=w.kind.value, role=role.value) for w, role in rows
+        WorkspaceOut(id=w.id, name=w.name, slug=w.slug, kind=w.kind.value, role=role.value, is_demo=w.is_demo)
+        for w, role in rows
     ]
 
 

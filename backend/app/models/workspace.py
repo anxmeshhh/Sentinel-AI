@@ -11,7 +11,7 @@ import enum
 import uuid
 from datetime import datetime  # noqa: TC003 - used in Mapped annotation
 
-from sqlalchemy import Enum, ForeignKey, String, Uuid
+from sqlalchemy import Boolean, Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UTCDateTime, UUIDPk
@@ -43,6 +43,13 @@ class Workspace(Base, UUIDPk, TimestampMixin):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(200), unique=True, nullable=False, index=True)
     kind: Mapped[WorkspaceKind] = mapped_column(Enum(WorkspaceKind, name="workspace_kind"), nullable=False)
+
+    # Phase 2r: a seeded "Explore Sentinel" workspace. Its Connections hold
+    # no real credentials, so every integration path must read from seeded
+    # Signals instead of calling a provider API - see services/demo_data.py
+    # and the orchestrator's demo branches. Flagged on the Workspace (not
+    # inferred from the connection) so the check is one cheap lookup.
+    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="workspace", cascade="all, delete-orphan")
 

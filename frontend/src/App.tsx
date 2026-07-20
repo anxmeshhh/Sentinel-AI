@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { Sidebar } from "./components/Sidebar";
 import { useAuth } from "./context/AuthContext";
+import { useOnboarding } from "./context/OnboardingContext";
 import { AdminPage } from "./pages/AdminPage";
 import { AssistantPage } from "./pages/AssistantPage";
 import { AttentionPage } from "./pages/AttentionPage";
@@ -18,6 +19,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { MailPage } from "./pages/MailPage";
 import { MeetPage } from "./pages/MeetPage";
 import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
+import { OnboardingPage } from "./pages/OnboardingPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignupPage } from "./pages/SignupPage";
 
@@ -32,11 +34,32 @@ function AppShell({ children }: { children: ReactNode }) {
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  const { state: onboarding, loading: onboardingLoading } = useOnboarding();
+
+  if (loading || onboardingLoading) {
+    return <div className="flex min-h-screen items-center justify-center text-[13px] text-ink-dim">Loading&hellip;</div>;
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  // First run: pick how you work before landing in the product. If the
+  // onboarding fetch failed entirely (state === null) we let them through
+  // rather than trapping them behind a broken gate.
+  if (onboarding && !onboarding.onboarded_at) return <Navigate to="/onboarding" replace />;
+  return <AppShell>{children}</AppShell>;
+}
+
+/** The persona picker itself is auth-gated but deliberately outside
+ * AppShell - no sidebar to navigate away from a first-run choice. */
+function OnboardingRoute() {
+  const { user, loading } = useAuth();
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center text-[13px] text-ink-dim">Loading&hellip;</div>;
   }
   if (!user) return <Navigate to="/login" replace />;
-  return <AppShell>{children}</AppShell>;
+  return (
+    <div className="min-h-screen px-4 sm:px-6">
+      <OnboardingPage />
+    </div>
+  );
 }
 
 export function App() {
@@ -46,6 +69,7 @@ export function App() {
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/auth/callback" element={<OAuthCallbackPage />} />
       <Route path="/invite/:token" element={<JoinInvitePage />} />
+      <Route path="/onboarding" element={<OnboardingRoute />} />
 
       <Route path="/" element={<RequireAuth><BriefPage /></RequireAuth>} />
       <Route path="/attention" element={<RequireAuth><AttentionPage /></RequireAuth>} />

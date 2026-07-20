@@ -1901,6 +1901,94 @@ costs nothing on re-open. **All four confirmed, on both real and demo data.**
 
 ---
 
+### Phase 2v — Attention Precision ✅ Built and tested (real-inbox precision ~17% → ~80%, zero added token cost)
+
+**Objective:** the user proposed "Investigate This" as the second structured workflow. Analysis
+said no - and measurement of the live feed said why. This phase fixed the feed instead of building
+on top of it.
+
+**Why this instead of a second workflow:** the real attention feed was surfacing **1 genuinely
+actionable item out of 6** - the rest were job alerts and event marketing. Every downstream
+feature (Catch Me Up, Channel Briefings, Prepare Me, and any future Investigate This) inherits
+that noise. Building an investigation feature first would have meant shipping a way to deeply
+investigate a .NET job alert.
+
+Also weighed and rejected: "Investigate This" collapses further than it appears - `finding` items
+already store `root_cause` and `suggested_action` (nothing to compute), `upcoming_meeting` is
+covered by Prepare Me, `manual` items are user-written, and `deadline` items *are* emails. It
+reduces to emails, where "Ask Sentinel ✨" already works.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| 2v.1 | Capture `List-Unsubscribe` + store `is_bulk` at ingestion | ✅ |
+| 2v.2 | `services/mail_signals.py`: sender classification, repetition counting, high-signal rescue | ✅ |
+| 2v.3 | **Measure against the real inbox before choosing any threshold** | ✅ |
+| 2v.4 | Apply to the important-email and deadline detectors + duplicate suppression | ✅ |
+
+### What actually got built (technical notes)
+
+- **Measurement killed two confident hypotheses before they shipped.** I predicted
+  `List-Unsubscribe` would be the headline signal (2024 bulk-sender rules make it near-mandatory)
+  and that "is the user in `To:`?" would separate personal from blast. Measured on 259 real
+  messages: the header was present on **1 of 33** flagged items, and direct-addressing was `True`
+  for **every single message including bulk**. The first was kept as a weak-but-correct signal;
+  the second was deleted rather than shipped as dead weight. Designing these on intuition would
+  have produced a filter built on two non-signals.
+- **What actually discriminates, in measured order:** (1) *repetition* - the same sender 3+ times
+  in a week (5× abekus, 4× codebenders, 4× unstop, 15× unstop overall); (2) *automated local-part*
+  (`noreply@`, `alert@`, `mailer-daemon@`), catching ~45% alone; (3) `List-Unsubscribe`, rare but
+  unambiguous.
+- **A more aggressive rule was built, measured, and deliberately discarded.** Adding bulk sending
+  subdomains (`emails.`, `info.`, `content.`) cut 33 candidates to 3 - but among the casualties was
+  *"Your domain has expired"*, the most actionable message in the inbox. Fewer items is not the
+  goal. The conservative rule (33 → 8) shipped instead.
+- **Measurement also caught a false negative in my own rule.** The repetition filter discarded a
+  real *"Interview Invite from Planys Technologies"* because that job board had sent 9 messages
+  that week. Fixed with a deliberately narrow `HIGH_SIGNAL_PHRASES` rescue - each phrase names a
+  concrete commitment ("interview invite", "invoice", "has expired", "action required"), so
+  marketing language like "Immediate Hiring – Apply Now!" matches none of them. It rescues from
+  *repetition only*, never from an explicit mailing-list header.
+- **Starring is never overridden.** An explicit human judgment about a specific message always
+  beats a heuristic about its sender.
+- **Duplicate suppression by (sender, subject)** - the same "domain expiring" notice arriving twice
+  now occupies one slot.
+- **Backwards compatible by construction:** messages ingested before this phase have no `is_bulk`
+  key at all, so its absence means "unknown" and falls through to the sender heuristic - old rows
+  degrade to prior behavior instead of being silently reclassified as clean.
+- **Zero added token cost.** Every signal is a pure function over metadata already stored; no LLM,
+  no extra network call. One header was added to an existing metadata fetch.
+
+### Measured result (real inbox, 259 messages)
+
+| | Before | After |
+|---|---|---|
+| Items surfaced | 6 | 5 |
+| Genuinely actionable | ~1 | **4** |
+| Precision | ~17% | **~80%** |
+
+Gone: the "IPO closing today" promo (a false deadline), both job-alert spammers, and 4× repeated
+hackathon marketing. Kept: both domain-expiry notices, a registration confirmation, and the
+rescued interview invite. Demo workspace verified unchanged.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **Opted-in event marketing still slips through** - one remaining item ("1 Day Left to Register")
+  comes from a single-send, human-looking sender. Killing it deterministically would risk real
+  mail; the honest fix is dismissal-learning, which needs usage data that doesn't exist yet.
+- **Dismissals still teach the detectors nothing.** Now that there's a `noise_reason` vocabulary,
+  wiring "always mute this sender" is a small step - but it should be driven by what users actually
+  dismiss, not predicted.
+- **Thread participation is unused.** "Did the user reply in this thread?" is likely a strong
+  signal, but `SENT` messages aren't ingested, so it couldn't be measured. Worth revisiting.
+- **Tuned against one inbox.** The thresholds are honest for this data; a second real inbox could
+  shift them.
+
+**Exit criteria:** the feed surfaces mostly things that genuinely matter, every filtering decision
+is explainable via `noise_reason`, nothing the user starred is ever hidden, and the change costs
+no additional tokens. **All confirmed by measurement against the real inbox.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

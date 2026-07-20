@@ -47,11 +47,14 @@ def workspace(session):
     return ws
 
 
-def _email_signal(workspace, external_id: str, labels: list[str], age_days: int = 1, subject: str = "Test subject"):
+def _email_signal(
+    workspace, external_id: str, labels: list[str], age_days: int = 1,
+    subject: str = "Test subject", sender: str = "Alice <alice@example.com>",
+):
     return Signal(
         workspace_id=workspace.id, connection_id=workspace.test_connection.id,
         type=SignalType.EMAIL, external_id=external_id, actor="sender@example.com",
-        payload={"subject": subject, "from": "Alice <alice@example.com>", "label_ids": labels},
+        payload={"subject": subject, "from": sender, "label_ids": labels},
         occurred_at=NOW - timedelta(days=age_days),
     )
 
@@ -192,6 +195,62 @@ def test_snoozed_future_item_stays_hidden(session, workspace):
     session.commit()
 
     assert list_attention(session, workspace.id) == []
+
+
+def test_repeated_sender_is_filtered_out_of_attention(session, workspace):
+    """Phase 2v: measured on a real inbox, repetition was the single
+    strongest noise signal - job boards blasting the same thing all week."""
+    for i in range(4):
+        session.add(
+            _email_signal(workspace, f"m{i}", ["UNREAD", "IMPORTANT", "INBOX"], subject=f"We found a job {i}", sender="Abekus <hello@abekus.co>")
+        )
+    session.commit()
+
+    assert refresh_attention(session, workspace.id) == []
+
+
+def test_automated_sender_is_filtered_out(session, workspace):
+    session.add(
+        _email_signal(workspace, "m1", ["UNREAD", "IMPORTANT", "INBOX"], subject="Dev News", sender="OpenAI <noreply@email.openai.com>")
+    )
+    session.commit()
+
+    assert refresh_attention(session, workspace.id) == []
+
+
+def test_starring_always_beats_the_noise_filters(session, workspace):
+    """An explicit human judgment about a specific message must never be
+    overridden by a heuristic about its sender."""
+    session.add(
+        _email_signal(workspace, "m1", ["UNREAD", "STARRED", "IMPORTANT"], subject="Newsletter", sender="News <noreply@news.example.com>")
+    )
+    session.commit()
+
+    items = refresh_attention(session, workspace.id)
+    assert len(items) == 1
+    assert items[0].type == AttentionType.IMPORTANT_EMAIL
+
+
+def test_identical_notification_is_shown_once(session, workspace):
+    """"Your domain is expiring" arriving twice should occupy one slot."""
+    for i in range(2):
+        session.add(
+            _email_signal(workspace, f"m{i}", ["UNREAD", "IMPORTANT", "INBOX"], subject="You have domain(s) expiring soon", sender="Hostinger <team@hostinger.com>")
+        )
+    session.commit()
+
+    assert len(refresh_attention(session, workspace.id)) == 1
+
+
+def test_bulk_mail_does_not_produce_deadlines(session, workspace):
+    """Marketing is full of genuine dates that aren't the user's deadlines -
+    "IPO closing today" was a real false positive before this."""
+    session.add(
+        _email_signal(workspace, "m1", ["UNREAD", "IMPORTANT", "INBOX"], subject="IPO closing today: SBI Funds", sender="Alerts <noreply@fund.example.com>")
+    )
+    session.commit()
+
+    assert refresh_attention(session, workspace.id) == []
 
 
 def test_deadline_detected_from_email_subject(session, workspace):

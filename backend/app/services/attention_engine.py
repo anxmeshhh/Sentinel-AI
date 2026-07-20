@@ -26,6 +26,7 @@ from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionS
 from app.models.finding import Finding
 from app.models.signal import Signal, SignalType
 from app.services.deadline_parser import find_deadline
+from app.services.mail_signals import extract_address, noise_reason, sender_counts
 
 logger = structlog.get_logger("sentinel.attention")
 
@@ -148,7 +149,12 @@ def _detect_important_emails(session: Session, workspace_id: uuid.UUID, now: dat
         .order_by(Signal.occurred_at.desc())
     ).scalars().all()
 
+    # Repetition is the strongest noise signal (Phase 2v), and it can only
+    # be seen across the whole window - so counts are computed once here.
+    counts = sender_counts([s.payload for s in signals])
+
     candidates = []
+    seen_subjects: set[tuple[str, str]] = set()
     for s in signals:
         labels = set(s.payload.get("label_ids") or [])
         if "UNREAD" not in labels:
@@ -161,6 +167,20 @@ def _detect_important_emails(session: Session, workspace_id: uuid.UUID, now: dat
         if not (starred or (important and not promotional)):
             continue
 
+        # Starring is an explicit human judgment about this specific
+        # message. It always outranks our heuristics - we never filter out
+        # something the user personally marked.
+        if not starred and noise_reason(s.payload, counts) is not None:
+            continue
+
+        # The same notification sent twice ("your domain is expiring")
+        # should occupy one slot, not two.
+        subject = s.payload.get("subject") or "(no subject)"
+        fingerprint = (extract_address(s.payload.get("from")) or "", subject.strip().lower())
+        if fingerprint in seen_subjects:
+            continue
+        seen_subjects.add(fingerprint)
+
         sender = (s.payload.get("from") or "unknown").split("<")[0].strip().strip('"')
         age = _age_days(now, s.occurred_at)
         reason = "Starred" if starred else "Marked important"
@@ -169,7 +189,7 @@ def _detect_important_emails(session: Session, workspace_id: uuid.UUID, now: dat
                 "dedupe_key": f"email:{s.external_id}",
                 "type": AttentionType.IMPORTANT_EMAIL,
                 "source_provider": "gmail",
-                "title": s.payload.get("subject") or "(no subject)",
+                "title": subject,
                 "why": f"{reason}, still unread — from {sender}, {age}d ago" if age else f"{reason}, still unread — from {sender}, today",
                 "evidence_url": f"https://mail.google.com/mail/u/0/#all/{s.external_id}",
                 "priority": 0.75 if starred else 0.6,
@@ -269,10 +289,16 @@ def _detect_deadlines(session: Session, workspace_id: uuid.UUID, now: datetime) 
             Signal.workspace_id == workspace_id, Signal.type == SignalType.EMAIL, Signal.occurred_at >= since
         ).order_by(Signal.occurred_at.desc())
     ).scalars().all()
+    email_counts = sender_counts([s.payload for s in emails])
     for s in emails:
         subject = s.payload.get("subject") or ""
         due = find_deadline(subject, now=now)
         if due is None:
+            continue
+        # Marketing is full of real dates that aren't the user's deadlines
+        # ("IPO closing today", "last chance to book"). Same bulk test as
+        # important-email detection, for the same reason (Phase 2v).
+        if "STARRED" not in set(s.payload.get("label_ids") or []) and noise_reason(s.payload, email_counts) is not None:
             continue
         sender = (s.payload.get("from") or "unknown").split("<")[0].strip().strip('"')
         candidates.append(

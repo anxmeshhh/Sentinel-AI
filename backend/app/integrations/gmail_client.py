@@ -25,7 +25,12 @@ logger = structlog.get_logger("sentinel.gmail")
 
 API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 MAX_MESSAGES_PER_SYNC = 500  # safety cap - a large mailbox shouldn't turn one sync into thousands of requests
-METADATA_HEADERS = ["Subject", "From", "To", "Date"]
+# `List-Unsubscribe` is the highest-value header we can ask for and costs
+# nothing extra: Gmail/Yahoo's 2024 bulk-sender rules make it effectively
+# mandatory on legitimate mass mail, so its presence is a near-perfect
+# "this is a blast, not a person writing to you" signal. Phase 2v uses it
+# to keep job alerts and marketing out of the attention feed.
+METADATA_HEADERS = ["Subject", "From", "To", "Date", "List-Unsubscribe"]
 MAX_BODY_CHARS = 20_000  # a live-fetched body is bounded before it ever reaches an LLM prompt
 
 
@@ -163,6 +168,10 @@ def _normalize_message(data: dict) -> dict | None:
             "from": headers.get("From"),
             "to": headers.get("To"),
             "label_ids": data.get("labelIds", []),
+            # Stored as a bool, not the raw header: the value is a list of
+            # unsubscribe URLs/mailtos that we have no use for and no reason
+            # to retain. Only its presence carries signal (Phase 2v).
+            "is_bulk": "List-Unsubscribe" in headers,
         },
     }
 

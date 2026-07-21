@@ -122,6 +122,13 @@ answer, include it as a real markdown link using that exact url, e.g. [Sprint Sy
 [Q3 Report.pdf](url) - never write a bare resource name with no link, and never invent a url that \
 didn't come from a tool.
 
+Calendar events (list_calendar_events) also carry "attendee_emails" (who is actually attending), \
+"organizer", and "meet_url" (the joinable Google Meet link, present only when the event has one). \
+Use these when the request is about who's in a meeting or how to join it - name the real attendees \
+rather than just their count, and when an event has a "meet_url" surface it as a "Join" markdown \
+link alongside the event. A null meet_url means there is no Meet link for that event - say so \
+rather than inventing one.
+
 If the request requires creating or changing something (like scheduling a meeting), call \
 create_calendar_event as soon as you have enough information - it will not actually run until \
 the user confirms it themselves, so you don't need to ask permission first, just propose the \
@@ -771,6 +778,15 @@ def _execute_read_tool(
                 "start": e.payload.get("start"),
                 "end": e.payload.get("end"),
                 "attendee_count": e.payload.get("attendee_count"),
+                # Surface who is attending, the organizer, and the Meet link -
+                # all already stored on the signal (see
+                # google_calendar_client) but previously dropped, so the model
+                # could report "3 attendees" but never who, and could never
+                # hand back a joinable Meet link. `meet_url` is only present
+                # when the event actually has one, so it stays honest.
+                "attendee_emails": e.payload.get("attendee_emails") or [],
+                "organizer": e.payload.get("organizer"),
+                "meet_url": e.payload.get("meet_url"),
                 "url": e.payload.get("url"),
             }
             for e in events

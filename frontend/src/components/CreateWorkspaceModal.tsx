@@ -10,7 +10,10 @@ export function CreateWorkspaceModal({
   onCreated,
 }: {
   onClose: () => void;
-  onCreated: (workspace: Workspace) => void;
+  // May be async: the caller refreshes the workspace list before switching
+  // to the new workspace, and the modal should stay in its submitting state
+  // until that finishes rather than closing over a half-applied switch.
+  onCreated: (workspace: Workspace) => void | Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -22,7 +25,7 @@ export function CreateWorkspaceModal({
     setError(null);
     try {
       const workspace = await api.post<Workspace>("/workspaces", { name });
-      onCreated(workspace);
+      await onCreated(workspace);
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");

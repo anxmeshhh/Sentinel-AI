@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
 import type { DemoWorkspace, OnboardingState, Persona } from "../api/types";
+import { useOnboarding } from "../context/OnboardingContext";
 import { useWorkspace } from "../context/WorkspaceContext";
 
 interface PersonaOption {
@@ -50,6 +51,12 @@ const PERSONAS: PersonaOption[] = [
 export function OnboardingPage() {
   const navigate = useNavigate();
   const { refresh, setActiveId } = useWorkspace();
+  // The onboarding gate in RequireAuth reads `onboarded_at` from this
+  // context. Saving a persona server-side is not enough - without
+  // refreshing here, the gate re-evaluates against stale state, decides the
+  // user still hasn't onboarded, and bounces them straight back to this
+  // page. That made the app unreachable for every new account.
+  const { refresh: refreshOnboarding } = useOnboarding();
   const [selected, setSelected] = useState<Persona | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +67,7 @@ export function OnboardingPage() {
     setError(null);
     try {
       await api.post<OnboardingState>("/onboarding", { persona });
+      await refreshOnboarding();
       navigate("/");
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't save that — try again.");
@@ -74,6 +82,7 @@ export function OnboardingPage() {
     try {
       await api.post<OnboardingState>("/onboarding", { persona: "explorer" });
       const demo = await api.post<DemoWorkspace>("/onboarding/demo");
+      await refreshOnboarding();
       await refresh();
       setActiveId(demo.workspace_id);
       navigate("/");

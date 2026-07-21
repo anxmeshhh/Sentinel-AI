@@ -1989,6 +1989,73 @@ no additional tokens. **All confirmed by measurement against the real inbox.**
 
 ---
 
+### Phase 2w — Verification pass: two navigation-breaking bugs found and fixed ✅
+
+**Objective:** stop shipping UI blind. Roughly twelve phases (2h, 2i, 2j, 2n, 2o, 2q, 2r, 2t, 2u)
+each carried the line *"no browser click-through yet"*, while the user's own track record was
+**4 for 4** - every single time they opened the app they found something broken (masked 500 on
+calendar create, unreadable dark date picker, Drive dropdown wrecking the layout, Today's Brief
+duplicating Attention). Verification was overdue, not optional.
+
+Browser automation was unavailable, so this was done by production build + tracing the
+expo-critical path through the code + replaying the whole flow through the API in frontend call
+order. That was enough to find two bugs that no test could catch.
+
+| Finding | Severity |
+|---|---|
+| Persona picker bounced every new user back to itself - app unreachable | **Critical** |
+| Creating a workspace hung the dashboard on "Loading…" permanently | **High** |
+| Latent: null active workspace could strand the dashboard in a loading state | Hardened |
+
+### The bugs (both the same root cause)
+
+**Contexts cache server state; mutating the server without refreshing the cache leaves the UI
+reasoning about a stale world.** Two independent instances shipped:
+
+1. **`OnboardingPage` never refreshed `OnboardingContext`.** It imported `refresh` from
+   `useWorkspace()` - a different context entirely. So after saving a persona, `RequireAuth`
+   re-evaluated against `onboarded_at: null`, decided the user hadn't onboarded, and redirected
+   back to the picker. **Every new account, including every expo visitor, was trapped in a loop
+   and could never reach the product.** The API confirmed the premise: re-reading `/onboarding`
+   after the POST correctly returns `onboarded_at` set - the frontend simply never made that call.
+
+2. **`CreateWorkspaceModal`'s `onCreated` called `setActiveId(w.id)` without refreshing the
+   list.** `active` is resolved by finding `activeId` inside the cached `workspaces` array, so
+   pointing at a workspace not yet in that array resolved to `null` - and `BriefPage`'s effect
+   early-returned on null `active` *without clearing its loading flag*, leaving the dashboard
+   stuck on "Loading…" with no recovery.
+
+Both fixed by refreshing before navigating. `BriefPage` was additionally hardened to clear
+`loading` when there is no active workspace, so this class of bug can degrade to a blank state
+rather than a dead screen.
+
+### What this validates
+
+- **Tests measure functions, not products.** 160 tests were green across both bugs. Neither is
+  detectable without either a browser or an explicit trace of the navigation gate - the app was
+  provably unreachable for new users while every test passed.
+- **A production build is not the same check as `tsc --noEmit`.** Ran `vite build` for the first
+  time in the project's life; it passed, which is genuine (if narrower) information.
+- **Replaying a flow through the API in frontend call order** is a cheap and effective substitute
+  when browser automation isn't available - it proved the backend path end to end (gate → persona
+  → demo seed → workspace list → attention → catch-up → prepare me) and isolated the failure to
+  the client's cache handling.
+
+### Known gaps (honest)
+
+- **Still no actual browser click-through.** Rendering, layout, contrast, and interaction remain
+  unverified by anyone but the user. This phase narrowed the gap; it did not close it.
+- **No automated frontend tests exist at all.** Both bugs would have been caught by a single
+  render test of the onboarding gate. Worth adding if this class recurs - not worth a testing
+  framework decision made in passing.
+- **Only the expo-critical path was traced.** Channel management, connection workspaces, and mail
+  reading were not re-reviewed in this pass.
+
+**Exit criteria:** the flow a first-time user takes actually works. **Two blocking bugs fixed;
+backend path verified end to end; visual verification still pending a human.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

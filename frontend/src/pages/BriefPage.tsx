@@ -28,7 +28,13 @@ export function BriefPage() {
     // Re-fetch whenever the active workspace changes (Group/Channel cards
     // switch it) - previously this only ran once on mount, so switching
     // workspaces via the sidebar left this page showing stale data.
-    if (!active) return;
+    if (!active) {
+      // Clearing the loading flag matters: leaving it set turns any
+      // transient null-active into a permanent "Loading…" screen with no
+      // way out. A real bug did exactly that after creating a workspace.
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     api
       .get<Connection[]>("/connections")

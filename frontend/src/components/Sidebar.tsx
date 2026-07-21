@@ -20,7 +20,7 @@ type ModalState =
   | { type: "invite-team"; teamId: string; teamName: string };
 
 export function Sidebar() {
-  const { workspaces, active, setActiveId, loading } = useWorkspace();
+  const { workspaces, active, setActiveId, loading, refresh } = useWorkspace();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -131,7 +131,17 @@ export function Sidebar() {
       </aside>
 
       {modal?.type === "create-workspace" && (
-        <CreateWorkspaceModal onClose={() => setModal(null)} onCreated={(w) => setActiveId(w.id)} />
+        <CreateWorkspaceModal
+          onClose={() => setModal(null)}
+          onCreated={async (w) => {
+            // Refresh BEFORE switching: `active` is resolved by finding
+            // activeId in the cached workspace list, so pointing at a
+            // workspace that isn't in that list yet resolves to null and
+            // leaves the dashboard stuck on its loading state.
+            await refresh();
+            setActiveId(w.id);
+          }}
+        />
       )}
       {modal?.type === "create-team" && <CreateTeamModal onClose={() => setModal(null)} />}
       {modal?.type === "invite-workspace" && active && (

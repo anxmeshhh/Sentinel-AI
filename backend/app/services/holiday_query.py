@@ -81,7 +81,7 @@ def list_indian_holidays(
     calendar - no separate connection needed, holidays aren't a distinct
     "service" the user connects, just a different calendar_id on the same API.
     """
-    connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GOOGLE_CALENDAR)
+    connection = ConnectionRepository(session, workspace_id).get_for_user(user_id, Provider.GOOGLE_CALENDAR) if user_id else None
     if connection is None:
         return []
 

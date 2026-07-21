@@ -55,9 +55,9 @@ def env(session):
     session.flush()
     session.add(TeamMembership(team_id=team.id, user_id=user.id, role=ChannelRole.CHANNEL_ADMIN))
 
-    gmail = Connection(workspace_id=workspace.id, provider=Provider.GMAIL, org="a@x.com", repo="gmail", encrypted_token="x")
-    github = Connection(workspace_id=workspace.id, provider=Provider.GITHUB, org="acme", repo="api", encrypted_token="x")
-    drive = Connection(workspace_id=workspace.id, provider=Provider.GOOGLE_DRIVE, org="a@x.com", repo="drive", encrypted_token="x")
+    gmail = Connection(workspace_id=workspace.id, user_id=user.id, provider=Provider.GMAIL, org="a@x.com", repo="gmail", encrypted_token="x")
+    github = Connection(workspace_id=workspace.id, user_id=user.id, provider=Provider.GITHUB, org="acme", repo="api", encrypted_token="x")
+    drive = Connection(workspace_id=workspace.id, user_id=user.id, provider=Provider.GOOGLE_DRIVE, org="a@x.com", repo="drive", encrypted_token="x")
     session.add_all([gmail, github, drive])
     session.commit()
 

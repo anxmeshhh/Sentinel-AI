@@ -78,16 +78,16 @@ def create_demo_workspace(session: Session, user: User) -> tuple[Workspace, int]
         session.add(Membership(workspace_id=workspace.id, user_id=user.id, role=Role.ORG_ADMIN))
         session.commit()
 
-    return workspace, seed_demo_signals(session, workspace)
+    return workspace, seed_demo_signals(session, workspace, user.id)
 
 
-def seed_demo_signals(session: Session, workspace: Workspace) -> int:
+def seed_demo_signals(session: Session, workspace: Workspace, user_id: uuid.UUID) -> int:
     """Wipe and re-seed. Timestamps are relative to *now* every time, so a
     demo given today reads as "3 hours from now", not a stale fixed date -
     the single biggest thing that makes seeded data feel dead."""
     now = datetime.now(timezone.utc)
 
-    connections = _ensure_demo_connections(session, workspace)
+    connections = _ensure_demo_connections(session, workspace, user_id)
     session.query(Signal).filter(Signal.workspace_id == workspace.id).delete()
     session.flush()
 
@@ -108,7 +108,7 @@ def seed_demo_signals(session: Session, workspace: Workspace) -> int:
     return len(rows)
 
 
-def _ensure_demo_connections(session: Session, workspace: Workspace) -> dict[Provider, Connection]:
+def _ensure_demo_connections(session: Session, workspace: Workspace, user_id: uuid.UUID) -> dict[Provider, Connection]:
     wanted = {
         Provider.GMAIL: (DEMO_ACCOUNT, "gmail"),
         Provider.GOOGLE_CALENDAR: (DEMO_ACCOUNT, "calendar"),
@@ -118,11 +118,11 @@ def _ensure_demo_connections(session: Session, workspace: Workspace) -> dict[Pro
     result: dict[Provider, Connection] = {}
     for provider, (org, repo) in wanted.items():
         existing = session.execute(
-            select(Connection).where(Connection.workspace_id == workspace.id, Connection.provider == provider)
+            select(Connection).where(Connection.workspace_id == workspace.id, Connection.user_id == user_id, Connection.provider == provider)
         ).scalars().first()
         if existing is None:
             existing = Connection(
-                workspace_id=workspace.id, provider=provider, org=org, repo=repo,
+                workspace_id=workspace.id, user_id=user_id, provider=provider, org=org, repo=repo,
                 encrypted_token=_placeholder_token(), last_synced_at=datetime.now(timezone.utc),
             )
             session.add(existing)

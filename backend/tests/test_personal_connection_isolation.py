@@ -58,7 +58,7 @@ def env(session):
     session.add(Membership(workspace_id=company.id, user_id=colleague.id, role=Role.ORG_ADMIN))
 
     personal_gmail = Connection(
-        workspace_id=personal.id, provider=Provider.GMAIL,
+        workspace_id=personal.id, user_id=owner.id, provider=Provider.GMAIL,
         org="owner@gmail.com", repo="gmail", encrypted_token="personal-secret",
     )
     session.add(personal_gmail)
@@ -119,7 +119,7 @@ def test_personal_workspace_cannot_contain_channels(session, env):
 def test_company_connections_still_work_normally(session, env):
     """The isolation must not break legitimate workspace sharing."""
     company_github = Connection(
-        workspace_id=env["company"].id, provider=Provider.GITHUB,
+        workspace_id=env["company"].id, user_id=env["owner"].id, provider=Provider.GITHUB,
         org="acme", repo="api", encrypted_token="company-token",
     )
     session.add(company_github)

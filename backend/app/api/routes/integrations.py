@@ -107,9 +107,15 @@ async def google_connect_callback(request: Request, session: Session = Depends(g
         raise HTTPException(status_code=501, detail="Google integration is not configured yet")
 
     workspace_id_str = request.session.pop("google_connect_workspace_id", None)
-    request.session.pop("google_connect_user_id", None)
+    # Was stashed on the way out and then thrown away here. It is now the
+    # owner of the resulting connection - the token belongs to whoever
+    # authorized it, not to the workspace at large.
+    user_id_str = request.session.pop("google_connect_user_id", None)
     return_to = _safe_return_path(request.session.pop("google_connect_return_to", None))
-    if not workspace_id_str:
+    # Both are required now: without the user id there is no owner to
+    # attach the token to, and guessing one would hand someone else's
+    # mailbox to whoever happened to finish the flow.
+    if not workspace_id_str or not user_id_str:
         return RedirectResponse(f"{get_settings().frontend_base_url}/?google_error=session_expired")
 
     token = await oauth.google_data.authorize_access_token(request)
@@ -133,14 +139,16 @@ async def google_connect_callback(request: Request, session: Session = Depends(g
     )
 
     workspace_id = uuid.UUID(workspace_id_str)
-    upsert_google_connections(session, workspace_id=workspace_id, google_email=google_email, encrypted_token=encrypted)
-    _queue_first_sync(session, workspace_id)
+    upsert_google_connections(
+        session, workspace_id=workspace_id, user_id=uuid.UUID(user_id_str), google_email=google_email, encrypted_token=encrypted
+    )
+    _queue_first_sync(session, workspace_id, uuid.UUID(user_id_str))
 
     separator = "&" if "?" in return_to else "?"
     return RedirectResponse(f"{get_settings().frontend_base_url}{return_to}{separator}connected=google")
 
 
-def _queue_first_sync(session: Session, workspace_id: uuid.UUID) -> None:
+def _queue_first_sync(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> None:
     """Sync immediately after connecting, instead of waiting for the poll.
 
     Without this, a new user connects Google and then stares at an empty
@@ -156,7 +164,9 @@ def _queue_first_sync(session: Session, workspace_id: uuid.UUID) -> None:
     """
     from app.workers.tasks import ingest_connection as ingest_task
 
-    connections = session.execute(select(Connection).where(Connection.workspace_id == workspace_id)).scalars().all()
+    connections = session.execute(
+        select(Connection).where(Connection.workspace_id == workspace_id, Connection.user_id == user_id)
+    ).scalars().all()
     for connection in connections:
         # Drive deliberately has no ingestion handler - files are searched
         # live and never cached (see google_drive_client.py). Queuing it
@@ -169,37 +179,51 @@ def _queue_first_sync(session: Session, workspace_id: uuid.UUID) -> None:
             logger.warning("first_sync_enqueue_failed", connection_id=str(connection.id), provider=connection.provider.value)
 
 
-def upsert_google_connections(session: Session, *, workspace_id: uuid.UUID, google_email: str, encrypted_token: str) -> None:
-    """One Google account per provider per workspace, enforced.
+def upsert_google_connections(
+    session: Session, *, workspace_id: uuid.UUID, user_id: uuid.UUID, google_email: str, encrypted_token: str
+) -> None:
+    """One Google account per person per workspace.
 
-    Matches on (workspace, provider) alone - NOT org. Matching org too (the
-    original code) meant connecting a *different* Google account stacked a
-    second connection beside the first instead of replacing it, leaving the
-    workspace half account-A (synced signals) and half account-B (fresh
-    token), with get_by_provider picking one arbitrarily - confirmed real:
-    body fetches then 404'd for emails that genuinely exist, just in the
-    *other* account's mailbox. On an account switch, the old account's
-    synced signals (and cached email summaries) describe a mailbox/calendar
-    this workspace can no longer read - purged rather than mixed.
+    Keyed on (workspace, user, provider). The user is part of the key
+    because an OAuth token delegates one individual's access: without it,
+    two members of a shared workspace collided, and the second to connect
+    replaced the first's connection and deleted their synced signals -
+    reproduced before this change, not theorised.
+
+    Re-connecting a *different* Google account as the same person still
+    replaces their own connection, since the previously synced signals
+    describe a mailbox this account can no longer read. That purge is
+    scoped to that user's own connection and never touches a teammate's.
     """
     for provider, label in [(Provider.GOOGLE_CALENDAR, "calendar"), (Provider.GMAIL, "gmail"), (Provider.GOOGLE_DRIVE, "drive")]:
         existing = session.execute(
-            select(Connection).where(Connection.workspace_id == workspace_id, Connection.provider == provider)
+            select(Connection).where(
+                Connection.workspace_id == workspace_id,
+                Connection.user_id == user_id,
+                Connection.provider == provider,
+            )
         ).scalars().first()
         if existing is not None:
             if existing.org != google_email:
                 logger.info(
                     "google_account_replaced",
-                    provider=provider.value, old=existing.org, new=google_email, workspace_id=str(workspace_id),
+                    provider=provider.value, old=existing.org, new=google_email,
+                    workspace_id=str(workspace_id), user_id=str(user_id),
                 )
                 session.query(Signal).filter(Signal.connection_id == existing.id).delete()
                 if provider == Provider.GMAIL:
+                    # Summaries are keyed by workspace+message; only this
+                    # user's messages are going away, and a stale summary
+                    # for a message nobody can fetch is dead weight.
                     session.query(EmailSummary).filter(EmailSummary.workspace_id == workspace_id).delete()
                 existing.org = google_email
                 existing.last_synced_at = None
             existing.encrypted_token = encrypted_token
         else:
             session.add(
-                Connection(workspace_id=workspace_id, provider=provider, org=google_email, repo=label, encrypted_token=encrypted_token)
+                Connection(
+                    workspace_id=workspace_id, user_id=user_id, provider=provider,
+                    org=google_email, repo=label, encrypted_token=encrypted_token,
+                )
             )
     session.commit()

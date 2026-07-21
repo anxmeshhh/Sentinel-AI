@@ -2056,6 +2056,76 @@ backend path verified end to end; visual verification still pending a human.**
 
 ---
 
+### Phase 2x-A — Connections belong to a *user*, not a workspace ✅ Built and verified against MySQL
+
+**Objective:** make it safe for two people to be in the same Group. Before this phase a
+`Connection` was keyed on `(workspace_id, provider)` alone, so a workspace could hold exactly one
+Gmail account no matter how many members it had.
+
+**The bug this closes (reproduced, not theorized):** in a shared workspace, Member B connecting
+Google **overwrote Member A's connection row and purged A's signals** — `upsert_google_connections`
+treated a different `google_email` as "the user reconnected with a different account" and ran its
+replace-and-purge path. Worse, every read tool resolved connections workspace-wide, so A's mailbox
+token was the one answering B's questions whenever it happened to be the surviving row.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| A.1 | `Connection.user_id` + `UniqueConstraint(workspace_id, user_id, provider)` | ✅ |
+| A.2 | `ConnectionRepository.get_for_user` / `list_for_user`; `get_by_provider` **deleted** | ✅ |
+| A.3 | OAuth callback carries the acting user through to the upsert | ✅ |
+| A.4 | Orchestrator + read tools fail closed without a `user_id` | ✅ |
+| A.5 | Migration `8618a5c5494e` (wipes connections; everyone reconnects) | ✅ |
+
+### What actually got built (technical notes)
+
+- **`get_by_provider` was removed rather than deprecated.** Leaving a workspace-wide lookup in the
+  repository would have left a working leak path one autocomplete away. `grep` confirms zero callers
+  remain anywhere in the tree. The replacement, `get_for_user`, has **no workspace-wide fallback on
+  purpose** — a member with no connection of their own gets `None`, never someone else's token.
+- **The orchestrator fails closed.** `_get_connection(..., user_id=None)` returns `None` before it
+  touches the database. A future caller that forgets to thread the user through loses access rather
+  than silently inheriting another member's. This is the AI/tool-execution-layer half of the user's
+  requirement that isolation not live only in the frontend.
+- **Migration deletes instead of backfilling.** Existing rows had no owner and no honest way to
+  guess one; inventing an owner for an OAuth token is exactly the wrong failure mode. Deletes run in
+  strict FK order across ten dependent tables, then the column is added `NOT NULL`. Cost: every user
+  reconnects once. Chosen deliberately over a nullable column that would have preserved the
+  workspace-wide fallback semantics forever.
+- **Admins never see member tokens.** Ownership is on the connection row itself, so channel
+  assignment references a connection the admin cannot read through.
+
+### Verified against real MySQL, not just the test suite
+
+The suite runs on SQLite, which ignores FK constraints by default — a green suite is not proof of
+production behavior (this is exactly how the earlier `delete_channel` `IntegrityError` hid). So the
+invariants were re-proved against the live MySQL database:
+
+| Probe | Result |
+|---|---|
+| Two members connect Google in one workspace | 2 independent Gmail rows, tokens `tok-a` / `tok-b` |
+| `get_for_user` per member | returns each member's own token |
+| Member with no connection | `None` — no fallback |
+| Stacked duplicate `(workspace, user, provider)` | rejected by MySQL `IntegrityError` |
+| `_get_connection` without `user_id` | `None` (fails closed) |
+
+Schema confirmed in MySQL: `user_id CHAR(32) NOT NULL`, FK → `users`, unique constraint
+`uq_connection_workspace_user_provider`. Suite: **181 passed**.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **No re-connect prompt yet.** The migration emptied the table, so every existing user's
+  integrations are silently gone until they visit Connections. The readiness state machine that
+  surfaces this is Phase B, not this one.
+- **Channel-level *required* connections don't exist yet.** An admin still cannot declare "this
+  channel needs Gmail" — Phase B.
+- **GitHub is still a PAT, not OAuth**, so "each member connects their own account" is true for
+  Google and not yet for GitHub — Phase C, and it needs a GitHub OAuth App registered first.
+
+**Exit criteria:** one member's mailbox can never answer another member's query, enforced in the
+repository, the route layer, and the tool-execution layer. **Confirmed against MySQL.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

@@ -17,6 +17,7 @@ from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionS
 from app.models.base import Base
 from app.models.connection import Connection, Provider
 from app.models.signal import Signal, SignalType
+from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceKind
 from app.services.attention_engine import list_attention, refresh_attention
 
@@ -38,9 +39,10 @@ def session():
 @pytest.fixture
 def workspace(session):
     ws = Workspace(name="Personal", slug=f"p-{uuid.uuid4().hex[:8]}", kind=WorkspaceKind.PERSONAL)
-    session.add(ws)
+    user = User(email=f"u-{uuid.uuid4().hex[:8]}@gmail.com", name="Owner")
+    session.add_all([ws, user])
     session.flush()
-    connection = Connection(workspace_id=ws.id, provider=Provider.GMAIL, org="a@gmail.com", repo="gmail", encrypted_token="x")
+    connection = Connection(workspace_id=ws.id, user_id=user.id, provider=Provider.GMAIL, org="a@gmail.com", repo="gmail", encrypted_token="x")
     session.add(connection)
     session.commit()
     ws.test_connection = connection  # convenience for tests

@@ -51,7 +51,7 @@ def get_drive_analytics(session, workspace_id) -> dict | None:
     Drive's own about.get. No fabricated capability (no per-file view
     counts, no access history - Drive's API doesn't expose those).
     """
-    connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GOOGLE_DRIVE)
+    connection = ConnectionRepository(session, workspace_id).get_for_user(user_id, Provider.GOOGLE_DRIVE)
     if connection is None:
         return None
 

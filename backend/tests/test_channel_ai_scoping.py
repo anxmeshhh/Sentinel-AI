@@ -48,8 +48,8 @@ def _setup(session):
     session.flush()
     session.add(TeamMembership(team_id=team.id, user_id=user.id, role=ChannelRole.CHANNEL_ADMIN))
 
-    drive_connection = Connection(workspace_id=workspace.id, provider=Provider.GOOGLE_DRIVE, org="user@gmail.com", repo="drive", encrypted_token="x")
-    gmail_connection = Connection(workspace_id=workspace.id, provider=Provider.GMAIL, org="user@gmail.com", repo="gmail", encrypted_token="x")
+    drive_connection = Connection(workspace_id=workspace.id, user_id=user.id, provider=Provider.GOOGLE_DRIVE, org="user@gmail.com", repo="drive", encrypted_token="x")
+    gmail_connection = Connection(workspace_id=workspace.id, user_id=user.id, provider=Provider.GMAIL, org="user@gmail.com", repo="gmail", encrypted_token="x")
     session.add_all([drive_connection, gmail_connection])
     session.commit()
 
@@ -76,7 +76,7 @@ def test_tool_schemas_empty_set_yields_no_tools():
 
 def test_get_connection_workspace_wide_when_team_id_none(session):
     workspace, team, user, drive_connection, _ = _setup(session)
-    found = _get_connection(session, workspace.id, None, Provider.GOOGLE_DRIVE)
+    found = _get_connection(session, workspace.id, None, Provider.GOOGLE_DRIVE, user_id=user.id)
     assert found is not None and found.id == drive_connection.id
 
 
@@ -85,7 +85,7 @@ def test_get_connection_none_when_not_assigned_to_channel(session):
     Workspace level is NOT enough once a Channel is scoping the request -
     it must actually be assigned."""
     workspace, team, user, drive_connection, _ = _setup(session)
-    found = _get_connection(session, workspace.id, team.id, Provider.GOOGLE_DRIVE)
+    found = _get_connection(session, workspace.id, team.id, Provider.GOOGLE_DRIVE, user_id=user.id)
     assert found is None
 
 
@@ -94,7 +94,7 @@ def test_get_connection_found_when_assigned_to_channel(session):
     session.add(ChannelConnection(team_id=team.id, connection_id=drive_connection.id, added_by_user_id=user.id))
     session.commit()
 
-    found = _get_connection(session, workspace.id, team.id, Provider.GOOGLE_DRIVE)
+    found = _get_connection(session, workspace.id, team.id, Provider.GOOGLE_DRIVE, user_id=user.id)
     assert found is not None and found.id == drive_connection.id
 
 
@@ -105,7 +105,7 @@ def test_read_drive_file_rejected_when_resource_not_allow_listed(session):
     session.commit()
     # Assigned, but no resource allow-listed yet - must still be rejected.
 
-    result = _execute_read_tool(session, workspace.id, "read_drive_file", {"file_id": "some-file-id"}, team_id=team.id)
+    result = _execute_read_tool(session, workspace.id, "read_drive_file", {"file_id": "some-file-id"}, team_id=team.id, user_id=user.id)
     assert "error" in result
     assert "isn't authorized" in result["error"]
 
@@ -125,7 +125,7 @@ def test_read_drive_file_allowed_when_resource_allow_listed_stops_before_network
     with pytest.raises(Exception) as exc_info:
         # No real access token/network in this test env - failing past the
         # permission check (not on it) is exactly what this test verifies.
-        _execute_read_tool(session, workspace.id, "read_drive_file", {"file_id": "some-file-id"}, team_id=team.id)
+        _execute_read_tool(session, workspace.id, "read_drive_file", {"file_id": "some-file-id"}, team_id=team.id, user_id=user.id)
     assert "isn't authorized" not in str(exc_info.value)
 
 

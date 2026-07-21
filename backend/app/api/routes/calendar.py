@@ -5,10 +5,11 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_workspace_id
+from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.integrations.google_auth import get_valid_access_token
 from app.integrations.google_calendar_client import GoogleCalendarClient
 from app.models.connection import Provider
+from app.models.user import User
 from app.models.signal import Signal
 from app.repositories.connections import ConnectionRepository
 from app.schemas.calendar import CalendarEventOut, CreateEventOut, CreateEventRequest
@@ -28,6 +29,7 @@ def get_calendar(
     limit: int = 30,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> list[CalendarEventOut]:
     """Either an explicit since/until date range (used by the Week/Day
     views), or the simple upcoming/past split (used by Agenda)."""
@@ -52,6 +54,7 @@ def get_calendar_month(
     month: int,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> list[CalendarEventOut]:
     if not (1 <= month <= 12):
         raise HTTPException(status_code=400, detail="month must be 1-12")
@@ -66,6 +69,7 @@ def get_holidays(
     state: str | None = None,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> list[HolidayOut]:
     """Live from Google's public Indian holiday calendar - see
     services/holiday_query.py's docstring. month omitted = the whole year."""
@@ -79,7 +83,7 @@ def get_holidays(
         since = datetime(year, 1, 1)
         until = datetime(year + 1, 1, 1)
 
-    holidays = list_indian_holidays(session, workspace_id, since=since, until=until, state=state)
+    holidays = list_indian_holidays(session, workspace_id, user_id=user.id, since=since, until=until, state=state)
     return [HolidayOut(**h) for h in holidays]
 
 
@@ -88,6 +92,7 @@ def create_event(
     payload: CreateEventRequest,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> CreateEventOut:
     """Direct, immediate creation - no confirm-plan step, unlike the AI
     Command's create_calendar_event tool. A manual form submission the user
@@ -95,7 +100,7 @@ def create_event(
     step exists specifically for actions an LLM inferred, not ones a human
     typed into a form with their own hands.
     """
-    connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GOOGLE_CALENDAR)
+    connection = ConnectionRepository(session, workspace_id).get_for_user(user.id, Provider.GOOGLE_CALENDAR)
     if connection is None:
         raise HTTPException(status_code=404, detail="Google Calendar is not connected")
 

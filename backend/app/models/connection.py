@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, String, Text, Uuid
+from sqlalchemy import Enum, ForeignKey, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UTCDateTime, UUIDPk
@@ -27,8 +27,27 @@ class Connection(Base, UUIDPk, TimestampMixin):
     """
 
     __tablename__ = "connections"
+    # One account per person per provider per workspace. The database
+    # enforces this so a race between two browser tabs can't recreate the
+    # duplicate-connection problem the ownership change exists to fix.
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", "provider", name="uq_connection_workspace_user_provider"),
+    )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+
+    # Whose account this is. Added in Phase 2x: connections used to be
+    # keyed by (workspace, provider) alone, which silently meant "one
+    # Google account per workspace". In a shared team workspace that was
+    # data loss, not just a limitation - the second member to connect
+    # replaced the first member's connection and purged their synced
+    # signals, verified reproducibly before this change.
+    #
+    # An OAuth token is a delegation of one person's access, so it belongs
+    # to that person. A team workspace now holds one connection per member
+    # per provider, and each member's data stays theirs.
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+
     provider: Mapped[Provider] = mapped_column(Enum(Provider, name="connection_provider"), nullable=False)
     org: Mapped[str] = mapped_column(String(200), nullable=False)
     repo: Mapped[str] = mapped_column(String(200), nullable=False)

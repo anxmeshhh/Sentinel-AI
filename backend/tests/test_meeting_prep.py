@@ -17,6 +17,7 @@ from app.models.base import Base
 from app.models.connection import Connection, Provider
 from app.models.meeting_brief import MeetingBrief
 from app.models.signal import Signal, SignalType
+from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceKind
 from app.services import meeting_prep
 from app.services.meeting_prep import meaningful_keywords, prepare_meeting
@@ -39,9 +40,10 @@ def session():
 @pytest.fixture
 def workspace(session):
     ws = Workspace(name="W", slug=f"w-{uuid.uuid4().hex[:8]}", kind=WorkspaceKind.PERSONAL)
-    session.add(ws)
+    user = User(email=f"u-{uuid.uuid4().hex[:8]}@x.com", name="Owner")
+    session.add_all([ws, user])
     session.flush()
-    connection = Connection(workspace_id=ws.id, provider=Provider.GOOGLE_CALENDAR, org="a@x.com", repo="calendar", encrypted_token="x")
+    connection = Connection(workspace_id=ws.id, user_id=user.id, provider=Provider.GOOGLE_CALENDAR, org="a@x.com", repo="calendar", encrypted_token="x")
     session.add(connection)
     session.commit()
     ws.conn = connection

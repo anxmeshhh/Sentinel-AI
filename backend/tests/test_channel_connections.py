@@ -54,7 +54,7 @@ def _setup(session, admin_channel_role=ChannelRole.CHANNEL_ADMIN):
     session.add(TeamMembership(team_id=team.id, user_id=admin.id, role=admin_channel_role))
     session.add(TeamMembership(team_id=team.id, user_id=member.id, role=ChannelRole.CHANNEL_MEMBER))
 
-    connection = Connection(workspace_id=workspace.id, provider=Provider.GITHUB, org="northwind", repo="checkout-service", encrypted_token="x")
+    connection = Connection(workspace_id=workspace.id, user_id=admin.id, provider=Provider.GITHUB, org="northwind", repo="checkout-service", encrypted_token="x")
     session.add(connection)
     session.commit()
 
@@ -111,7 +111,7 @@ def test_cannot_assign_connection_from_a_different_workspace(session):
     other_workspace = Workspace(name="Other Co", slug="other-co", kind=WorkspaceKind.ORGANIZATION)
     session.add(other_workspace)
     session.flush()
-    foreign_connection = Connection(workspace_id=other_workspace.id, provider=Provider.GITHUB, org="foreign", repo="repo", encrypted_token="x")
+    foreign_connection = Connection(workspace_id=other_workspace.id, user_id=admin.id, provider=Provider.GITHUB, org="foreign", repo="repo", encrypted_token="x")
     session.add(foreign_connection)
     session.commit()
 

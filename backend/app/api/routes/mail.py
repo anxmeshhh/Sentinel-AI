@@ -7,10 +7,11 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_workspace_id
+from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.integrations.gmail_client import GmailClient, MessageGoneError
 from app.integrations.google_auth import get_valid_access_token
 from app.models.connection import Provider
+from app.models.user import User
 from app.models.email_summary import EmailSummary
 from app.models.signal import Signal, SignalType
 from app.repositories.connections import ConnectionRepository
@@ -29,6 +30,7 @@ def get_mail(
     limit: int = 30,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> list[MailItemOut]:
     if filter not in MAIL_FILTERS:
         raise HTTPException(status_code=400, detail=f"Unknown filter. Use one of: {sorted(MAIL_FILTERS)}")
@@ -44,6 +46,7 @@ def ask_mail(
     payload: MailAskRequest,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> MailAskResponse:
     matched = match_mail_intent(payload.question)
     if matched is None:
@@ -63,6 +66,7 @@ def get_mail_body(
     signal_id: uuid.UUID,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> MailBodyOut:
     """Live, on-demand fetch - the body is never read from or written to
     storage, see gmail_client.py's module docstring.
@@ -71,7 +75,7 @@ def get_mail_body(
     if signal is None or signal.workspace_id != workspace_id or signal.type != SignalType.EMAIL:
         raise HTTPException(status_code=404, detail="Email not found")
 
-    connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GMAIL)
+    connection = ConnectionRepository(session, workspace_id).get_for_user(user.id, Provider.GMAIL)
     if connection is None:
         raise HTTPException(status_code=404, detail="Gmail is not connected")
 
@@ -98,6 +102,7 @@ def get_mail_summary(
     signal_id: uuid.UUID,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> MailSummaryOut:
     """Structured AI summary (summary/key_points/action_items), cached after
     the first generation - see EmailSummary's docstring. Still does a live
@@ -114,7 +119,7 @@ def get_mail_summary(
     summary_repo = EmailSummaryRepository(session, workspace_id)
     cached = summary_repo.get_by_message_id(signal.external_id)
 
-    connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GMAIL)
+    connection = ConnectionRepository(session, workspace_id).get_for_user(user.id, Provider.GMAIL)
     if connection is None:
         raise HTTPException(status_code=404, detail="Gmail is not connected")
     access_token = get_valid_access_token(session, connection)

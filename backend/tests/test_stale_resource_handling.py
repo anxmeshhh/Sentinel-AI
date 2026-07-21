@@ -102,8 +102,11 @@ def test_unhandled_route_error_returns_json_500_with_cors_headers(monkeypatch):
     from app.api import deps
     from app.api.routes import mail as mail_routes
 
+    from app.models.user import User
+
     app_main.app.dependency_overrides[deps.get_db] = lambda: None
     app_main.app.dependency_overrides[deps.get_workspace_id] = lambda: uuid.uuid4()
+    app_main.app.dependency_overrides[deps.get_current_user] = lambda: User(id=uuid.uuid4(), email="t@t.test", name="T")
     monkeypatch.setattr(mail_routes, "list_mail", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     try:
         client = TestClient(app_main.app)

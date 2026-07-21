@@ -459,7 +459,7 @@ def run_command_stream(
 
             yield {"type": "status", "message": STATUS_MESSAGES.get(name, f"Running {name}…")}
             try:
-                result = _execute_read_tool(session, workspace_id, name, args, team_id=team_id)
+                result = _execute_read_tool(session, workspace_id, name, args, team_id=team_id, user_id=user_id)
             except Exception as exc:
                 # A single tool failing (a stale resource id 404ing at the
                 # provider, a revoked token, a network blip) must never kill
@@ -493,7 +493,7 @@ def _maybe_log_channel_history(session: Session, team_id: uuid.UUID | None, user
     session.commit()
 
 
-def execute_planned_action(session: Session, workspace_id: uuid.UUID, name: str, arguments: dict) -> dict:
+def execute_planned_action(session: Session, workspace_id: uuid.UUID, name: str, arguments: dict, user_id: uuid.UUID | None = None) -> dict:
     """Only reachable from a route that fires on an explicit user confirm
     click - see api/routes/connections_ai.py. Re-derives the connection from
     workspace_id (never trusts a client-supplied connection/token), so a
@@ -509,9 +509,9 @@ def execute_planned_action(session: Session, workspace_id: uuid.UUID, name: str,
         # than silently pretending an event was created somewhere.
         raise ValueError("This is the demo workspace - Sentinel won't create a real calendar event here. Connect your own Google account to enable this.")
 
-    connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GOOGLE_CALENDAR)
+    connection = ConnectionRepository(session, workspace_id).get_for_user(user_id, Provider.GOOGLE_CALENDAR) if user_id else None
     if connection is None:
-        raise ValueError("Google Calendar is not connected")
+        raise ValueError("Google Calendar is not connected for your account")
 
     access_token = get_valid_access_token(session, connection)
     with GoogleCalendarClient(access_token) as client:
@@ -532,7 +532,9 @@ def execute_planned_action(session: Session, workspace_id: uuid.UUID, name: str,
     return result
 
 
-def _get_connection(session: Session, workspace_id: uuid.UUID, team_id: uuid.UUID | None, provider: Provider) -> Connection | None:
+def _get_connection(
+    session: Session, workspace_id: uuid.UUID, team_id: uuid.UUID | None, provider: Provider, user_id: uuid.UUID | None = None
+) -> Connection | None:
     """`team_id=None` (the plain, workspace-wide AI Command) behaves exactly
     as before Phase 2m - just the Workspace's Connection for this provider.
     A Channel-scoped request additionally requires that exact Connection to
@@ -541,7 +543,12 @@ def _get_connection(session: Session, workspace_id: uuid.UUID, team_id: uuid.UUI
     calling an unavailable tool in the first place, this is the second,
     real enforcement layer in case that ever gets bypassed.
     """
-    connection = ConnectionRepository(session, workspace_id).get_by_provider(provider)
+    if user_id is None:
+        # No acting user means no basis for choosing whose token to use.
+        # Failing closed is the only safe answer - the alternative is
+        # picking someone's mailbox arbitrarily.
+        return None
+    connection = ConnectionRepository(session, workspace_id).get_for_user(user_id, provider)
     if connection is None:
         return None
     if team_id is not None:
@@ -647,14 +654,16 @@ def _execute_demo_read_tool(session: Session, workspace_id: uuid.UUID, name: str
     return None
 
 
-def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, args: dict, *, team_id: uuid.UUID | None = None) -> dict | list:
+def _execute_read_tool(
+    session: Session, workspace_id: uuid.UUID, name: str, args: dict, *, team_id: uuid.UUID | None = None, user_id: uuid.UUID | None = None
+) -> dict | list:
     if _is_demo_workspace(session, workspace_id):
         demo_result = _execute_demo_read_tool(session, workspace_id, name, args)
         if demo_result is not None:
             return demo_result
 
     if name == "search_emails":
-        connection = _get_connection(session, workspace_id, team_id, Provider.GMAIL)
+        connection = _get_connection(session, workspace_id, team_id, user_id=user_id, provider=Provider.GMAIL)
         if connection is None:
             return {"error": "gmail not connected or not available in this channel"}
         query = build_gmail_query(
@@ -683,7 +692,7 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
         message_id = args.get("message_id")
         if not message_id:
             return {"error": "missing message_id"}
-        connection = _get_connection(session, workspace_id, team_id, Provider.GMAIL)
+        connection = _get_connection(session, workspace_id, team_id, user_id=user_id, provider=Provider.GMAIL)
         if connection is None:
             return {"error": "gmail not connected or not available in this channel"}
         access_token = get_valid_access_token(session, connection)
@@ -717,7 +726,7 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
         ]
 
     if name == "search_drive":
-        connection = _get_connection(session, workspace_id, team_id, Provider.GOOGLE_DRIVE)
+        connection = _get_connection(session, workspace_id, team_id, user_id=user_id, provider=Provider.GOOGLE_DRIVE)
         if connection is None:
             return {"error": "google drive not connected or not available in this channel"}
         query = build_drive_query(
@@ -735,7 +744,7 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
         file_id = args.get("file_id")
         if not file_id:
             return {"error": "missing file_id"}
-        connection = _get_connection(session, workspace_id, team_id, Provider.GOOGLE_DRIVE)
+        connection = _get_connection(session, workspace_id, team_id, user_id=user_id, provider=Provider.GOOGLE_DRIVE)
         if connection is None:
             return {"error": "google drive not connected or not available in this channel"}
         if team_id is not None and not is_resource_allowed(session, team_id, connection.id, file_id):
@@ -791,7 +800,7 @@ def _execute_read_tool(session: Session, workspace_id: uuid.UUID, name: str, arg
             until = datetime.fromisoformat(until_str)
         except ValueError:
             return {"error": "invalid since/until - use ISO dates"}
-        holidays = list_indian_holidays(session, workspace_id, since=since, until=until, state=args.get("state"))
+        holidays = list_indian_holidays(session, workspace_id, user_id=user_id, since=since, until=until, state=args.get("state"))
         return {"holidays": holidays} if holidays else {"holidays": [], "note": "no holidays found in that range"}
 
     return {"error": f"unknown tool {name}"}

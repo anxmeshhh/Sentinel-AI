@@ -11,10 +11,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.agents.llm import LLMClient, LLMError
-from app.api.deps import get_db, get_workspace_id
+from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.integrations.gmail_client import GmailClient
 from app.integrations.google_auth import get_valid_access_token
 from app.models.connection import Provider
+from app.models.user import User
 from app.repositories.briefs import BriefRepository
 from app.repositories.connections import ConnectionRepository
 from app.repositories.findings import FindingRepository
@@ -45,6 +46,7 @@ def chat(
     payload: ChatRequest,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> ChatResponse:
     context = _build_context(session, workspace_id, payload.message)
 
@@ -114,7 +116,7 @@ def _maybe_live_email_body(session: Session, workspace_id: uuid.UUID, question: 
     if signal is None:
         return None
 
-    connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GMAIL)
+    connection = ConnectionRepository(session, workspace_id).get_for_user(user.id, Provider.GMAIL)
     if connection is None:
         return None
 

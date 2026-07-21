@@ -58,7 +58,7 @@ def _setup(session):
 
 def test_create_channel_full_config(session):
     workspace, owner, employee = _setup(session)
-    connection = Connection(workspace_id=workspace.id, provider=Provider.GITHUB, org="acme", repo="api", encrypted_token="x")
+    connection = Connection(workspace_id=workspace.id, user_id=owner.id, provider=Provider.GITHUB, org="acme", repo="api", encrypted_token="x")
     session.add(connection)
     session.commit()
 
@@ -93,7 +93,7 @@ def test_create_channel_rejects_foreign_connection(session):
     other = Workspace(name="Other", slug="other", kind=WorkspaceKind.ORGANIZATION)
     session.add(other)
     session.flush()
-    foreign = Connection(workspace_id=other.id, provider=Provider.GITHUB, org="them", repo="theirs", encrypted_token="x")
+    foreign = Connection(workspace_id=other.id, user_id=owner.id, provider=Provider.GITHUB, org="them", repo="theirs", encrypted_token="x")
     session.add(foreign)
     session.commit()
 
@@ -156,7 +156,7 @@ def test_archived_channel_excluded_from_list_and_join(session):
 
 def test_delete_channel_cascades_everything(session):
     workspace, owner, employee = _setup(session)
-    connection = Connection(workspace_id=workspace.id, provider=Provider.GITHUB, org="acme", repo="api", encrypted_token="x")
+    connection = Connection(workspace_id=workspace.id, user_id=owner.id, provider=Provider.GITHUB, org="acme", repo="api", encrypted_token="x")
     session.add(connection)
     session.commit()
     team = create_channel(

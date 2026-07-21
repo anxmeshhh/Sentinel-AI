@@ -8,10 +8,11 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_workspace_id
+from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.integrations.google_auth import get_valid_access_token
 from app.integrations.google_drive_client import GoogleDriveClient
 from app.models.connection import Provider
+from app.models.user import User
 from app.repositories.connections import ConnectionRepository
 from app.schemas.drive import DriveAnalyticsOut, DriveFileOut
 from app.services.drive_query import build_drive_query, get_drive_analytics
@@ -23,8 +24,9 @@ router = APIRouter(prefix="/drive", tags=["drive"])
 def drive_analytics(
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> DriveAnalyticsOut:
-    result = get_drive_analytics(session, workspace_id)
+    result = get_drive_analytics(session, workspace_id, user.id)
     if result is None:
         raise HTTPException(status_code=404, detail="Google Drive is not connected")
     return DriveAnalyticsOut(
@@ -46,8 +48,9 @@ def search_drive(
     limit: int = 20,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> list[DriveFileOut]:
-    connection = ConnectionRepository(session, workspace_id).get_by_provider(Provider.GOOGLE_DRIVE)
+    connection = ConnectionRepository(session, workspace_id).get_for_user(user.id, Provider.GOOGLE_DRIVE)
     if connection is None:
         raise HTTPException(status_code=404, detail="Google Drive is not connected")
 

@@ -18,6 +18,7 @@ from app.models.base import Base
 from app.models.connection import Connection, Provider
 from app.models.email_summary import EmailSummary
 from app.models.signal import Signal, SignalType
+from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceKind
 from app.repositories.connections import ConnectionRepository
 
@@ -37,8 +38,10 @@ def session():
 @pytest.fixture
 def workspace(session):
     ws = Workspace(name="Personal", slug=f"p-{uuid.uuid4().hex[:8]}", kind=WorkspaceKind.PERSONAL)
-    session.add(ws)
+    owner = User(email=f"owner-{uuid.uuid4().hex[:8]}@x.test", name="Owner")
+    session.add_all([ws, owner])
     session.commit()
+    ws.owner = owner
     return ws
 
 
@@ -49,19 +52,19 @@ def _gmail_connections(session, workspace_id):
 
 
 def test_first_connect_creates_three_connections(session, workspace):
-    upsert_google_connections(session, workspace_id=workspace.id, google_email="a@gmail.com", encrypted_token="tok1")
+    upsert_google_connections(session, workspace_id=workspace.id, user_id=workspace.owner.id, google_email="a@gmail.com", encrypted_token="tok1")
     all_connections = session.execute(select(Connection)).scalars().all()
     assert {c.provider for c in all_connections} == {Provider.GMAIL, Provider.GOOGLE_CALENDAR, Provider.GOOGLE_DRIVE}
     assert all(c.org == "a@gmail.com" for c in all_connections)
 
 
 def test_same_account_reconnect_only_refreshes_token(session, workspace):
-    upsert_google_connections(session, workspace_id=workspace.id, google_email="a@gmail.com", encrypted_token="tok1")
+    upsert_google_connections(session, workspace_id=workspace.id, user_id=workspace.owner.id, google_email="a@gmail.com", encrypted_token="tok1")
     gmail = _gmail_connections(session, workspace.id)[0]
     session.add(Signal(workspace_id=workspace.id, connection_id=gmail.id, type=SignalType.EMAIL, external_id="m1", actor="tester", payload={}, occurred_at=datetime.now(timezone.utc)))
     session.commit()
 
-    upsert_google_connections(session, workspace_id=workspace.id, google_email="a@gmail.com", encrypted_token="tok2")
+    upsert_google_connections(session, workspace_id=workspace.id, user_id=workspace.owner.id, google_email="a@gmail.com", encrypted_token="tok2")
 
     gmail_after = _gmail_connections(session, workspace.id)
     assert len(gmail_after) == 1
@@ -70,13 +73,13 @@ def test_same_account_reconnect_only_refreshes_token(session, workspace):
 
 
 def test_different_account_replaces_and_purges(session, workspace):
-    upsert_google_connections(session, workspace_id=workspace.id, google_email="a@gmail.com", encrypted_token="tok1")
+    upsert_google_connections(session, workspace_id=workspace.id, user_id=workspace.owner.id, google_email="a@gmail.com", encrypted_token="tok1")
     gmail = _gmail_connections(session, workspace.id)[0]
     session.add(Signal(workspace_id=workspace.id, connection_id=gmail.id, type=SignalType.EMAIL, external_id="m1", actor="tester", payload={}, occurred_at=datetime.now(timezone.utc)))
     session.add(EmailSummary(workspace_id=workspace.id, message_id="m1", subject="s", sender="x", summary="sum", key_points=[], action_items=[]))
     session.commit()
 
-    upsert_google_connections(session, workspace_id=workspace.id, google_email="b@gmail.com", encrypted_token="tok2")
+    upsert_google_connections(session, workspace_id=workspace.id, user_id=workspace.owner.id, google_email="b@gmail.com", encrypted_token="tok2")
 
     gmail_after = _gmail_connections(session, workspace.id)
     assert len(gmail_after) == 1  # replaced, never stacked
@@ -86,15 +89,31 @@ def test_different_account_replaces_and_purges(session, workspace):
     assert session.execute(select(EmailSummary)).scalars().all() == []
 
 
-def test_get_by_provider_prefers_newest_if_duplicates_exist(session, workspace):
-    """Defense in depth: even if duplicates somehow reappear, the pick must
-    be deterministic (newest token wins), never DB-order luck."""
-    old = Connection(workspace_id=workspace.id, provider=Provider.GMAIL, org="a@gmail.com", repo="gmail", encrypted_token="old")
-    old.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    new = Connection(workspace_id=workspace.id, provider=Provider.GMAIL, org="b@gmail.com", repo="gmail", encrypted_token="new")
-    new.created_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
-    session.add_all([old, new])
+def test_two_members_keep_separate_connections_in_one_workspace(session, workspace):
+    """Phase A: before per-user connections, the second member to connect
+    Google overwrote the first member's row and purged their signals. Each
+    member must now own an independent connection and token."""
+    other = User(email=f"other-{uuid.uuid4().hex[:8]}@x.test", name="Other")
+    session.add(other)
     session.commit()
 
-    picked = ConnectionRepository(session, workspace.id).get_by_provider(Provider.GMAIL)
-    assert picked.encrypted_token == "new"
+    upsert_google_connections(session, workspace_id=workspace.id, user_id=workspace.owner.id, google_email="a@gmail.com", encrypted_token="tok-a")
+    upsert_google_connections(session, workspace_id=workspace.id, user_id=other.id, google_email="b@gmail.com", encrypted_token="tok-b")
+
+    assert len(_gmail_connections(session, workspace.id)) == 2
+
+    repo = ConnectionRepository(session, workspace.id)
+    assert repo.get_for_user(workspace.owner.id, Provider.GMAIL).encrypted_token == "tok-a"
+    assert repo.get_for_user(other.id, Provider.GMAIL).encrypted_token == "tok-b"
+
+
+def test_a_member_without_a_connection_gets_nothing_not_someone_elses(session, workspace):
+    """Fail closed: no workspace-wide fallback, or one member's mailbox
+    would silently answer another member's query."""
+    stranger = User(email=f"stranger-{uuid.uuid4().hex[:8]}@x.test", name="Stranger")
+    session.add(stranger)
+    session.commit()
+
+    upsert_google_connections(session, workspace_id=workspace.id, user_id=workspace.owner.id, google_email="a@gmail.com", encrypted_token="tok-a")
+
+    assert ConnectionRepository(session, workspace.id).get_for_user(stranger.id, Provider.GMAIL) is None

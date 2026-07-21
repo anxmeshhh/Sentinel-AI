@@ -41,7 +41,7 @@ def create_workspace(
     payload: WorkspaceCreate,
     session: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> Workspace:
+) -> WorkspaceOut:
     """The "Create Workspace" step of IA.md v2 §2.2 - the actual "make a new
     Discord server" action. Creator becomes Owner/Admin (Role.ORG_ADMIN, the
     closest existing role until the v2 role set replaces this one - see
@@ -54,7 +54,16 @@ def create_workspace(
     session.add(Membership(workspace_id=workspace.id, user_id=user.id, role=Role.ORG_ADMIN))
     session.commit()
     session.refresh(workspace)
-    return workspace
+
+    # Build the response explicitly rather than returning the ORM object.
+    # `role` lives on Membership, not Workspace, so returning the model
+    # raised a ResponseValidationError -> 500 on every single call, making
+    # it impossible to create a Group at all. The creator is ORG_ADMIN by
+    # definition of this endpoint, which is where the value comes from.
+    return WorkspaceOut(
+        id=workspace.id, name=workspace.name, slug=workspace.slug,
+        kind=workspace.kind.value, role=Role.ORG_ADMIN.value, is_demo=workspace.is_demo,
+    )
 
 
 @router.get("/{workspace_id}/members", response_model=list[WorkspaceMemberOut])

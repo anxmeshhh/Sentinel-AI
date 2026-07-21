@@ -8,7 +8,7 @@ from app.api.deps import get_current_user, get_db, require_workspace_membership
 from app.models.invite import WorkspaceInvite
 from app.models.team import Team
 from app.models.user import User
-from app.models.workspace import Membership, Role, ROLE_RANK, Workspace
+from app.models.workspace import Membership, Role, ROLE_RANK, Workspace, WorkspaceKind
 from app.schemas.invite import InviteAcceptResult, InviteCreate, InviteOut, InvitePreview
 from app.services.invites import accept_invite, get_invite_by_token, validate_invite
 
@@ -48,6 +48,26 @@ def _create_invite(
     return invite
 
 
+def _reject_if_personal(session: Session, workspace_id: uuid.UUID) -> None:
+    """A Personal workspace is single-occupancy by construction.
+
+    It holds the user's personal Connections - their own mailbox, calendar
+    and files. Admitting a second member would make those connections
+    assignable to a channel that person can read, so "invite someone to
+    Personal" is really "hand over my inbox". Nobody clicking Invite on
+    something labelled *Personal* is consenting to that, so the capability
+    is removed rather than warned about.
+
+    Sharing is what Group workspaces are for.
+    """
+    workspace = session.get(Workspace, workspace_id)
+    if workspace is not None and workspace.kind == WorkspaceKind.PERSONAL:
+        raise HTTPException(
+            status_code=400,
+            detail="Your Personal workspace is private to you and can't have other members. Create a Group to share with others.",
+        )
+
+
 @router.post("/workspaces/{workspace_id}/invites", response_model=InviteOut, status_code=201)
 def create_workspace_invite(
     workspace_id: uuid.UUID,
@@ -56,6 +76,7 @@ def create_workspace_invite(
     user: User = Depends(get_current_user),
 ) -> WorkspaceInvite:
     membership = require_workspace_membership(session, user, workspace_id)
+    _reject_if_personal(session, workspace_id)
     return _create_invite(session, workspace_id=workspace_id, team_id=None, payload=payload, user=user, caller_membership=membership)
 
 
@@ -70,6 +91,7 @@ def create_team_invite(
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")
     membership = require_workspace_membership(session, user, team.workspace_id)
+    _reject_if_personal(session, team.workspace_id)
     return _create_invite(session, workspace_id=team.workspace_id, team_id=team_id, payload=payload, user=user, caller_membership=membership)
 
 

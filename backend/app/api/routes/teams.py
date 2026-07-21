@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db, require_channel_role, require_workspace_membership, require_workspace_role
 from app.models.team import ChannelPrivacy, ChannelRole, Team, TeamMembership
 from app.models.user import User
-from app.models.workspace import Membership, Role, Workspace
+from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
 from app.schemas.team import MyTeamOut, TeamCreate, TeamMemberOut, TeamMemberRoleUpdate, TeamOut, TeamUpdate
 from app.services.channel_management import (
     ChannelConfigError,
@@ -189,6 +189,20 @@ def create_team(
     user: User = Depends(get_current_user),
 ) -> TeamOut:
     require_workspace_role(session, user, workspace_id, allowed=CHANNEL_CREATOR_ROLES)
+
+    # Channels are a sharing surface, and a Personal workspace holds the
+    # user's own mailbox/calendar/files. A channel there would let those
+    # personal Connections be assigned to it (the same-workspace check
+    # passes), which is only harmless while the workspace stays
+    # single-occupancy. Removing the surface is the durable fix rather than
+    # relying on that staying true.
+    workspace = session.get(Workspace, workspace_id)
+    if workspace is not None and workspace.kind == WorkspaceKind.PERSONAL:
+        raise HTTPException(
+            status_code=400,
+            detail="Channels live in Groups, not your Personal workspace. Create a Group to collaborate.",
+        )
+
     try:
         team = create_channel(
             session,

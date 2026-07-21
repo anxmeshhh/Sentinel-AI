@@ -4,6 +4,7 @@ import { api, ApiError } from "../../api/client";
 import type { MemberReadiness, TeamMember, WorkspaceMember } from "../../api/types";
 import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
 import { InviteModal } from "../InviteModal";
+import { useToast } from "../ui";
 import { LoadingBlock } from "../ui";
 
 /** Who is in this channel, and - for admins - how far along their setup is.
@@ -17,6 +18,7 @@ export function MembersModule({ teamId, isAdmin, channelName, workspaceId }: { t
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [inviting, setInviting] = useState(false);
+  const { toast } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -99,7 +101,7 @@ export function MembersModule({ teamId, isAdmin, channelName, workspaceId }: { t
                         });
                         await load();
                       } catch (e) {
-                        alert(e instanceof ApiError ? e.message : "Failed to update role");
+                        toast(e instanceof ApiError ? e.message : "Failed to update role", "error");
                       } finally {
                         setBusy(false);
                       }
@@ -116,7 +118,7 @@ export function MembersModule({ teamId, isAdmin, channelName, workspaceId }: { t
                         await api.delete(`/teams/${teamId}/members/${m.user_id}`);
                         await load();
                       } catch (e) {
-                        alert(e instanceof ApiError ? e.message : "Failed to remove member");
+                        toast(e instanceof ApiError ? e.message : "Failed to remove member", "error");
                       } finally {
                         setBusy(false);
                       }
@@ -154,6 +156,7 @@ function AddMemberPicker({
   const [open, setOpen] = useState(false);
   const [candidates, setCandidates] = useState<WorkspaceMember[]>([]);
   const [busy, setBusy] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!open) return;
@@ -193,7 +196,7 @@ function AddMemberPicker({
                   await onAdded();
                   setOpen(false);
                 } catch (e) {
-                  alert(e instanceof ApiError ? e.message : "Failed to add");
+                  toast(e instanceof ApiError ? e.message : "Failed to add", "error");
                 } finally {
                   setBusy(false);
                 }

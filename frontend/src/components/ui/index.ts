@@ -32,3 +32,4 @@ export type { IconName } from "./Icon";
 export { Tooltip } from "./Tooltip";
 export { LoadingBlock, Spinner } from "./Spinner";
 export { Skeleton, SkeletonCard, SkeletonRows, SkeletonText } from "./Skeleton";
+export { ToastProvider, useToast } from "./Toast";

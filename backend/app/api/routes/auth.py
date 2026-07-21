@@ -8,6 +8,7 @@ resolution/RBAC is IA.md v2 §8.2's next step, not bundled into this one.
 
 import uuid
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -20,6 +21,8 @@ from app.models.otp_code import OtpPurpose
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RequestOtpRequest, SignupRequest, TokenResponse, UserOut, VerifyOtpRequest
 from app.services import auth as auth_service
+
+logger = structlog.get_logger("sentinel.auth")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -90,6 +93,19 @@ def _redirect_with_token(user_id: uuid.UUID) -> RedirectResponse:
     return RedirectResponse(f"{settings.frontend_base_url}/auth/callback#token={token}")
 
 
+@router.get("/providers")
+def oauth_providers() -> dict:
+    """Which social sign-in options actually work right now.
+
+    Public and unauthenticated on purpose - the login page needs it before
+    anyone has a token. Exists because the login page previously hardcoded
+    "not configured yet in this environment", which stayed on screen long
+    after Google credentials were added and told users the working button
+    was broken.
+    """
+    return {"google": GOOGLE_CONFIGURED, "microsoft": MICROSOFT_CONFIGURED}
+
+
 @router.get("/google/login")
 async def google_login(request: Request):
     if not GOOGLE_CONFIGURED:
@@ -102,15 +118,26 @@ async def google_login(request: Request):
 async def google_callback(request: Request, session: Session = Depends(get_db)):
     if not GOOGLE_CONFIGURED:
         raise HTTPException(status_code=501, detail="Google sign-in is not configured yet")
-    token = await oauth.google.authorize_access_token(request)
-    userinfo = token.get("userinfo") or {}
-    user = auth_service.find_or_create_oauth_user(
-        session,
-        provider="google",
-        sub=userinfo["sub"],
-        email=userinfo["email"],
-        name=userinfo.get("name", userinfo["email"]),
-    )
+    # Any failure here (expired state, a denied consent screen, a
+    # provider hiccup) previously escaped as a raw JSON 500, stranding the
+    # user on an error page with no route back into the app. Sign-in
+    # failures are normal and recoverable, so they belong back at /login
+    # with a readable reason.
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        userinfo = token.get("userinfo") or {}
+        if not userinfo.get("sub") or not userinfo.get("email"):
+            raise ValueError("Google did not return an account identity")
+        user = auth_service.find_or_create_oauth_user(
+            session,
+            provider="google",
+            sub=userinfo["sub"],
+            email=userinfo["email"],
+            name=userinfo.get("name", userinfo["email"]),
+        )
+    except Exception as exc:
+        logger.warning("google_signin_failed", error=str(exc))
+        return RedirectResponse(f"{get_settings().frontend_base_url}/login?auth_error=google")
     return _redirect_with_token(user.id)
 
 

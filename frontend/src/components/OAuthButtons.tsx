@@ -1,6 +1,37 @@
+import { useEffect, useState } from "react";
+
+import { api } from "../api/client";
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
+interface Providers {
+  google: boolean;
+  microsoft: boolean;
+}
+
+/** Social sign-in options, shown only when they genuinely work.
+ *
+ * This used to render both buttons unconditionally under the hardcoded
+ * line "Not configured yet in this environment" - which stayed on screen
+ * long after Google credentials were added, telling users the working
+ * button was broken. Google sign-in had consequently never once been
+ * attempted against this backend. Availability now comes from the server
+ * (GET /auth/providers) rather than being asserted in the markup.
+ */
 export function OAuthButtons() {
+  const [providers, setProviders] = useState<Providers | null>(null);
+
+  useEffect(() => {
+    api
+      .get<Providers>("/auth/providers")
+      // If the check itself fails, show nothing rather than offering a
+      // button that may not work - the same honesty in the other direction.
+      .then(setProviders)
+      .catch(() => setProviders({ google: false, microsoft: false }));
+  }, []);
+
+  if (!providers || (!providers.google && !providers.microsoft)) return null;
+
   return (
     <div className="mt-6">
       <div className="mb-4 flex items-center gap-3">
@@ -9,24 +40,31 @@ export function OAuthButtons() {
         <div className="h-px flex-1 bg-border" />
       </div>
       <div className="flex flex-col gap-2.5">
-        <a
-          href={`${API_BASE}/auth/google/login`}
-          className="flex items-center justify-center gap-2.5 border border-border py-2.5 text-[13px] font-medium text-ink transition-colors hover:border-ink"
-        >
-          <GoogleMark />
-          Google
-        </a>
-        <a
-          href={`${API_BASE}/auth/microsoft/login`}
-          className="flex items-center justify-center gap-2.5 border border-border py-2.5 text-[13px] font-medium text-ink transition-colors hover:border-ink"
-        >
-          <MicrosoftMark />
-          Microsoft
-        </a>
+        {providers.google && (
+          <a
+            href={`${API_BASE}/auth/google/login`}
+            className="flex items-center justify-center gap-2.5 border border-border py-2.5 text-[13px] font-medium text-ink transition-colors hover:border-ink"
+          >
+            <GoogleMark />
+            Google
+          </a>
+        )}
+        {providers.microsoft && (
+          <a
+            href={`${API_BASE}/auth/microsoft/login`}
+            className="flex items-center justify-center gap-2.5 border border-border py-2.5 text-[13px] font-medium text-ink transition-colors hover:border-ink"
+          >
+            <MicrosoftMark />
+            Microsoft
+          </a>
+        )}
       </div>
+      {/* Naming the boundary here heads off a real confusion: signing in
+          with Google and connecting Gmail are separate OAuth flows with
+          different scopes, and users reasonably assume one implies the other. */}
       <p className="mt-3 text-center text-[11.5px] text-ink-faint">
-        Not configured yet in this environment — these activate once Google/Microsoft credentials
-        are added.
+        Signing in with Google creates your account — it doesn't give Sentinel access to your email.
+        You choose what to connect later.
       </p>
     </div>
   );

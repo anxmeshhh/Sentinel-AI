@@ -102,13 +102,45 @@ h3 {
            text-ink-faint transition-colors hover:text-ink;
   }
 
-  /* The card from Resend: generous padding, soft radius, hairline border,
-     and a hover lift that signals it's a destination. */
+  /* ---- The card ------------------------------------------------------
+     One treatment, used everywhere. A bordered box whose interior is the
+     page's own black - the border defines it, not a fill. That is what
+     keeps a grid of them looking calm instead of like a stack of trays.
+
+     Padding is deliberately generous (24/32px): the "spaceful" quality in
+     the reference comes almost entirely from interior padding and the gap
+     between cards, not from anything decorative. */
   .card {
-    @apply rounded-lg border border-border bg-surface p-5 shadow-card sm:p-6;
+    @apply rounded-md border border-border bg-transparent p-6 sm:p-7;
   }
   .card-interactive {
-    @apply card transition-all duration-200 ease-out hover:border-border-strong hover:shadow-raised;
+    @apply card cursor-pointer text-left transition-colors duration-200 ease-out
+           hover:border-border-strong hover:bg-surface/60;
+  }
+  /* Cards sit apart, each with its own full border - not collapsed onto
+     shared hairlines. */
+  .card-grid {
+    @apply grid gap-4 sm:gap-5;
+  }
+
+  /* ---- Section rhythm -------------------------------------------------
+     Sections are separated by a large, consistent interval so the page
+     breathes the same way everywhere. Applied as a class rather than
+     per-page margins, which is how the spacing drifted before. */
+  .section {
+    @apply mb-12 sm:mb-16;
+  }
+  /* Asymmetric header: heading left, supporting copy right. Stacks on
+     mobile, where two columns would leave both too narrow to read. */
+  .section-head {
+    @apply mb-7 grid gap-x-10 gap-y-3 sm:mb-9 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)];
+  }
+  .section-head h1,
+  .section-head h2 {
+    @apply text-h2 font-semibold text-ink;
+  }
+  .section-head p {
+    @apply max-w-[52ch] text-body text-ink-dim lg:pt-1;
   }
 
   /* Status pill: colour carries the meaning, so the shape stays neutral. */

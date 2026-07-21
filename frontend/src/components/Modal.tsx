@@ -4,7 +4,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 px-4" onClick={onClose}>
       <div
-        className="w-full max-w-sm border border-border bg-surface p-6"
+        className="w-full max-w-md rounded-lg border border-border bg-surface p-6 shadow-overlay sm:p-7"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-center justify-between">

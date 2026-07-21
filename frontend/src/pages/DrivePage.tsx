@@ -80,16 +80,18 @@ export function DrivePage() {
         back={{ to: "/connections/google", label: "Google Workspace" }}
         crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Drive" }]}
       />
-      <h1 className="mb-1 text-h2 font-semibold text-balance">Drive</h1>
-      <p className="mb-6 text-body text-ink-dim">
-        File name, type, and modified time only — opening a file always goes to Drive itself.
+      <div className="section-head">
+        <h1>Drive</h1>
+        <p>
+          File name, type, and modified time only — opening a file always goes to Drive itself.
         Asking about a file's content fetches it live, never stored.
-      </p>
+        </p>
+      </div>
 
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="min-w-0 flex-1">
           {analytics && (
-            <div className="mb-6 rounded-lg border border-border bg-surface shadow-card">
+            <div className="mb-6 card">
               <button
                 onClick={() => setAnalyticsOpen((o) => !o)}
                 className="flex w-full items-center justify-between p-3.5 text-left"
@@ -147,11 +149,11 @@ export function DrivePage() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && search()}
               placeholder="Search Drive by name or content…"
-              className="flex-1 rounded-lg border border-border bg-surface shadow-card px-3.5 py-2.5 text-body outline-none focus:border-accent"
+              className="flex-1 card px-3.5 py-2.5 text-body outline-none focus:border-accent"
             />
             <button
               onClick={search}
-              className="rounded-lg border border-border bg-surface shadow-card px-4 py-2.5 text-small font-semibold text-ink-dim hover:border-accent hover:text-ink"
+              className="card px-4 py-2.5 text-small font-semibold text-ink-dim hover:border-accent hover:text-ink"
             >
               Search
             </button>
@@ -233,7 +235,7 @@ export function DrivePage() {
 
         {selectedFile && (
           <div className="w-full flex-none lg:sticky lg:top-6 lg:h-[calc(100vh-8rem)] lg:w-[380px]">
-            <div className="flex h-full flex-col rounded-lg border border-border bg-surface shadow-card">
+            <div className="flex h-full flex-col card">
               <div className="flex items-center justify-between border-b border-border p-3.5">
                 <div className="min-w-0">
                   <div className="mb-0.5 flex items-center gap-1.5 text-caption text-ink-faint">

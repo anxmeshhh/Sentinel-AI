@@ -75,16 +75,16 @@ export function ChannelWorkspacePage() {
   const definition = CHANNEL_MODULES.find((m) => m.key === activeModule);
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div className="w-full">
       {path && <ChannelBreadcrumb path={path} />}
 
-      <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+      <div className="mb-7 flex flex-col gap-4 sm:mb-9 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
         <div>
           <h1 className="text-h2 font-semibold text-balance">
             {team.icon ? `${team.icon} ` : "#"}
             {team.name}
           </h1>
-          {team.description && <p className="mt-1 text-body text-ink-dim">{team.description}</p>}
+          {team.description && <p className="mt-2 max-w-[54ch] text-body text-ink-dim">{team.description}</p>}
         </div>
         <div className="flex items-center gap-2">
           {team.privacy !== "public" && (

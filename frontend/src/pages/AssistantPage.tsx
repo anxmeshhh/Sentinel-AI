@@ -77,7 +77,7 @@ export function AssistantPage() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
           placeholder="Ask a question about your workspace…"
-          className="flex-1 rounded-lg border border-border bg-surface shadow-card px-4 py-3 text-body outline-none focus:border-accent"
+          className="flex-1 card px-4 py-3 text-body outline-none focus:border-accent"
         />
         <button
           onClick={send}

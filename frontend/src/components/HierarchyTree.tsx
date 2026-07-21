@@ -37,7 +37,7 @@ export function HierarchyTree() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-none border-b border-border px-4 py-4">
+      <div className="flex-none border-b border-border px-4 py-5">
         <div className="truncate text-lead font-semibold text-ink" title={active.name}>
           {active.name.trim()}
         </div>
@@ -56,7 +56,7 @@ export function HierarchyTree() {
         <InviteModal scope={{ type: "workspace", id: active.id }} label={active.name.trim()} onClose={() => setInviting(false)} />
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
         {loading && <div className="mx-2 h-6 animate-pulse rounded bg-surface-2" />}
 
         {!loading && tree.length === 0 && (

@@ -14,12 +14,14 @@ export function SettingsPage() {
   return (
     <div className="max-w-2xl">
       <BackNav back={{ to: "/", label: "Dashboard" }} />
-      <h1 className="mb-1 text-h2 font-semibold text-balance">Agents</h1>
-      <p className="mb-7 text-body text-ink-dim">
-        Which agents are allowed to run. Connections live on the Dashboard now.
-      </p>
+      <div className="section-head">
+        <h1>Agents</h1>
+        <p>
+          Which agents are allowed to run. Connections live on the Dashboard now.
+        </p>
+      </div>
 
-      <div className="rounded-lg border border-border bg-surface shadow-card">
+      <div className="card">
         {AGENTS.map((agent) => (
           <div key={agent.name} className="flex items-center gap-3.5 border-b border-border p-3 last:border-b-0">
             <div>

@@ -84,11 +84,13 @@ export function MeetPage() {
         back={{ to: "/connections/google", label: "Google Workspace" }}
         crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Meet" }]}
       />
-      <h1 className="mb-1 text-h2 font-semibold text-balance">Meet</h1>
-      <p className="mb-6 text-body text-ink-dim">
-        Meeting history, built from your Calendar events — duration and attendees reflect what was
+      <div className="section-head">
+        <h1>Meet</h1>
+        <p>
+          Meeting history, built from your Calendar events — duration and attendees reflect what was
         scheduled, not real call attendance (Google doesn't expose that for personal accounts).
-      </p>
+        </p>
+      </div>
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1.5">
@@ -110,9 +112,9 @@ export function MeetPage() {
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && load()}
             placeholder="Search meetings…"
-            className="rounded-lg border border-border bg-surface shadow-card px-3 py-1.5 text-small outline-none focus:border-accent"
+            className="card px-3 py-1.5 text-small outline-none focus:border-accent"
           />
-          <button onClick={load} className="rounded-lg border border-border bg-surface shadow-card px-3 py-1.5 text-caption font-semibold text-ink-dim hover:border-accent hover:text-ink">
+          <button onClick={load} className="card px-3 py-1.5 text-caption font-semibold text-ink-dim hover:border-accent hover:text-ink">
             Search
           </button>
         </div>
@@ -125,7 +127,7 @@ export function MeetPage() {
           No {range} meetings.
         </div>
       ) : (
-        <div className="rounded-lg border border-border bg-surface shadow-card">
+        <div className="card">
           {meetings.map((m) => {
             const meta = STATUS_META[m.status];
             return (

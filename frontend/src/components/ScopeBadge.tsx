@@ -49,7 +49,7 @@ export function ScopeBadge({ scope, workspaceName, className = "" }: { scope: Sc
  * opening settings or hovering anything. */
 export function ScopeNotice({ scope, workspaceName }: { scope: Scope; workspaceName?: string }) {
   return (
-    <div className="mb-5 rounded-lg border border-border bg-surface shadow-card p-3.5">
+    <div className="mb-5 card p-3.5">
       <ScopeBadge scope={scope} workspaceName={workspaceName} />
       <p className="mt-2 text-small leading-relaxed text-ink-dim">{scopeExplanation(scope, workspaceName)}</p>
     </div>

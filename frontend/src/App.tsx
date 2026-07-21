@@ -76,7 +76,9 @@ function AppShell({ children }: { children: ReactNode }) {
           </svg>
           Navigate
         </button>
-        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 pb-20 sm:px-8 sm:py-8 md:px-12">{children}</main>
+        <main className="min-w-0 flex-1 overflow-y-auto px-5 py-8 pb-24 sm:px-8 sm:py-12 md:px-12 lg:px-16">
+          <div className="mx-auto w-full max-w-6xl">{children}</div>
+        </main>
       </div>
 
       {creatingWorkspace && (

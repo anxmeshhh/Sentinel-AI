@@ -176,10 +176,12 @@ export function MailPage() {
         back={{ to: "/connections/google", label: "Google Workspace" }}
         crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Gmail" }]}
       />
-      <h1 className="mb-1 text-h2 font-semibold text-balance">Mail</h1>
-      <p className="mb-5 text-body text-ink-dim">
-        Click an email to read it — original content only, no AI call. Summarize is optional, on demand.
-      </p>
+      <div className="section-head">
+        <h1>Mail</h1>
+        <p>
+          Click an email to read it — original content only, no AI call. Summarize is optional, on demand.
+        </p>
+      </div>
 
       <div className="flex gap-4" style={{ height: "calc(100vh - 12rem)" }}>
         <div className={`w-full flex-none overflow-y-auto lg:block lg:w-[360px] ${mobileReaderOpen ? "hidden" : "block"}`}>
@@ -189,11 +191,11 @@ export function MailPage() {
               onChange={(e) => setAskInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAsk()}
               placeholder="Ask: what's in starred, top 10…"
-              className="flex-1 rounded-lg border border-border bg-surface shadow-card px-3 py-2 text-small outline-none focus:border-accent"
+              className="flex-1 card px-3 py-2 text-small outline-none focus:border-accent"
             />
             <button
               onClick={handleAsk}
-              className="rounded-lg border border-border bg-surface shadow-card px-3 py-2 text-caption font-semibold text-ink-dim hover:border-accent hover:text-ink"
+              className="card px-3 py-2 text-caption font-semibold text-ink-dim hover:border-accent hover:text-ink"
             >
               Ask
             </button>
@@ -224,7 +226,7 @@ export function MailPage() {
               Nothing here.
             </div>
           ) : (
-            <div className="rounded-lg border border-border bg-surface shadow-card">
+            <div className="card">
               {threads.map((group) => {
                 const latest = group.messages[0];
                 const isUnread = group.messages.some((m) => m.is_unread);
@@ -264,7 +266,7 @@ export function MailPage() {
           )}
         </div>
 
-        <div className={`min-w-0 flex-1 overflow-y-auto rounded-lg border border-border bg-surface shadow-card lg:block ${mobileReaderOpen ? "block" : "hidden"}`}>
+        <div className={`min-w-0 flex-1 overflow-y-auto card lg:block ${mobileReaderOpen ? "block" : "hidden"}`}>
           {!selectedGroup || !selectedItem ? (
             <div className="flex h-full items-center justify-center p-8 text-center text-body text-ink-faint">
               Select an email to read it.

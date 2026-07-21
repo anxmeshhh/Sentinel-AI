@@ -18,10 +18,12 @@ export function HistoryPage() {
   return (
     <div>
       <BackNav back={{ to: "/", label: "Dashboard" }} />
-      <h1 className="mb-1 text-h2 font-semibold text-balance">Brief History</h1>
-      <p className="mb-5 text-body text-ink-dim">
-        Every brief Sentinel has generated for this repository.
-      </p>
+      <div className="section-head">
+        <h1>Brief History</h1>
+        <p>
+          Every brief Sentinel has generated for this repository.
+        </p>
+      </div>
 
       {error && <p className="text-crit">{error}</p>}
 
@@ -30,7 +32,7 @@ export function HistoryPage() {
           No briefs generated yet.
         </div>
       ) : (
-        <div className="rounded-lg border border-border bg-surface shadow-card">
+        <div className="card">
           {briefs.map((b) => (
             <div key={b.id} className="grid grid-cols-[92px_1fr] gap-3.5 border-b border-border p-3.5 last:border-b-0">
               <div className="text-small text-ink-faint">

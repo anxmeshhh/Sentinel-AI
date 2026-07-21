@@ -78,7 +78,7 @@ export function AttentionStrip() {
       ) : (
         <div className="flex flex-col gap-2">
           {items.slice(0, 5).map((item) => (
-            <div key={item.id} className="flex items-start gap-3 rounded-lg border border-border bg-surface shadow-card p-3">
+            <div key={item.id} className="flex items-start gap-3 card p-3">
               <span className="mt-0.5 flex-none text-title">{attentionIcon(item)}</span>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-body font-semibold text-ink">{item.title}</div>

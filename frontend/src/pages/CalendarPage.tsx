@@ -159,7 +159,7 @@ export function CalendarPage() {
       />
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="mb-1 text-h2 font-semibold text-balance">Calendar</h1>
+          <h1 className="mb-1.5 text-h2 font-semibold text-balance">Calendar</h1>
           <p className="text-body text-ink-dim">
             Your events, plus Indian holidays &amp; festivals from Sentinel's calendar layer — clearly separate from your own.
           </p>
@@ -173,7 +173,7 @@ export function CalendarPage() {
       </div>
 
       {scheduleOpen && (
-        <div className="mb-6 rounded-lg border border-border bg-surface shadow-card">
+        <div className="mb-6 card">
           <div className="flex gap-1.5 border-b border-border p-2.5">
             {(["manual", "ai"] as ScheduleTab[]).map((t) => (
               <button
@@ -359,7 +359,7 @@ function AgendaList({ events, holidays, emptyLabel }: { events: CalendarEvent[];
     );
   }
   return (
-    <div className="rounded-lg border border-border bg-surface shadow-card">
+    <div className="card">
       {holidays.map((h) => {
         const meta = CATEGORY_META[h.category];
         return (

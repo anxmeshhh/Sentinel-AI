@@ -184,7 +184,7 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
       )}
 
       {connectedCount > 0 && (
-        <div className="rounded-lg border border-border bg-surface shadow-card">
+        <div className="card">
           <GoogleAICommand />
         </div>
       )}
@@ -259,7 +259,7 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
         </div>
       )}
 
-      <form onSubmit={handleConnect} className="rounded-lg border border-border bg-surface shadow-card p-4">
+      <form onSubmit={handleConnect} className="card p-4">
         <div className="mb-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           <input
             required

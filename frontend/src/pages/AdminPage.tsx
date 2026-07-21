@@ -57,7 +57,7 @@ export function AdminPage() {
       <BackNav back={{ to: "/", label: "Dashboard" }} />
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="mb-1 text-h2 font-semibold text-balance">Admin &amp; Observability</h1>
+          <h1 className="mb-1.5 text-h2 font-semibold text-balance">Admin &amp; Observability</h1>
           <p className="text-body text-ink-dim">
             Operator view — agent run history, system counts, and live logs. Not part of the
             customer-facing product.
@@ -70,7 +70,7 @@ export function AdminPage() {
           </label>
           <button
             onClick={loadAll}
-            className="rounded-lg border border-border bg-surface shadow-card px-3 py-1.5 text-caption text-ink-dim hover:border-accent hover:text-ink"
+            className="card px-3 py-1.5 text-caption text-ink-dim hover:border-accent hover:text-ink"
           >
             ↻ REFRESH
           </button>
@@ -109,7 +109,7 @@ function StatsRow({ stats }: { stats: SystemStats }) {
   return (
     <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-7">
       {tiles.map((t) => (
-        <div key={t.label} className="rounded-lg border border-border bg-surface shadow-card p-3">
+        <div key={t.label} className="card p-3">
           <div className="label-sub">{t.label}</div>
           <div className={`tab-nums font-mono text-h3 font-bold ${t.cls ?? ""}`}>{t.value}</div>
         </div>
@@ -123,7 +123,7 @@ function RunsTable({ runs }: { runs: AgentRun[] }) {
     return <p className="text-body text-ink-dim">No agent runs yet.</p>;
   }
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-surface shadow-card">
+    <div className="overflow-x-auto card">
       <table className="w-full min-w-[720px] border-collapse text-small">
         <thead>
           <tr>

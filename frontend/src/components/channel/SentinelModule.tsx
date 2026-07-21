@@ -34,7 +34,7 @@ export function SentinelModule({
 
   return (
     <div>
-      <div className="rounded-lg border border-border bg-surface shadow-card">
+      <div className="card">
         <GoogleAICommand
           endpointBase={`/teams/${teamId}/ai`}
           placeholder={`Ask Sentinel about #${channelName}…`}
@@ -52,7 +52,7 @@ export function SentinelModule({
           <div className="label-sub mb-2">Recent activity</div>
           <div className="flex flex-col gap-2">
             {history.slice(0, 10).map((h) => (
-              <div key={h.id} className="rounded-lg border border-border bg-surface shadow-card p-3 text-small">
+              <div key={h.id} className="card p-3 text-small">
                 <div className="mb-1 flex items-center justify-between text-caption text-ink-faint">
                   <span>{h.user_name}</span>
                   <span>{new Date(h.created_at).toLocaleString()}</span>

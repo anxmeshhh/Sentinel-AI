@@ -36,7 +36,7 @@ export function GroupCards({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter groups…"
-            className="w-40 rounded-lg border border-border bg-surface shadow-card px-2.5 py-1 text-small outline-none focus:border-accent"
+            className="w-40 card px-2.5 py-1 text-small outline-none focus:border-accent"
           />
         )}
       </div>
@@ -50,13 +50,13 @@ export function GroupCards({
           No groups match "{query}".
         </div>
       ) : (
-        <div className="rule-grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="card-grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((w) => (
             <button
               key={w.id}
               onClick={() => onSelect(w.id)}
-              className={`text-left transition-colors duration-200 ${
-                w.id === activeId ? "bg-surface-2" : "hover:bg-surface/70"
+              className={`card-interactive ${
+                w.id === activeId ? "border-ink-faint bg-surface/60" : ""
               }`}
             >
               <div className="mb-3 flex items-center gap-2.5">

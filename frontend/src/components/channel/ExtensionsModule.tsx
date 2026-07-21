@@ -64,7 +64,7 @@ export function ExtensionsModule({
   return (
     <div className="flex flex-col gap-6">
       {total > 0 && (
-        <div className="rounded-lg border border-border bg-surface shadow-card px-4 py-3">
+        <div className="card px-4 py-3">
           <div className="flex items-center justify-between">
             <span className="text-small font-semibold text-ink">Your channel setup</span>
             <span className={`font-mono text-caption ${ready === total ? "text-good" : "text-watch"}`}>
@@ -147,9 +147,9 @@ function RequirementsSection({
           None yet.{isAdmin ? " Add one below and every member will be prompted to connect their own account." : ""}
         </p>
       ) : (
-        <div className="rule-grid sm:grid-cols-2">
+        <div className="card-grid sm:grid-cols-2">
           {requirements.map((r) => (
-            <div key={r.id}>
+            <div key={r.id} className="card">
               <div className="flex items-center justify-between">
                 <span className="text-small font-semibold text-ink">{PROVIDER_LABEL[r.provider] ?? r.provider}</span>
                 <div className="flex items-center gap-2">

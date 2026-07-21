@@ -15,7 +15,7 @@ export function BackNav({ back, crumbs }: { back: { to: string; label: string };
       <div className="flex flex-wrap items-center gap-2">
         <Link
           to={back.to}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface shadow-card px-3 py-1.5 text-small font-semibold text-ink-dim transition-colors hover:border-accent hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="inline-flex items-center gap-1.5 card px-3 py-1.5 text-small font-semibold text-ink-dim transition-colors hover:border-accent hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           <span aria-hidden="true">&larr;</span> {back.label}
         </Link>

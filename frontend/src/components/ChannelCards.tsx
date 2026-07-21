@@ -51,7 +51,7 @@ export function ChannelCards({ onSelectWorkspace }: { onSelectWorkspace: (worksp
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter channels…"
-            className="w-40 rounded-lg border border-border bg-surface shadow-card px-2.5 py-1 text-small outline-none focus:border-accent"
+            className="w-40 card px-2.5 py-1 text-small outline-none focus:border-accent"
           />
         )}
       </div>
@@ -67,13 +67,13 @@ export function ChannelCards({ onSelectWorkspace }: { onSelectWorkspace: (worksp
           No channels match "{query}".
         </div>
       ) : (
-        <div className="rule-grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="card-grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((t) => (
             <button
               key={t.id}
               onClick={() => handleSelect(t)}
-              className={`text-left transition-colors duration-200 ${
-                selected?.id === t.id ? "bg-surface-2" : "hover:bg-surface/70"
+              className={`card-interactive ${
+                selected?.id === t.id ? "border-ink-faint bg-surface/60" : ""
               }`}
             >
               <div className="mb-2 flex items-center gap-2">
@@ -106,7 +106,7 @@ function ChannelDetailPanel({ team, onClose, onLeave }: { team: MyTeam; onClose:
   const [inviteOpen, setInviteOpen] = useState(false);
 
   return (
-    <div className="mt-3 rounded-lg border border-border bg-surface shadow-card p-4">
+    <div className="mt-3 card p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-lead font-semibold text-ink">#{team.name}</div>

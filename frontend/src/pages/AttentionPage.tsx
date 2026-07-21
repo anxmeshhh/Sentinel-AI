@@ -139,7 +139,7 @@ export function AttentionPage() {
         <button
           onClick={refresh}
           disabled={refreshing}
-          className="rounded-lg border border-border bg-surface shadow-card px-3 py-1.5 text-caption text-ink-dim hover:border-accent hover:text-ink disabled:opacity-50"
+          className="card px-3 py-1.5 text-caption text-ink-dim hover:border-accent hover:text-ink disabled:opacity-50"
         >
           {refreshing ? "Checking…" : "↻ Re-check now"}
         </button>
@@ -154,14 +154,14 @@ export function AttentionPage() {
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
           placeholder="Add a reminder — e.g. Follow up with the design team"
-          className="flex-1 rounded-lg border border-border bg-surface shadow-card px-3.5 py-2 text-body outline-none focus:border-accent"
+          className="flex-1 card px-3.5 py-2 text-body outline-none focus:border-accent"
         />
         <input
           type="datetime-local"
           value={newDue}
           onChange={(e) => setNewDue(e.target.value)}
           aria-label="Due (optional)"
-          className="rounded-lg border border-border bg-surface shadow-card px-2.5 py-2 text-small text-ink-dim outline-none focus:border-accent"
+          className="card px-2.5 py-2 text-small text-ink-dim outline-none focus:border-accent"
         />
         <button type="submit" disabled={!newTitle.trim()} className="btn-primary">
           Add
@@ -253,7 +253,7 @@ export function AttentionPage() {
                             Snooze &#9662;
                           </button>
                           {snoozeMenuFor === item.id && (
-                            <span className="absolute left-0 top-5 z-10 flex flex-col rounded-lg border border-border bg-surface shadow-card shadow-lg">
+                            <span className="absolute left-0 top-5 z-10 flex flex-col rounded-md border border-border bg-surface-2 p-1 shadow-overlay">
                               {SNOOZE_OPTIONS.map((o) => (
                                 <button
                                   key={o.label}
@@ -329,7 +329,7 @@ export function AttentionPage() {
 
         {askItem && (
           <div className="w-full flex-none lg:sticky lg:top-6 lg:w-[380px]">
-            <div className="rounded-lg border border-border bg-surface shadow-card">
+            <div className="card">
               <div className="flex items-center justify-between border-b border-border p-3.5">
                 <div className="min-w-0">
                   <div className="text-caption text-ink-faint">Investigating</div>

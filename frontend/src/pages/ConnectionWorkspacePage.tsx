@@ -5,7 +5,10 @@ import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Connection } from "../api/types";
 import { BackNav } from "../components/BackNav";
+import { ConnectScopeDialog } from "../components/ConnectScopeDialog";
 import { GoogleAICommand } from "../components/GoogleAICommand";
+import { ScopeNotice, scopeOf } from "../components/ScopeBadge";
+import { useWorkspace } from "../context/WorkspaceContext";
 import { CalendarIcon, DriveIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
 import { ServiceCard } from "../components/ServiceCard";
 
@@ -21,6 +24,7 @@ const PROVIDER_META: Record<string, { label: string; icon: ReactNode }> = {
 
 export function ConnectionWorkspacePage() {
   const { provider = "" } = useParams<{ provider: string }>();
+  const { active } = useWorkspace();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -46,10 +50,14 @@ export function ConnectionWorkspacePage() {
         </div>
       ) : (
         <>
-          <div className="mb-6 flex items-center gap-3">
+          <div className="mb-4 flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-md bg-surface-2">{meta.icon}</div>
             <h1 className="text-xl font-semibold text-balance">{meta.label}</h1>
           </div>
+
+          {/* Who can use anything connected here - stated up front, not
+              hidden behind settings or a tooltip. */}
+          <ScopeNotice scope={scopeOf(active)} workspaceName={active?.name} />
 
           {loading ? (
             <div className="text-ink-dim">Loading&hellip;</div>
@@ -67,7 +75,11 @@ export function ConnectionWorkspacePage() {
 }
 
 function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]; onChanged: () => void }) {
+  const { active } = useWorkspace();
   const [connecting, setConnecting] = useState(false);
+  // The disclosure gates the OAuth redirect - the user sees the destination
+  // in Sentinel's words before leaving for Google's consent screen.
+  const [showScopeDialog, setShowScopeDialog] = useState(false);
   const gmail = connections.find((c) => c.provider === "gmail");
   const googleCalendar = connections.find((c) => c.provider === "google_calendar");
   const googleDrive = connections.find((c) => c.provider === "google_drive");
@@ -137,7 +149,7 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <button
-          onClick={handleConnect}
+          onClick={() => setShowScopeDialog(true)}
           disabled={connecting}
           className="rounded-md bg-accent px-3.5 py-1.5 font-mono text-[11.5px] font-bold text-ground disabled:opacity-50"
         >
@@ -175,6 +187,25 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
         <div className="rounded-md border border-border bg-surface">
           <GoogleAICommand />
         </div>
+      )}
+
+      {showScopeDialog && (
+        <ConnectScopeDialog
+          providerName="Google"
+          scope={scopeOf(active)}
+          workspaceName={active?.name}
+          services={[
+            "Gmail — subjects, senders and dates (message bodies are only read when you ask)",
+            "Calendar — events, times and attendees",
+            "Drive — file names and types (contents only when you ask)",
+          ]}
+          busy={connecting}
+          onCancel={() => setShowScopeDialog(false)}
+          onConfirm={() => {
+            setShowScopeDialog(false);
+            void handleConnect();
+          }}
+        />
       )}
     </div>
   );

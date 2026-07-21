@@ -138,12 +138,31 @@ export function ChannelWorkspacePage() {
               {isAdmin ? " Assign one from the panel to start using Channel AI here." : " Ask a Channel Admin to assign one."}
             </div>
           ) : (
-            <div className="mb-4 flex flex-wrap gap-1.5">
-              {connections.map((c) => (
-                <span key={c.id} className="rounded-full border border-border px-2.5 py-1 font-mono text-[10.5px] text-ink-faint">
-                  {c.provider} · {c.label}
-                </span>
-              ))}
+            /* What Sentinel is allowed to see here, in plain terms - so a
+               member can answer "what can the AI read?" without needing to
+               understand connections, scopes or OAuth. */
+            <div className="mb-4 rounded-md border border-border bg-surface p-3.5">
+              <div className="mb-2 font-mono text-[10.5px] uppercase tracking-wide text-ink-dim">This channel can access</div>
+              <div className="flex flex-col gap-1.5">
+                {connections.map((c) => (
+                  <div key={c.id} className="text-[12.5px]">
+                    <span className="text-ink">{c.label}</span>
+                    <span className="ml-1.5 font-mono text-[10.5px] text-ink-faint">{c.provider}</span>
+                    {c.resources.length > 0 ? (
+                      <div className="mt-0.5 pl-3 text-[11.5px] text-ink-dim">
+                        {c.resources.map((r) => (
+                          <div key={r.id}>→ {r.resource_label}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-0.5 pl-3 text-[11.5px] text-ink-faint">→ no specific resources authorized yet</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2.5 text-[11px] leading-relaxed text-ink-faint">
+                Sentinel can only use the connections and resources authorized for this channel — nothing else from the workspace.
+              </p>
             </div>
           )}
 
@@ -278,7 +297,11 @@ function ConnectionsTab({
     }
   }
 
-  async function unassign(channelConnectionId: string) {
+  async function unassign(channelConnectionId: string, label: string) {
+    // Removing access is consequential and easy to do by accident, so the
+    // effect is stated in terms of what Sentinel will lose, not "are you
+    // sure?".
+    if (!window.confirm(`Remove ${label} from this channel?\n\nSentinel will no longer be able to use it or any of its authorized resources here.`)) return;
     setBusy(true);
     try {
       await api.delete(`/teams/${teamId}/connections/${channelConnectionId}`);
@@ -324,7 +347,7 @@ function ConnectionsTab({
               {c.provider} · {c.label}
             </span>
             {isAdmin && (
-              <button onClick={() => unassign(c.id)} disabled={busy} className="text-[10.5px] text-ink-faint underline hover:text-crit">
+              <button onClick={() => unassign(c.id, c.label)} disabled={busy} className="text-[10.5px] text-ink-faint underline hover:text-crit">
                 Remove
               </button>
             )}
@@ -380,6 +403,10 @@ function ConnectionsTab({
             </button>
           ) : (
             <div className="rounded-md border border-dashed border-border p-2.5">
+              <p className="mb-2 text-[10.5px] leading-relaxed text-ink-faint">
+                Adding a connection lets Sentinel use it in this channel. It still can't read anything until you
+                allow-list specific resources below.
+              </p>
               {assignable.length === 0 ? (
                 <p className="text-[11px] text-ink-faint">No more workspace connections available to assign.</p>
               ) : (

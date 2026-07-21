@@ -151,6 +151,16 @@ def delete_channel(session: Session, team: Team) -> None:
         session.delete(channel_connection)  # ORM-cascades to its allow-listed resources
     session.query(TeamMembership).filter(TeamMembership.team_id == team.id).delete()
     session.query(WorkspaceInvite).filter(WorkspaceInvite.team_id == team.id).delete()
+
+    # Force the dependent deletes to hit the database before the parent.
+    # There is no relationship() between Team and ChannelConnection - only a
+    # bare FK column - so SQLAlchemy's unit of work doesn't know they're
+    # ordered and can emit `DELETE FROM teams` first, which MySQL rejects.
+    # Confirmed real: deleting a channel that had a connection assigned
+    # failed with a foreign-key violation on MySQL while passing in tests,
+    # because SQLite doesn't enforce foreign keys unless asked to.
+    session.flush()
+
     session.delete(team)
     session.commit()
 

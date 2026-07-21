@@ -8,11 +8,15 @@ import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState, AttentionType
+from app.models.connection import Connection
+from app.models.signal import Signal, SignalType
 from app.models.user import User
+from app.services.mail_signals import noise_reason, sender_counts
 from app.schemas.attention import AttentionItemOut, AttentionStateUpdate, CalendarPlanOut, ManualReminderCreate
 from app.services.attention_engine import list_attention, refresh_attention
 from app.services.catchup import build_catchup
@@ -46,6 +50,57 @@ def get_attention(
 ) -> list[AttentionItemOut]:
     items = list_attention(session, workspace_id, states=_parse_states(state))
     return [_to_out(i) for i in items]
+
+
+@router.get("/context")
+def attention_context(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+) -> dict:
+    """Why the attention list looks the way it does.
+
+    An empty feed has three completely different causes - nothing is
+    connected, something is connected but hasn't synced yet, or everything
+    synced and genuinely nothing needs you - and they call for three
+    different responses from the user. Showing one blank message for all
+    three reads as "broken", which is exactly the impression an attention
+    product cannot afford.
+
+    Pure counts, no LLM, no provider calls.
+    """
+    connections = session.execute(
+        select(Connection).where(Connection.workspace_id == workspace_id)
+    ).scalars().all()
+    synced = [c for c in connections if c.last_synced_at is not None]
+    last_synced = max((c.last_synced_at for c in synced), default=None)
+
+    emails = session.execute(
+        select(Signal).where(Signal.workspace_id == workspace_id, Signal.type == SignalType.EMAIL)
+    ).scalars().all()
+
+    # How many looked important enough to consider, and how many of those
+    # were set aside as bulk/automated - so "nothing here" can show its work.
+    counts = sender_counts([e.payload for e in emails])
+    considered = filtered = 0
+    for e in emails:
+        labels = set(e.payload.get("label_ids") or [])
+        if "UNREAD" not in labels:
+            continue
+        promotional = bool(labels & {"CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "SPAM"})
+        if not ("STARRED" in labels or ("IMPORTANT" in labels and not promotional)):
+            continue
+        considered += 1
+        if noise_reason(e.payload, counts) is not None:
+            filtered += 1
+
+    return {
+        "connection_count": len(connections),
+        "synced_connection_count": len(synced),
+        "last_synced_at": last_synced.isoformat() if last_synced else None,
+        "signals_seen": len(emails),
+        "considered": considered,
+        "filtered_as_noise": filtered,
+    }
 
 
 @router.get("/catchup")

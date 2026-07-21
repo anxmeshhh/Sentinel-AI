@@ -2,7 +2,8 @@ import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 
 import { api, ApiError } from "../api/client";
-import type { AttentionItem, CalendarPlan } from "../api/types";
+import type { AttentionContext, AttentionItem, CalendarPlan } from "../api/types";
+import { AttentionEmptyState } from "../components/AttentionEmptyState";
 import { attentionIcon, EvidenceLink } from "../components/AttentionStrip";
 import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
@@ -36,6 +37,7 @@ export function AttentionPage() {
   const [planResult, setPlanResult] = useState<string | null>(null);
   const [prepItemId, setPrepItemId] = useState<string | null>(null);
   const meetingBrief = useMeetingBrief();
+  const [context, setContext] = useState<AttentionContext | null>(null);
 
   const [newTitle, setNewTitle] = useState("");
   const [newDue, setNewDue] = useState("");
@@ -44,6 +46,9 @@ export function AttentionPage() {
     setLoading(true);
     try {
       setItems(await api.get<AttentionItem[]>(`/attention?state=${filter}`));
+      // Fetched alongside the list so an empty result can explain itself
+      // rather than looking broken. Never fatal - the list still renders.
+      api.get<AttentionContext>("/attention/context").then(setContext).catch(() => setContext(null));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to load");
     } finally {
@@ -215,9 +220,7 @@ export function AttentionPage() {
           {loading ? (
             <div className="text-ink-dim">Loading&hellip;</div>
           ) : items.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border p-8 text-center text-[13px] text-ink-faint">
-              {stateFilter === "new" ? "Nothing needs your attention. ✨" : `No ${stateFilter} items.`}
-            </div>
+            <AttentionEmptyState context={context} filter={stateFilter} />
           ) : (
             <div className="flex flex-col gap-2">
               {items.map((item) => (

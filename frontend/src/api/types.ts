@@ -309,6 +309,15 @@ export interface ChannelBriefing {
   no_connections: boolean;
 }
 
+export interface AttentionContext {
+  connection_count: number;
+  synced_connection_count: number;
+  last_synced_at: string | null;
+  signals_seen: number;
+  considered: number;
+  filtered_as_noise: number;
+}
+
 export interface CatchUp {
   since: string;
   gap_hours: number;

@@ -35,6 +35,10 @@ from app.schemas.integration import ConnectTicketOut
 
 logger = structlog.get_logger("sentinel.integrations")
 
+# Providers that ingest into Signals. Drive is absent on purpose - it is
+# searched live, never cached, so it has no ingestion handler at all.
+INGESTABLE_PROVIDERS = {Provider.GMAIL, Provider.GOOGLE_CALENDAR, Provider.GITHUB}
+
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 GOOGLE_CONNECT_PURPOSE = "google_connect"
@@ -108,9 +112,40 @@ async def google_connect_callback(request: Request, session: Session = Depends(g
         json.dumps({"access_token": access_token, "refresh_token": refresh_token, "expires_at": expires_at.isoformat()})
     )
 
-    upsert_google_connections(session, workspace_id=uuid.UUID(workspace_id_str), google_email=google_email, encrypted_token=encrypted)
+    workspace_id = uuid.UUID(workspace_id_str)
+    upsert_google_connections(session, workspace_id=workspace_id, google_email=google_email, encrypted_token=encrypted)
+    _queue_first_sync(session, workspace_id)
 
     return RedirectResponse(f"{get_settings().frontend_base_url}/?connected=google")
+
+
+def _queue_first_sync(session: Session, workspace_id: uuid.UUID) -> None:
+    """Sync immediately after connecting, instead of waiting for the poll.
+
+    Without this, a new user connects Google and then stares at an empty
+    Mail page, empty Calendar and empty Attention feed until the scheduled
+    poll fires - up to `ingestion_poll_interval_seconds` later (6 hours by
+    default). At the single moment of highest intent, the product looks
+    broken. Confirmed real on a fresh account: connections existed with
+    last_synced_at=None and zero signals.
+
+    Queued rather than run inline so the user isn't held on a spinner
+    mid-OAuth-redirect, and guarded so a broker outage degrades to "data
+    appears at the next poll" rather than breaking the connect flow itself.
+    """
+    from app.workers.tasks import ingest_connection as ingest_task
+
+    connections = session.execute(select(Connection).where(Connection.workspace_id == workspace_id)).scalars().all()
+    for connection in connections:
+        # Drive deliberately has no ingestion handler - files are searched
+        # live and never cached (see google_drive_client.py). Queuing it
+        # would just raise and burn three retries.
+        if connection.provider not in INGESTABLE_PROVIDERS:
+            continue
+        try:
+            ingest_task.delay(str(connection.id))
+        except Exception:
+            logger.warning("first_sync_enqueue_failed", connection_id=str(connection.id), provider=connection.provider.value)
 
 
 def upsert_google_connections(session: Session, *, workspace_id: uuid.UUID, google_email: str, encrypted_token: str) -> None:

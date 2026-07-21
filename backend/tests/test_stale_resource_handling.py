@@ -116,3 +116,16 @@ def test_unhandled_route_error_returns_json_500_with_cors_headers(monkeypatch):
         assert resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
     finally:
         app_main.app.dependency_overrides.clear()
+
+
+def test_drive_analytics_signature_accepts_user_id():
+    """Regression: get_drive_analytics's body used user_id while its
+    signature omitted it, so every /drive/analytics call 500'd on a
+    NameError from the Phase A migration onward. Pin the arity so the route
+    (which passes user.id) and the service can't drift again."""
+    import inspect
+
+    from app.services.drive_query import get_drive_analytics
+
+    params = list(inspect.signature(get_drive_analytics).parameters)
+    assert params == ["session", "workspace_id", "user_id"]

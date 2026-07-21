@@ -45,11 +45,15 @@ def _to_rfc3339(date_str: str) -> str:
     return date_str if "T" in date_str else f"{date_str}T00:00:00"
 
 
-def get_drive_analytics(session, workspace_id) -> dict | None:
+def get_drive_analytics(session, workspace_id, user_id) -> dict | None:
     """Only reports what Drive's API genuinely provides - recent/shared
     files and type counts from real search results, storage usage from
     Drive's own about.get. No fabricated capability (no per-file view
     counts, no access history - Drive's API doesn't expose those).
+
+    `user_id` scopes to the caller's own Drive connection (Phase A): the
+    signature was missing it while the body already used it, so every
+    /drive/analytics call 500'd on a NameError until now.
     """
     connection = ConnectionRepository(session, workspace_id).get_for_user(user_id, Provider.GOOGLE_DRIVE)
     if connection is None:

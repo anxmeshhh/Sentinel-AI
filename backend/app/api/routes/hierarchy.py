@@ -19,11 +19,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, require_workspace_membership, require_workspace_role
+from app.api.deps import get_current_user, get_db, require_channel_role, require_workspace_membership, require_workspace_role
 from app.models.hierarchy import Group
-from app.models.team import Team, TeamMembership
+from app.models.team import ChannelRole, Team, TeamMembership
 from app.models.user import User
 from app.schemas.hierarchy import (
+    ChannelPathOut,
     ClassCreate,
     ClassOut,
     ClassUpdate,
@@ -37,6 +38,7 @@ from app.schemas.hierarchy import (
 from app.services.channel_management import visible_teams_filter
 from app.services.hierarchy import (
     CLASS_MANAGER_ROLES,
+    channel_path,
     GROUP_MANAGER_ROLES,
     WORKSPACE_ADMIN_ROLES,
     HierarchyError,
@@ -285,3 +287,25 @@ def get_workspace_tree(
         )
         for c in workspace_tree(session, workspace_id, visible)
     ]
+
+
+@router.get("/teams/{team_id}/path", response_model=ChannelPathOut)
+def get_channel_path(
+    team_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChannelPathOut:
+    """Where this Channel sits: Workspace / Class / Group / #Channel.
+
+    Authorized as a channel read, not a workspace read - the breadcrumb
+    names a Class and a Group, so it must not answer for a channel the
+    caller can't open.
+    """
+    require_channel_role(session, user, team_id, allowed=[ChannelRole.CHANNEL_ADMIN, ChannelRole.CHANNEL_MEMBER])
+    team = session.get(Team, team_id)
+    path = channel_path(session, team)
+    if path is None:
+        # A channel whose chain is broken is a bug worth surfacing, not a
+        # blank breadcrumb that quietly hides it.
+        raise HTTPException(status_code=500, detail="This channel's group or class is missing")
+    return ChannelPathOut(**path)

@@ -57,3 +57,23 @@ class ManualReminderCreate(BaseModel):
     why: str | None = Field(default=None, max_length=500)
     due_at: datetime | None = None
     evidence_url: str | None = Field(default=None, max_length=2000)
+
+
+class ChannelFeedItemOut(BaseModel):
+    """One normalized update from a connection this channel is authorized for."""
+
+    id: uuid.UUID
+    type: str
+    type_label: str
+    title: str
+    actor: str | None
+    provider: str
+    source_label: str
+    url: str | None
+    occurred_at: datetime
+
+
+class ChannelFeedOut(BaseModel):
+    items: list[ChannelFeedItemOut]
+    no_connections: bool
+    connection_labels: list[str]

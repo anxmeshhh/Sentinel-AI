@@ -1,880 +1,156 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
-import type {
-  ChannelAIHistoryItem,
-  ChannelBriefing,
-  ChannelConnection,
-  ChannelPrivacy,
-  ChannelReadiness,
-  ChannelRequirement,
-  Connection,
-  MemberReadiness,
-  Team,
-  TeamMember,
-} from "../api/types";
-import { attentionIcon, EvidenceLink } from "../components/AttentionStrip";
-import { BackNav } from "../components/BackNav";
-import { ChannelSetupChecklist, PROVIDER_LABEL } from "../components/ChannelSetupChecklist";
-import { GoogleAICommand } from "../components/GoogleAICommand";
-import { useTeams } from "../context/TeamContext";
+import type { ChannelPath, ChannelReadiness, Team } from "../api/types";
+import { ChannelBreadcrumb } from "../components/ChannelBreadcrumb";
+import { ChannelModuleNav, CHANNEL_MODULES } from "../components/ChannelModuleNav";
+import type { ChannelModuleKey } from "../components/ChannelModuleNav";
+import { ChannelSetupChecklist } from "../components/ChannelSetupChecklist";
+import { AttentionModule } from "../components/channel/AttentionModule";
+import { ExtensionsModule } from "../components/channel/ExtensionsModule";
+import { FeedModule } from "../components/channel/FeedModule";
+import { MembersModule } from "../components/channel/MembersModule";
+import { NotBuiltModule } from "../components/channel/NotBuiltModule";
+import { SentinelModule } from "../components/channel/SentinelModule";
+import { SettingsModule } from "../components/channel/SettingsModule";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const DEFAULT_MODULE: ChannelModuleKey = "sentinel";
 
-type PanelTab = "connections" | "setup" | "members" | "activity" | "settings";
-
+/**
+ * The Channel shell: identity, breadcrumb, module switcher.
+ *
+ * It loads only what every module needs - the channel itself, the
+ * breadcrumb, and the caller's own setup readiness. Each module fetches its
+ * own data when it mounts, so opening a channel is one request per pane
+ * rather than nine up front.
+ */
 export function ChannelWorkspacePage() {
-  const { teamId = "" } = useParams<{ teamId: string }>();
+  const { teamId = "", module } = useParams<{ teamId: string; module?: string }>();
   const [team, setTeam] = useState<Team | null>(null);
-  const [members, setMembers] = useState<TeamMember[]>([]);
-  const [connections, setConnections] = useState<ChannelConnection[]>([]);
-  const [history, setHistory] = useState<ChannelAIHistoryItem[]>([]);
-  const [briefing, setBriefing] = useState<ChannelBriefing | null>(null);
+  const [path, setPath] = useState<ChannelPath | null>(null);
   const [readiness, setReadiness] = useState<ChannelReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [panelOpen, setPanelOpen] = useState(true);
-  const [panelTab, setPanelTab] = useState<PanelTab>("connections");
 
+  const activeModule = (module as ChannelModuleKey) ?? DEFAULT_MODULE;
   const isAdmin = team?.my_channel_role === "channel_admin";
+  const blockingCount = readiness?.blocking_providers.length ?? 0;
 
-  async function loadAll() {
+  const loadShell = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [t, m, c, r] = await Promise.all([
+      const [t, p, r] = await Promise.all([
         api.get<Team>(`/teams/${teamId}`),
-        api.get<TeamMember[]>(`/teams/${teamId}/members`),
-        api.get<ChannelConnection[]>(`/teams/${teamId}/connections`),
+        api.get<ChannelPath>(`/teams/${teamId}/path`),
         api.get<ChannelReadiness>(`/teams/${teamId}/readiness`),
       ]);
       setTeam(t);
-      setMembers(m);
-      setConnections(c);
+      setPath(p);
       setReadiness(r);
-      // Deliberately NOT switching the global active workspace here - an
-      // earlier version did, and silently flipping it made the user's
-      // Mail/Calendar/Drive pages (scoped to their Personal workspace) go
-      // blank after visiting any org channel. The one call that needs this
-      // channel's workspace (the connection picker) passes it explicitly.
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to load this channel");
     } finally {
       setLoading(false);
     }
-  }
-
-  async function loadHistory() {
-    try {
-      setHistory(await api.get<ChannelAIHistoryItem[]>(`/teams/${teamId}/ai/history`));
-    } catch {
-      setHistory([]);
-    }
-  }
-
-  async function loadBriefing() {
-    try {
-      setBriefing(await api.get<ChannelBriefing>(`/teams/${teamId}/briefing`));
-    } catch {
-      setBriefing(null);
-    }
-  }
+  }, [teamId]);
 
   useEffect(() => {
-    void loadAll();
-    void loadHistory();
-    void loadBriefing();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamId]);
+    void loadShell();
+  }, [loadShell]);
 
   if (loading) return <div className="text-ink-dim">Loading&hellip;</div>;
   if (error || !team) {
     return (
       <div className="max-w-lg rounded-md border border-dashed border-border p-10 text-center text-ink-dim">
-        <BackNav back={{ to: "/", label: "Dashboard" }} />
         <p className="text-[14px] text-crit">{error ?? "Channel not found."}</p>
+        <Link to="/" className="mt-3 inline-block text-[12.5px] underline underline-offset-2">
+          Back to dashboard
+        </Link>
       </div>
     );
   }
 
-  return (
-    <div className="max-w-6xl">
-      <BackNav back={{ to: "/", label: "Dashboard" }} crumbs={[{ label: "Dashboard", to: "/" }, { label: `#${team.name}` }]} />
+  const definition = CHANNEL_MODULES.find((m) => m.key === activeModule);
 
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+  return (
+    <div className="max-w-5xl">
+      {path && <ChannelBreadcrumb path={path} />}
+
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="mb-1 text-xl font-semibold text-balance">
-            {team.icon ? `${team.icon} ` : ""}#{team.name}
+          <h1 className="text-xl font-semibold text-balance">
+            {team.icon ? `${team.icon} ` : "#"}
+            {team.name}
           </h1>
-          {team.description && <p className="mb-1 text-[13px] text-ink-dim">{team.description}</p>}
-          <p className="text-[13px] text-ink-dim">
-            {team.member_count} member{team.member_count === 1 ? "" : "s"}
-            {team.category && <span className="ml-2 font-mono text-[10.5px] text-ink-faint">{team.category}</span>}
-            {team.privacy !== "public" && (
-              <span className="ml-2 rounded-full border border-border px-2 py-0.5 font-mono text-[10px] text-ink-faint">
-                {team.privacy === "private" ? "PRIVATE" : "INVITE ONLY"}
-              </span>
-            )}
-            {isAdmin && <span className="ml-2 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent-text">CHANNEL ADMIN</span>}
-          </p>
+          {team.description && <p className="mt-1 text-[13px] text-ink-dim">{team.description}</p>}
         </div>
-        <div className="flex gap-2">
-          {isAdmin && (
-            <button
-              onClick={() => {
-                setPanelOpen(true);
-                setPanelTab("settings");
-              }}
-              className="rounded-md border border-border bg-surface px-3 py-1.5 font-mono text-[11.5px] text-ink-dim hover:border-accent hover:text-ink"
-            >
-              ⚙ Channel Settings
-            </button>
+        <div className="flex items-center gap-2">
+          {team.privacy !== "public" && (
+            <span className="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] text-ink-faint">
+              {team.privacy === "private" ? "PRIVATE" : "INVITE ONLY"}
+            </span>
           )}
-          <button
-            onClick={() => setPanelOpen((o) => !o)}
-            className="rounded-md border border-border bg-surface px-3 py-1.5 font-mono text-[11.5px] text-ink-dim hover:border-accent hover:text-ink"
-          >
-            {panelOpen ? "Hide" : "Show"} channel info
-          </button>
+          {isAdmin && (
+            <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent-text">
+              CHANNEL ADMIN
+            </span>
+          )}
         </div>
       </div>
 
       {team.is_archived && (
         <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-[12.5px] text-watch">
           This channel is archived — Channel AI is disabled and it's hidden from the sidebar.
-          {isAdmin && " Unarchive it from Channel Settings to bring it back."}
+          {isAdmin && " Unarchive it from Settings to bring it back."}
         </div>
       )}
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        <div className="min-w-0 flex-1">
-          {/* Setup comes before everything else: a member who hasn't
-              connected their own account can't use anything below it, and
-              an empty channel with no explanation reads as broken. */}
-          {readiness && <ChannelSetupChecklist readiness={readiness} teamId={teamId} workspaceId={team.workspace_id} compact />}
+      <ChannelModuleNav teamId={teamId} isAdmin={isAdmin} blockingCount={blockingCount} />
 
-          {connections.length === 0 ? (
-            <div className="mb-4 rounded-md border border-dashed border-border p-6 text-center text-[13px] text-ink-faint">
-              No Connections are assigned to this channel yet.
-              {isAdmin ? " Assign one from the panel to start using Channel AI here." : " Ask a Channel Admin to assign one."}
-            </div>
-          ) : (
-            /* What Sentinel is allowed to see here, in plain terms - so a
-               member can answer "what can the AI read?" without needing to
-               understand connections, scopes or OAuth. */
-            <div className="mb-4 rounded-md border border-border bg-surface p-3.5">
-              <div className="mb-2 font-mono text-[10.5px] uppercase tracking-wide text-ink-dim">This channel can access</div>
-              <div className="flex flex-col gap-1.5">
-                {connections.map((c) => (
-                  <div key={c.id} className="text-[12.5px]">
-                    <span className="text-ink">{c.label}</span>
-                    <span className="ml-1.5 font-mono text-[10.5px] text-ink-faint">{c.provider}</span>
-                    {c.resources.length > 0 ? (
-                      <div className="mt-0.5 pl-3 text-[11.5px] text-ink-dim">
-                        {c.resources.map((r) => (
-                          <div key={r.id}>→ {r.resource_label}</div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="mt-0.5 pl-3 text-[11.5px] text-ink-faint">→ no specific resources authorized yet</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <p className="mt-2.5 text-[11px] leading-relaxed text-ink-faint">
-                Sentinel can only use the connections and resources authorized for this channel — nothing else from the workspace.
-              </p>
-            </div>
-          )}
-
-          {/* An empty briefing has two causes and they are not the same
-              news. Saying which one applies is the whole point. */}
-          {briefing && briefing.items.length === 0 && briefing.blocking_providers.length > 0 && (
-            <div className="mb-4 rounded-md border border-dashed border-border p-4 text-[12.5px] text-ink-dim">
-              This channel's briefing is empty for you because you haven't connected{" "}
-              {briefing.blocking_providers.map((p) => PROVIDER_LABEL[p] ?? p).join(", ")} yet — not because there's
-              nothing happening. Connect above and it will fill in after the first sync.
-            </div>
-          )}
-
-          {briefing && !briefing.no_connections && briefing.items.length > 0 && (
-            <div className="mb-4 rounded-md border border-accent/30 bg-accent/5 p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="font-mono text-[10.5px] font-bold uppercase tracking-wide text-accent-text">
-                  Channel Briefing ✨ · {briefing.items.length} item{briefing.items.length === 1 ? "" : "s"}
-                </span>
-              </div>
-              {briefing.narrative && <p className="mb-3 text-[12.5px] leading-relaxed text-ink-dim">{briefing.narrative}</p>}
-              <div className="flex flex-col gap-1.5">
-                {briefing.items.slice(0, 5).map((item) => (
-                  <div key={item.id} className="flex items-start gap-2.5 text-[12px]">
-                    <span className="mt-px flex-none">{attentionIcon(item)}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-semibold text-ink">{item.title}</div>
-                      <div className="truncate text-[11px] text-ink-faint">{item.why}</div>
-                    </div>
-                    <EvidenceLink item={item} className="flex-none font-mono text-[10px] font-semibold text-accent-text hover:underline" />
-                  </div>
-                ))}
-              </div>
-              <p className="mt-3 text-[10.5px] text-ink-faint">
-                Scoped to this channel's authorized connections{briefing.connection_labels.length > 0 && `: ${briefing.connection_labels.join(", ")}`}.
-                Mark items done in your personal <Link to="/attention" className="underline underline-offset-2 hover:text-ink">Attention</Link> hub.
-              </p>
-            </div>
-          )}
-
-          {!team.is_archived && (
-            <div className="rounded-md border border-border bg-surface">
-              <GoogleAICommand
-                endpointBase={`/teams/${teamId}/ai`}
-                placeholder={`Ask Sentinel about #${team.name}…`}
-                helpText={
-                  <>
-                    Sentinel only uses Connections and resources authorized for <strong>#{team.name}</strong> - never the rest of the
-                    Workspace. Actions that change anything are shown as a plan you confirm first.
-                  </>
-                }
-              />
-            </div>
-          )}
-
-          {history.length > 0 && (
-            <div className="mt-5">
-              <div className="mb-2 font-mono text-[11px] uppercase tracking-wide text-ink-faint">Recent Channel AI Activity</div>
-              <div className="flex flex-col gap-2">
-                {history.slice(0, 10).map((h) => (
-                  <div key={h.id} className="rounded-md border border-border bg-surface p-3 text-[12px]">
-                    <div className="mb-1 flex items-center justify-between text-[10.5px] text-ink-faint">
-                      <span>{h.user_name}</span>
-                      <span>{new Date(h.created_at).toLocaleString()}</span>
-                    </div>
-                    <div className="mb-1 font-semibold text-ink">{h.command}</div>
-                    <div className="line-clamp-3 text-ink-dim">{h.reply}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {panelOpen && (
-          <div className="w-full flex-none lg:w-[340px]">
-            <div className="rounded-md border border-border bg-surface">
-              <div className="flex border-b border-border">
-                {(["connections", "setup", "members", "activity", ...(isAdmin ? (["settings"] as PanelTab[]) : [])] as PanelTab[]).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setPanelTab(tab)}
-                    className={`flex-1 py-2.5 text-center font-mono text-[10.5px] uppercase tracking-wide transition-colors ${
-                      panelTab === tab ? "text-ink" : "text-ink-faint hover:text-ink-dim"
-                    }`}
-                    style={panelTab === tab ? { borderBottom: "2px solid var(--accent, #7c9)" } : undefined}
-                  >
-                    {tab === "settings" ? "⚙" : tab}
-                  </button>
-                ))}
-              </div>
-              <div className="p-3.5">
-                {panelTab === "connections" && (
-                  <ConnectionsTab teamId={teamId} workspaceId={team.workspace_id} isAdmin={isAdmin} connections={connections} onChanged={loadAll} />
-                )}
-                {panelTab === "setup" && <SetupTab teamId={teamId} isAdmin={isAdmin} onChanged={loadAll} />}
-                {panelTab === "members" && <MembersTab teamId={teamId} isAdmin={isAdmin} members={members} onChanged={loadAll} />}
-                {panelTab === "activity" && <ActivityTab history={history} />}
-                {panelTab === "settings" && isAdmin && <SettingsTab team={team} onChanged={loadAll} />}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ConnectionsTab({
-  teamId,
-  workspaceId,
-  isAdmin,
-  connections,
-  onChanged,
-}: {
-  teamId: string;
-  workspaceId: string;
-  isAdmin: boolean;
-  connections: ChannelConnection[];
-  onChanged: () => void;
-}) {
-  const [available, setAvailable] = useState<Connection[]>([]);
-  const [showPicker, setShowPicker] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [resourceForm, setResourceForm] = useState<Record<string, { key: string; label: string }>>({});
-
-  useEffect(() => {
-    if (!showPicker) return;
-    api.get<Connection[]>("/connections", { workspaceId }).then(setAvailable).catch(() => setAvailable([]));
-  }, [showPicker, workspaceId]);
-
-  const assignedConnectionIds = new Set(connections.map((c) => c.connection_id));
-  const assignable = available.filter((c) => !assignedConnectionIds.has(c.id));
-
-  async function assign(connectionId: string) {
-    setBusy(true);
-    try {
-      await api.post(`/teams/${teamId}/connections`, { connection_id: connectionId });
-      setShowPicker(false);
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function unassign(channelConnectionId: string, label: string) {
-    // Removing access is consequential and easy to do by accident, so the
-    // effect is stated in terms of what Sentinel will lose, not "are you
-    // sure?".
-    if (!window.confirm(`Remove ${label} from this channel?\n\nSentinel will no longer be able to use it or any of its authorized resources here.`)) return;
-    setBusy(true);
-    try {
-      await api.delete(`/teams/${teamId}/connections/${channelConnectionId}`);
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function connectGoogleHere() {
-    setBusy(true);
-    try {
-      // Same ticket flow the Connections page uses - only the landing spot
-      // differs, so there is no second connect implementation to keep in
-      // sync. The workspace is taken from this channel, which is what makes
-      // the resulting connection assignable here.
-      const { ticket } = await api.post<{ ticket: string }>("/integrations/google/connect-ticket", undefined, {
-        workspaceId,
-      });
-      const returnTo = encodeURIComponent(`/channels/${teamId}`);
-      window.location.href = `${API_BASE}/integrations/google/connect?ticket=${encodeURIComponent(ticket)}&return_to=${returnTo}`;
-    } catch {
-      setBusy(false);
-    }
-  }
-
-  async function addResource(channelConnectionId: string) {
-    const form = resourceForm[channelConnectionId];
-    if (!form?.key.trim() || !form?.label.trim()) return;
-    setBusy(true);
-    try {
-      await api.post(`/teams/${teamId}/connections/${channelConnectionId}/resources`, {
-        resource_key: form.key.trim(),
-        resource_label: form.label.trim(),
-      });
-      setResourceForm((f) => ({ ...f, [channelConnectionId]: { key: "", label: "" } }));
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeResource(channelConnectionId: string, resourceId: string) {
-    setBusy(true);
-    try {
-      await api.delete(`/teams/${teamId}/connections/${channelConnectionId}/resources/${resourceId}`);
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      {connections.length === 0 && <p className="text-[12px] text-ink-faint">No connections assigned.</p>}
-      {connections.map((c) => (
-        <div key={c.id} className="rounded-md border border-border p-2.5">
-          <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-[12.5px] font-semibold text-ink">
-              {c.provider} · {c.label}
-            </span>
-            {isAdmin && (
-              <button onClick={() => unassign(c.id, c.label)} disabled={busy} className="text-[10.5px] text-ink-faint underline hover:text-crit">
-                Remove
-              </button>
-            )}
-          </div>
-          <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-ink-faint">Allow-listed resources</div>
-          {c.resources.length === 0 ? (
-            <p className="mb-1.5 text-[11px] text-ink-faint">None yet - nothing here is usable by Channel AI until a resource is added.</p>
-          ) : (
-            <div className="mb-1.5 flex flex-col gap-1">
-              {c.resources.map((r) => (
-                <div key={r.id} className="flex items-center justify-between text-[11.5px] text-ink-dim">
-                  <span className="truncate">{r.resource_label}</span>
-                  {isAdmin && (
-                    <button onClick={() => removeResource(c.id, r.id)} disabled={busy} className="text-[10px] text-ink-faint underline hover:text-crit">
-                      Remove
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {isAdmin && (
-            <div className="flex gap-1.5">
-              <input
-                value={resourceForm[c.id]?.key ?? ""}
-                onChange={(e) => setResourceForm((f) => ({ ...f, [c.id]: { key: e.target.value, label: f[c.id]?.label ?? "" } }))}
-                placeholder="resource id/key"
-                className="w-1/2 rounded-md border border-border bg-ground px-2 py-1 text-[11px] outline-none focus:border-accent"
-              />
-              <input
-                value={resourceForm[c.id]?.label ?? ""}
-                onChange={(e) => setResourceForm((f) => ({ ...f, [c.id]: { key: f[c.id]?.key ?? "", label: e.target.value } }))}
-                placeholder="display name"
-                className="w-1/2 rounded-md border border-border bg-ground px-2 py-1 text-[11px] outline-none focus:border-accent"
-              />
-              <button
-                onClick={() => addResource(c.id)}
-                disabled={busy}
-                className="flex-none rounded-md bg-accent px-2.5 py-1 font-mono text-[10.5px] font-bold text-ground disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-          )}
-        </div>
-      ))}
-
-      {isAdmin && (
-        <div>
-          {!showPicker ? (
-            <button onClick={() => setShowPicker(true)} className="font-mono text-[11px] text-ink-faint underline hover:text-ink">
-              + Assign a connection
-            </button>
-          ) : (
-            <div className="rounded-md border border-dashed border-border p-2.5">
-              <p className="mb-2 text-[10.5px] leading-relaxed text-ink-faint">
-                Adding a connection lets Sentinel use it in this channel. It still can't read anything until you
-                allow-list specific resources below.
-              </p>
-              {assignable.length === 0 ? (
-                <p className="mb-2 text-[11px] text-ink-faint">
-                  Everything connected to this workspace is already assigned here.
-                </p>
-              ) : (
-                assignable.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => assign(c.id)}
-                    disabled={busy}
-                    className="block w-full rounded-md px-2 py-1.5 text-left text-[11.5px] text-ink-dim hover:bg-surface-2 hover:text-ink"
-                  >
-                    {c.provider} · {c.org}
-                    {c.repo && c.provider === "github" ? `/${c.repo}` : ""}
-                  </button>
-                ))
-              )}
-              {/* Connect something new without leaving the channel. The
-                  OAuth round trip returns here, so the admin doesn't have
-                  to navigate back and rebuild their configuration. */}
-              <div className="mt-2 border-t border-border pt-2">
-                <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-ink-faint">Not connected yet</div>
-                <button
-                  onClick={connectGoogleHere}
-                  disabled={busy}
-                  className="block w-full rounded-md px-2 py-1.5 text-left text-[11.5px] text-ink-dim hover:bg-surface-2 hover:text-ink disabled:opacity-50"
-                >
-                  + Connect Google (Gmail, Calendar, Drive)
-                </button>
-                <Link
-                  to="/connections/github"
-                  className="block w-full rounded-md px-2 py-1.5 text-left text-[11.5px] text-ink-dim hover:bg-surface-2 hover:text-ink"
-                >
-                  + Connect GitHub
-                </Link>
-              </div>
-              <button onClick={() => setShowPicker(false)} className="mt-1 font-mono text-[10.5px] text-ink-faint underline hover:text-ink">
-                Cancel
-              </button>
-            </div>
-          )}
+      {/* Setup is a gate, not a module: if required integrations are
+          missing, say so on every module rather than letting each one
+          render an empty state that looks like "nothing happening". */}
+      {readiness && blockingCount > 0 && activeModule !== "extensions" && (
+        <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-[12.5px]">
+          <span className="font-semibold text-watch">Setup incomplete.</span>{" "}
+          <span className="text-ink-dim">
+            You haven't connected {blockingCount} required integration{blockingCount === 1 ? "" : "s"} for this channel, so
+            what you see here is incomplete.
+          </span>{" "}
+          <Link to={`/channels/${teamId}/extensions`} className="underline underline-offset-2 hover:text-ink">
+            Finish setup
+          </Link>
         </div>
       )}
-    </div>
-  );
-}
 
-const REQUIREABLE_PROVIDERS = ["gmail", "google_calendar", "google_drive", "github"];
-
-/**
- * Admin: declare which integrations this channel needs, and see who is
- * behind on setup.
- *
- * Note what this tab deliberately cannot do: there is no control here that
- * connects an account on a member's behalf, because that would mean the
- * admin's own token backing everyone's access. The admin states the
- * requirement; each member satisfies it themselves.
- */
-function SetupTab({ teamId, isAdmin, onChanged }: { teamId: string; isAdmin: boolean; onChanged: () => void }) {
-  const [requirements, setRequirements] = useState<ChannelRequirement[]>([]);
-  const [roster, setRoster] = useState<MemberReadiness[]>([]);
-  const [provider, setProvider] = useState(REQUIREABLE_PROVIDERS[0]);
-  const [reason, setReason] = useState("");
-  const [required, setRequired] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function load() {
-    try {
-      setRequirements(await api.get<ChannelRequirement[]>(`/teams/${teamId}/requirements`));
-    } catch {
-      setRequirements([]);
-    }
-    if (!isAdmin) return;
-    try {
-      setRoster(await api.get<MemberReadiness[]>(`/teams/${teamId}/readiness/roster`));
-    } catch {
-      setRoster([]);
-    }
-  }
-
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamId, isAdmin]);
-
-  async function add() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.post(`/teams/${teamId}/requirements`, {
-        provider,
-        is_required: required,
-        reason: reason.trim() || null,
-      });
-      setReason("");
-      await load();
-      onChanged();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Failed to add");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(id: string) {
-    setBusy(true);
-    try {
-      await api.delete(`/teams/${teamId}/requirements/${id}`);
-      await load();
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const notReady = roster.filter((r) => !r.is_ready);
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="font-mono text-[10px] uppercase tracking-wide text-ink-faint">Required integrations</div>
-      {requirements.length === 0 ? (
-        <p className="text-[11.5px] text-ink-faint">
-          None yet.{isAdmin ? " Add one below and every member will be prompted to connect their own account." : ""}
-        </p>
+      {definition && !definition.built ? (
+        <NotBuiltModule label={definition.label} />
       ) : (
-        requirements.map((r) => (
-          <div key={r.id} className="rounded-md border border-border p-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[12.5px] font-semibold text-ink">{PROVIDER_LABEL[r.provider] ?? r.provider}</span>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[9.5px] uppercase text-ink-faint">{r.is_required ? "required" : "optional"}</span>
-                {isAdmin && (
-                  <button onClick={() => remove(r.id)} disabled={busy} className="text-[10.5px] text-ink-faint underline hover:text-crit">
-                    Remove
-                  </button>
-                )}
-              </div>
-            </div>
-            {r.reason && <p className="mt-1 text-[11px] text-ink-dim">{r.reason}</p>}
-          </div>
-        ))
-      )}
-
-      {isAdmin && (
-        <div className="rounded-md border border-dashed border-border p-2.5">
-          <select
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-            aria-label="Integration"
-            className="mb-1.5 w-full rounded-md border border-border bg-ground px-2 py-1 text-[11.5px] outline-none focus:border-accent"
-          >
-            {REQUIREABLE_PROVIDERS.map((p) => (
-              <option key={p} value={p}>
-                {PROVIDER_LABEL[p]}
-              </option>
-            ))}
-          </select>
-          <input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Why this channel needs it (shown to members)"
-            className="mb-1.5 w-full rounded-md border border-border bg-ground px-2 py-1 text-[11px] outline-none focus:border-accent"
-          />
-          <label className="mb-1.5 flex items-center gap-1.5 text-[11px] text-ink-dim">
-            <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} />
-            Required (unchecked = suggested only, never blocks)
-          </label>
-          <button
-            onClick={add}
-            disabled={busy}
-            className="w-full rounded-md bg-accent px-2.5 py-1 font-mono text-[10.5px] font-bold text-ground disabled:opacity-50"
-          >
-            Add requirement
-          </button>
-          {error && <p className="mt-1 text-[10.5px] text-crit">{error}</p>}
-          <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-faint">
-            Members connect their own accounts. You'll see who still needs to, but never their credentials.
-          </p>
-        </div>
-      )}
-
-      {isAdmin && requirements.length > 0 && (
         <>
-          <div className="font-mono text-[10px] uppercase tracking-wide text-ink-faint">Member setup</div>
-          {notReady.length === 0 ? (
-            <p className="text-[11.5px] text-good">Everyone in this channel is set up.</p>
-          ) : (
-            roster.map((m) => (
-              <div key={m.user_id} className="flex items-start justify-between gap-2 text-[11.5px]">
-                <div className="min-w-0">
-                  <div className="truncate text-ink">{m.name ?? m.email}</div>
-                  <div className="truncate text-[10.5px] text-ink-faint">
-                    {m.requirements
-                      .filter((r) => r.state !== "ready")
-                      .map((r) => `${PROVIDER_LABEL[r.provider] ?? r.provider}: ${r.state.replace("_", " ")}`)
-                      .join(" · ") || "all connected"}
-                  </div>
-                </div>
-                <span className={`flex-none font-mono text-[10px] ${m.is_ready ? "text-good" : "text-watch"}`}>
-                  {m.is_ready ? "ready" : "pending"}
-                </span>
-              </div>
-            ))
+          {activeModule === "sentinel" && <SentinelModule teamId={teamId} channelName={team.name} isArchived={team.is_archived} />}
+          {activeModule === "attention" && <AttentionModule teamId={teamId} />}
+          {activeModule === "feed" && <FeedModule teamId={teamId} />}
+          {activeModule === "extensions" && (
+            <ExtensionsModule
+              teamId={teamId}
+              workspaceId={team.workspace_id}
+              isAdmin={isAdmin}
+              readiness={readiness}
+              onChanged={loadShell}
+            />
           )}
+          {activeModule === "members" && <MembersModule teamId={teamId} isAdmin={isAdmin} channelName={team.name} />}
+          {activeModule === "settings" && isAdmin && <SettingsModule team={team} onChanged={loadShell} />}
         </>
       )}
-    </div>
-  );
-}
 
-function MembersTab({
-  teamId,
-  isAdmin,
-  members,
-  onChanged,
-}: {
-  teamId: string;
-  isAdmin: boolean;
-  members: TeamMember[];
-  onChanged: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-
-  async function setRole(userId: string, role: "channel_admin" | "channel_member") {
-    setBusy(true);
-    try {
-      await api.patch(`/teams/${teamId}/members/${userId}/role`, { channel_role: role });
-      onChanged();
-    } catch (e) {
-      alert(e instanceof ApiError ? e.message : "Failed to update role");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(userId: string) {
-    setBusy(true);
-    try {
-      await api.delete(`/teams/${teamId}/members/${userId}`);
-      onChanged();
-    } catch (e) {
-      alert(e instanceof ApiError ? e.message : "Failed to remove member");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      {members.map((m) => (
-        <div key={m.user_id} className="flex items-center justify-between text-[12px]">
-          <div className="min-w-0">
-            <div className="truncate text-ink">{m.name}</div>
-            <div className="truncate text-[10.5px] text-ink-faint">{m.email}</div>
-          </div>
-          <div className="flex flex-none items-center gap-2">
-            <span
-              className={`rounded-full px-2 py-0.5 font-mono text-[10px] ${
-                m.channel_role === "channel_admin" ? "bg-accent/15 text-accent-text" : "text-ink-faint"
-              }`}
-            >
-              {m.channel_role === "channel_admin" ? "admin" : "member"}
-            </span>
-            {isAdmin && (
-              <>
-                <button
-                  onClick={() => setRole(m.user_id, m.channel_role === "channel_admin" ? "channel_member" : "channel_admin")}
-                  disabled={busy}
-                  className="text-[10.5px] text-ink-faint underline hover:text-ink"
-                >
-                  {m.channel_role === "channel_admin" ? "Demote" : "Promote"}
-                </button>
-                <button onClick={() => remove(m.user_id)} disabled={busy} className="text-[10.5px] text-ink-faint underline hover:text-crit">
-                  Remove
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SettingsTab({ team, onChanged }: { team: Team; onChanged: () => void }) {
-  const navigate = useNavigate();
-  const { refresh } = useTeams();
-  const [name, setName] = useState(team.name);
-  const [description, setDescription] = useState(team.description ?? "");
-  const [icon, setIcon] = useState(team.icon ?? "");
-  const [category, setCategory] = useState(team.category ?? "");
-  const [privacy, setPrivacy] = useState<ChannelPrivacy>(team.privacy);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  async function save() {
-    setBusy(true);
-    setMessage(null);
-    try {
-      await api.patch(`/teams/${team.id}`, { name, description, icon, category, privacy });
-      await refresh();
-      onChanged();
-      setMessage("Saved.");
-    } catch (e) {
-      setMessage(e instanceof ApiError ? e.message : "Failed to save");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function toggleArchive() {
-    const verb = team.is_archived ? "unarchive" : "archive";
-    if (!team.is_archived && !window.confirm(`Archive #${team.name}? It will be hidden from the sidebar and Channel AI will be disabled. You can unarchive it later.`)) return;
-    setBusy(true);
-    try {
-      await api.post(`/teams/${team.id}/${verb}`);
-      await refresh();
-      onChanged();
-    } catch (e) {
-      setMessage(e instanceof ApiError ? e.message : `Failed to ${verb}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function deleteChannel() {
-    if (!window.confirm(`Permanently delete #${team.name}? This removes its members, connection assignments, and AI history. This cannot be undone.`)) return;
-    setBusy(true);
-    try {
-      await api.delete(`/teams/${team.id}`);
-      await refresh();
-      navigate("/");
-    } catch (e) {
-      setMessage(e instanceof ApiError ? e.message : "Failed to delete");
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="font-mono text-[10px] uppercase tracking-wide text-ink-faint">General</div>
-      <div className="flex gap-1.5">
-        <input
-          value={icon}
-          onChange={(e) => setIcon(e.target.value)}
-          placeholder="#"
-          aria-label="Channel icon"
-          className="w-12 rounded-md border border-border bg-ground px-2 py-1.5 text-center text-[13px] outline-none focus:border-accent"
-        />
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          aria-label="Channel name"
-          className="flex-1 rounded-md border border-border bg-ground px-2.5 py-1.5 text-[12.5px] outline-none focus:border-accent"
-        />
-      </div>
-      <input
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        placeholder="Description"
-        className="rounded-md border border-border bg-ground px-2.5 py-1.5 text-[12px] outline-none focus:border-accent"
-      />
-      <input
-        value={category}
-        onChange={(e) => setCategory(e.target.value)}
-        placeholder="Category (e.g. Teams, Projects)"
-        className="rounded-md border border-border bg-ground px-2.5 py-1.5 text-[12px] outline-none focus:border-accent"
-      />
-
-      <div className="font-mono text-[10px] uppercase tracking-wide text-ink-faint">Privacy</div>
-      <select
-        value={privacy}
-        onChange={(e) => setPrivacy(e.target.value as ChannelPrivacy)}
-        className="rounded-md border border-border bg-ground px-2.5 py-1.5 text-[12px] outline-none focus:border-accent"
-      >
-        <option value="public">Public to Group</option>
-        <option value="invite_only">Invite Only</option>
-        <option value="private">Private</option>
-      </select>
-
-      <button
-        onClick={save}
-        disabled={busy || !name.trim()}
-        className="rounded-md bg-accent px-3 py-1.5 font-mono text-[11px] font-bold text-ground disabled:opacity-50"
-      >
-        {busy ? "Saving…" : "Save changes"}
-      </button>
-      {message && <p className={`text-[11px] ${message === "Saved." ? "text-good" : "text-crit"}`}>{message}</p>}
-
-      <div className="mt-2 rounded-md border border-crit/30 p-2.5">
-        <div className="mb-2 font-mono text-[10px] uppercase tracking-wide text-crit">Danger Zone</div>
-        <div className="flex flex-col gap-1.5">
-          <button onClick={toggleArchive} disabled={busy} className="text-left text-[11.5px] text-ink-dim underline underline-offset-2 hover:text-watch">
-            {team.is_archived ? "Unarchive this channel" : "Archive this channel"}
-          </button>
-          <button onClick={deleteChannel} disabled={busy} className="text-left text-[11.5px] text-crit underline underline-offset-2">
-            Delete this channel permanently
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ActivityTab({ history }: { history: ChannelAIHistoryItem[] }) {
-  if (history.length === 0) return <p className="text-[12px] text-ink-faint">No Channel AI activity yet.</p>;
-  return (
-    <div className="flex flex-col gap-2">
-      {history.map((h) => (
-        <div key={h.id} className="text-[11.5px]">
-          <div className="flex justify-between text-[10px] text-ink-faint">
-            <span>{h.user_name}</span>
-            <span>{new Date(h.created_at).toLocaleDateString()}</span>
-          </div>
-          <div className="truncate text-ink-dim">{h.command}</div>
-        </div>
-      ))}
+      {/* The checklist itself lives in Extensions; this keeps the component
+          used in exactly one place rather than duplicated per module. */}
+      {activeModule === "extensions" && readiness && (
+        <ChannelSetupChecklist readiness={readiness} teamId={teamId} workspaceId={team.workspace_id} />
+      )}
     </div>
   );
 }

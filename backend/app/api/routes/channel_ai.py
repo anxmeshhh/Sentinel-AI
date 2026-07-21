@@ -18,10 +18,11 @@ from app.models.channel_ai_history import ChannelAIHistoryEntry
 from app.models.team import ChannelRole, Team
 from app.models.user import User
 from app.api.routes.attention import _to_out as _attention_out
-from app.schemas.attention import ChannelBriefingOut
+from app.schemas.attention import ChannelBriefingOut, ChannelFeedOut
 from app.schemas.channel_ai import ChannelAIHistoryOut
 from app.schemas.orchestrator import CommandRequest, CommandResponse, ExecuteActionRequest, ExecuteActionResponse
 from app.services.channel_briefing import build_channel_briefing
+from app.services.channel_feed import build_channel_feed
 from app.services.channel_readiness import blocking_providers
 from app.services.orchestrator import execute_planned_action, run_command, run_command_stream
 
@@ -137,3 +138,22 @@ def channel_ai_history(
         ChannelAIHistoryOut(id=entry.id, user_id=entry.user_id, user_name=name, command=entry.command, reply=entry.reply, created_at=entry.created_at)
         for entry, name in rows
     ]
+
+
+@router.get("/teams/{team_id}/feed", response_model=ChannelFeedOut)
+def channel_feed(
+    team_id: uuid.UUID,
+    limit: int = 50,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChannelFeedOut:
+    """Normalized updates from this channel's authorized connections.
+
+    Always reads through - no caching layer, because connections keep
+    syncing in the background and a feed that shows yesterday's state is
+    worse than a slightly slower one.
+    """
+    require_channel_role(session, user, team_id, allowed=_ANY_MEMBER)
+    _get_team_or_404(session, team_id)
+    result = build_channel_feed(session, team_id, limit=min(limit, 200))
+    return ChannelFeedOut(**result)

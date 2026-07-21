@@ -370,3 +370,85 @@ export function severityBand(severity: number): Severity {
   if (severity >= 0.4) return "warn";
   return "watch";
 }
+
+// --- Phase 2y: Workspace -> Class -> Group -> Channel ---------------------
+
+export interface WorkspaceClass {
+  id: string;
+  workspace_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  icon: string | null;
+  position: number;
+  group_count: number;
+}
+
+export interface HierarchyGroup {
+  id: string;
+  class_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  icon: string | null;
+  position: number;
+  channel_count: number;
+}
+
+export interface TreeChannel {
+  id: string;
+  name: string;
+  slug: string;
+  icon: string | null;
+  privacy: ChannelPrivacy;
+  is_member: boolean;
+  member_count: number;
+}
+
+export interface TreeGroup {
+  id: string;
+  name: string;
+  slug: string;
+  icon: string | null;
+  description: string | null;
+  channels: TreeChannel[];
+}
+
+export interface TreeClass {
+  id: string;
+  name: string;
+  slug: string;
+  icon: string | null;
+  description: string | null;
+  groups: TreeGroup[];
+}
+
+/** Breadcrumb: Workspace / Class / Group / #Channel. */
+export interface ChannelPath {
+  workspace_id: string;
+  workspace_name: string;
+  class_id: string;
+  class_name: string;
+  group_id: string;
+  group_name: string;
+  channel_id: string;
+  channel_name: string;
+}
+
+export interface ChannelFeedItem {
+  id: string;
+  type: string;
+  type_label: string;
+  title: string;
+  actor: string | null;
+  provider: string;
+  source_label: string;
+  url: string | null;
+  occurred_at: string;
+}
+
+export interface ChannelFeed {
+  items: ChannelFeedItem[];
+  no_connections: boolean;
+  connection_labels: string[];
+}

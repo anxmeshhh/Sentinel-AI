@@ -26,6 +26,8 @@ from app.schemas.channel_connection import ChannelConnectionCreate
 from app.schemas.invite import InviteCreate
 from app.schemas.team import TeamCreate
 
+from tests.hierarchy_helpers import make_group
+
 
 @pytest.fixture
 def session():
@@ -63,7 +65,7 @@ def env(session):
     )
     session.add(personal_gmail)
 
-    company_channel = Team(workspace_id=company.id, name="general", slug="general")
+    company_channel = Team(workspace_id=company.id, group_id=make_group(session, company.id).id, name="general", slug="general")
     session.add(company_channel)
     session.flush()
     session.add(TeamMembership(team_id=company_channel.id, user_id=owner.id, role=ChannelRole.CHANNEL_ADMIN))
@@ -110,7 +112,10 @@ def test_personal_workspace_cannot_contain_channels(session, env):
     with pytest.raises(HTTPException) as exc_info:
         create_team(
             workspace_id=env["personal"].id,
-            payload=TeamCreate(name="secret"),
+            # The group belongs to the *company* workspace - the personal
+            # workspace has none, by design. The route must reject on the
+            # workspace kind before it ever looks at the group.
+            payload=TeamCreate(name="secret", group_id=make_group(session, env["company"].id).id),
             session=session, user=env["owner"],
         )
     assert exc_info.value.status_code == 400

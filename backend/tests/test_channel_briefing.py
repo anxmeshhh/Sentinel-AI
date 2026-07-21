@@ -24,6 +24,8 @@ from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
 from app.services.channel_briefing import build_channel_briefing, channel_pending_count
 
+from tests.hierarchy_helpers import make_group
+
 NOW = datetime.now(timezone.utc)
 
 
@@ -50,7 +52,7 @@ def env(session):
     session.flush()
     session.add(Membership(workspace_id=workspace.id, user_id=user.id, role=Role.ORG_ADMIN))
 
-    team = Team(workspace_id=workspace.id, name="development", slug="dev")
+    team = Team(workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, name="development", slug="dev")
     session.add(team)
     session.flush()
     session.add(TeamMembership(team_id=team.id, user_id=user.id, role=ChannelRole.CHANNEL_ADMIN))
@@ -216,7 +218,7 @@ def test_pending_count_matches_briefing_and_costs_no_llm_call(session, env):
 
 
 def test_briefing_is_isolated_between_channels(session, env):
-    other = Team(workspace_id=env["workspace"].id, name="marketing", slug="mkt")
+    other = Team(workspace_id=env["workspace"].id, group_id=make_group(session, env["workspace"].id).id, name="marketing", slug="mkt")
     session.add(other)
     session.flush()
     session.add(_item(env["workspace"], type_=AttentionType.STALE_PR, dedupe_key="pr:482", title="Stale PR"))

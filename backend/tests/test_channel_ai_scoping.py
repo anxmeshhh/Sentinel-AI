@@ -20,6 +20,8 @@ from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
 from app.services.orchestrator import TOOL_PROVIDERS, _execute_read_tool, _get_connection, _tool_schemas, run_command_stream
 
+from tests.hierarchy_helpers import make_group
+
 
 @pytest.fixture
 def session():
@@ -43,7 +45,7 @@ def _setup(session):
     session.flush()
     session.add(Membership(workspace_id=workspace.id, user_id=user.id, role=Role.EMPLOYEE))
 
-    team = Team(workspace_id=workspace.id, name="development", slug="dev")
+    team = Team(workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, name="development", slug="dev")
     session.add(team)
     session.flush()
     session.add(TeamMembership(team_id=team.id, user_id=user.id, role=ChannelRole.CHANNEL_ADMIN))

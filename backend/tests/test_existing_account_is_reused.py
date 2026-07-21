@@ -25,6 +25,8 @@ from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
 from app.services.auth import AuthError, create_user_with_password, find_or_create_oauth_user
 from app.services.invites import accept_invite
 
+from tests.hierarchy_helpers import make_group
+
 
 @pytest.fixture
 def session():
@@ -47,7 +49,7 @@ def env(session):
     session.flush()
     session.add(Membership(workspace_id=workspace.id, user_id=admin.id, role=Role.ORG_ADMIN))
 
-    team = Team(workspace_id=workspace.id, name="development", slug="dev")
+    team = Team(workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, name="development", slug="dev")
     session.add(team)
     session.commit()
     return {"workspace": workspace, "admin": admin, "existing": existing, "team": team}

@@ -28,6 +28,8 @@ from app.services.channel_management import (
     set_archived,
 )
 
+from tests.hierarchy_helpers import make_group
+
 
 @pytest.fixture
 def session():
@@ -63,7 +65,7 @@ def test_create_channel_full_config(session):
     session.commit()
 
     team = create_channel(
-        session, workspace_id=workspace.id, creator=owner,
+session, workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, creator=owner,
         name="development", description="Dev team workspace", icon="🛠️", category="Teams",
         privacy=ChannelPrivacy.PRIVATE,
         member_user_ids=[employee.id], admin_user_ids=[], connection_ids=[connection.id],
@@ -85,7 +87,8 @@ def test_create_channel_rejects_non_workspace_member(session):
     session.commit()
 
     with pytest.raises(ChannelConfigError):
-        create_channel(session, workspace_id=workspace.id, creator=owner, name="dev", member_user_ids=[outsider.id])
+        create_channel(
+session, workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, creator=owner, name="dev", member_user_ids=[outsider.id])
 
 
 def test_create_channel_rejects_foreign_connection(session):
@@ -98,7 +101,8 @@ def test_create_channel_rejects_foreign_connection(session):
     session.commit()
 
     with pytest.raises(ChannelConfigError):
-        create_channel(session, workspace_id=workspace.id, creator=owner, name="dev", connection_ids=[foreign.id])
+        create_channel(
+session, workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, creator=owner, name="dev", connection_ids=[foreign.id])
 
 
 def test_create_route_gated_to_admin_roles(session):
@@ -107,13 +111,18 @@ def test_create_route_gated_to_admin_roles(session):
     spec's explicit instruction)."""
     workspace, _, employee = _setup(session)
     with pytest.raises(HTTPException) as exc_info:
-        create_team(workspace_id=workspace.id, payload=TeamCreate(name="rogue"), session=session, user=employee)
+        create_team(
+            workspace_id=workspace.id,
+            payload=TeamCreate(name="rogue", group_id=make_group(session, workspace.id).id),
+            session=session, user=employee,
+        )
     assert exc_info.value.status_code == 403
 
 
 def test_private_channel_hidden_from_non_member_list_and_lookup(session):
     workspace, owner, employee = _setup(session)
-    team = create_channel(session, workspace_id=workspace.id, creator=owner, name="secret", privacy=ChannelPrivacy.PRIVATE)
+    team = create_channel(
+session, workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, creator=owner, name="secret", privacy=ChannelPrivacy.PRIVATE)
 
     listed = list_teams(workspace_id=workspace.id, session=session, user=employee)
     assert all(t.id != team.id for t in listed)
@@ -128,7 +137,8 @@ def test_private_channel_hidden_from_non_member_list_and_lookup(session):
 
 def test_invite_only_channel_visible_but_not_joinable(session):
     workspace, owner, employee = _setup(session)
-    team = create_channel(session, workspace_id=workspace.id, creator=owner, name="managers", privacy=ChannelPrivacy.INVITE_ONLY)
+    team = create_channel(
+session, workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, creator=owner, name="managers", privacy=ChannelPrivacy.INVITE_ONLY)
 
     assert any(t.id == team.id for t in list_teams(workspace_id=workspace.id, session=session, user=employee))
     with pytest.raises(HTTPException) as exc_info:
@@ -138,14 +148,16 @@ def test_invite_only_channel_visible_but_not_joinable(session):
 
 def test_public_channel_join_unchanged(session):
     workspace, owner, employee = _setup(session)
-    team = create_channel(session, workspace_id=workspace.id, creator=owner, name="general", privacy=ChannelPrivacy.PUBLIC)
+    team = create_channel(
+session, workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, creator=owner, name="general", privacy=ChannelPrivacy.PUBLIC)
     out = join_team(team_id=team.id, session=session, user=employee)
     assert out.is_member is True
 
 
 def test_archived_channel_excluded_from_list_and_join(session):
     workspace, owner, employee = _setup(session)
-    team = create_channel(session, workspace_id=workspace.id, creator=owner, name="old-project")
+    team = create_channel(
+session, workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, creator=owner, name="old-project")
     set_archived(session, team, True)
 
     assert all(t.id != team.id for t in list_teams(workspace_id=workspace.id, session=session, user=owner))
@@ -160,7 +172,7 @@ def test_delete_channel_cascades_everything(session):
     session.add(connection)
     session.commit()
     team = create_channel(
-        session, workspace_id=workspace.id, creator=owner, name="doomed",
+session, workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, creator=owner, name="doomed",
         member_user_ids=[employee.id], connection_ids=[connection.id],
     )
     channel_connection = session.query(ChannelConnection).filter_by(team_id=team.id).one()

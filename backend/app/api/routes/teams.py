@@ -47,7 +47,7 @@ def _to_team_out(session: Session, team: Team, user: User) -> TeamOut:
         select(TeamMembership).where(TeamMembership.team_id == team.id, TeamMembership.user_id == user.id)
     ).scalar_one_or_none()
     return TeamOut(
-        id=team.id, workspace_id=team.workspace_id, name=team.name, slug=team.slug,
+        id=team.id, workspace_id=team.workspace_id, group_id=team.group_id, name=team.name, slug=team.slug,
         member_count=member_count, is_member=my_membership is not None,
         my_channel_role=my_membership.role.value if my_membership else None,
         description=team.description, icon=team.icon, category=team.category,
@@ -207,6 +207,7 @@ def create_team(
         team = create_channel(
             session,
             workspace_id=workspace_id,
+            group_id=payload.group_id,
             creator=user,
             name=payload.name,
             description=payload.description,

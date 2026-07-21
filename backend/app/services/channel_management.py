@@ -22,6 +22,7 @@ from app.models.invite import WorkspaceInvite
 from app.models.team import ChannelPrivacy, ChannelRole, Team, TeamMembership
 from app.models.user import User
 from app.models.workspace import Membership
+from app.services.hierarchy import get_group_in_workspace
 
 
 class ChannelConfigError(ValueError):
@@ -32,6 +33,7 @@ def create_channel(
     session: Session,
     *,
     workspace_id: uuid.UUID,
+    group_id: uuid.UUID,
     creator: User,
     name: str,
     description: str | None = None,
@@ -44,6 +46,15 @@ def create_channel(
 ) -> Team:
     member_user_ids = list(member_user_ids or [])
     admin_user_ids = set(admin_user_ids or [])
+
+    # Phase 2y: the parent Group decides the workspace, not the caller. A
+    # Group in another workspace simply isn't found here, so a channel can
+    # never be created across a tenant boundary - and the denormalized
+    # `workspace_id` below cannot disagree with `group -> class -> workspace`
+    # because it *is* that value.
+    group = get_group_in_workspace(session, workspace_id, group_id)
+    if group is None:
+        raise ChannelConfigError("That group doesn't exist in this workspace")
 
     # Every configured member/admin must already be a member of the parent
     # Workspace - a Channel can't smuggle someone into a Group.
@@ -73,6 +84,7 @@ def create_channel(
 
     team = Team(
         workspace_id=workspace_id,
+        group_id=group.id,
         name=name,
         slug=unique_slug(name),
         created_by_user_id=creator.id,

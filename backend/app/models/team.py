@@ -43,7 +43,17 @@ class Team(Base, UUIDPk, TimestampMixin):
     __tablename__ = "teams"
     __table_args__ = (UniqueConstraint("workspace_id", "slug", name="uq_team_workspace_slug"),)
 
+    # Denormalized from group -> class -> workspace. Kept because the whole
+    # authorization layer already reads it; never accepted from a caller,
+    # always derived from the parent Group on write. See models/hierarchy.py
+    # for the full reasoning and the test that pins the two can't diverge.
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+
+    # Phase 2y: a Channel lives inside exactly one Group. Nullable only so
+    # the backfill migration can run in two steps; every write path requires
+    # it, and the column is NOT NULL in the database.
+    group_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspace_groups.id"), nullable=False, index=True)
+
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(200), nullable=False)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)

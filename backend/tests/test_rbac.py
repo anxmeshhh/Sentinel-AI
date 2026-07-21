@@ -21,6 +21,8 @@ from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
 from app.schemas.invite import InviteCreate
 
+from tests.hierarchy_helpers import make_group
+
 
 @pytest.fixture
 def session():
@@ -51,7 +53,7 @@ def _make_workspace_with_member(session: Session, user: User, role: Role) -> Wor
 
 
 def _make_team_with_member(session: Session, workspace: Workspace, user: User, channel_role: ChannelRole) -> Team:
-    team = Team(workspace_id=workspace.id, name="development", slug=f"dev-{uuid.uuid4().hex[:8]}")
+    team = Team(workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, name="development", slug=f"dev-{uuid.uuid4().hex[:8]}")
     session.add(team)
     session.flush()
     session.add(TeamMembership(team_id=team.id, user_id=user.id, role=channel_role))
@@ -96,7 +98,7 @@ def test_require_channel_role_lets_org_admin_bypass_channel_membership(session):
     full control per the spec) even with no TeamMembership row at all."""
     user = _make_user(session, "org-admin@acme.test")
     workspace = _make_workspace_with_member(session, user, Role.ORG_ADMIN)
-    team = Team(workspace_id=workspace.id, name="marketing", slug="mkt")
+    team = Team(workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, name="marketing", slug="mkt")
     session.add(team)
     session.commit()
 
@@ -110,7 +112,7 @@ def test_require_channel_role_404s_for_nonmember_non_admin(session):
     """
     user = _make_user(session, "outsider@acme.test")
     workspace = _make_workspace_with_member(session, user, Role.EMPLOYEE)
-    team = Team(workspace_id=workspace.id, name="marketing", slug="mkt2")
+    team = Team(workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, name="marketing", slug="mkt2")
     session.add(team)
     session.commit()
 

@@ -22,6 +22,8 @@ from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
 from app.schemas.channel_connection import ChannelConnectionCreate, ChannelConnectionResourceCreate
 from app.services.channel_connections import is_resource_allowed
 
+from tests.hierarchy_helpers import make_group
+
 
 @pytest.fixture
 def session():
@@ -48,7 +50,7 @@ def _setup(session, admin_channel_role=ChannelRole.CHANNEL_ADMIN):
     session.add(Membership(workspace_id=workspace.id, user_id=admin.id, role=Role.EMPLOYEE))
     session.add(Membership(workspace_id=workspace.id, user_id=member.id, role=Role.EMPLOYEE))
 
-    team = Team(workspace_id=workspace.id, name="development", slug="dev")
+    team = Team(workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, name="development", slug="dev")
     session.add(team)
     session.flush()
     session.add(TeamMembership(team_id=team.id, user_id=admin.id, role=admin_channel_role))

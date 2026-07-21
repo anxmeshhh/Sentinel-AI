@@ -8,9 +8,12 @@ class TeamCreate(BaseModel):
     `name` is optional so the minimal quick-create flow still works."""
 
     name: str = Field(..., min_length=1, max_length=200)
+    # Phase 2y: the parent Group. Required - a Channel with no Group has no
+    # place in the hierarchy and no workspace to derive authorization from.
+    group_id: uuid.UUID
     description: str | None = Field(default=None, max_length=2000)
     icon: str | None = Field(default=None, max_length=16)
-    category: str | None = Field(default=None, max_length=100)
+    category: str | None = Field(default=None, max_length=100)  # legacy label, superseded by Group
     privacy: str = "public"  # public | invite_only | private
     member_user_ids: list[uuid.UUID] = []
     admin_user_ids: list[uuid.UUID] = []
@@ -31,6 +34,7 @@ class TeamUpdate(BaseModel):
 class TeamOut(BaseModel):
     id: uuid.UUID
     workspace_id: uuid.UUID
+    group_id: uuid.UUID
     name: str
     slug: str
     member_count: int

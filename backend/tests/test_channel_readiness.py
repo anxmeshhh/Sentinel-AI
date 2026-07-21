@@ -30,6 +30,8 @@ from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
 from app.schemas.channel_readiness import ChannelRequirementCreate
 from app.services.channel_readiness import ReadinessState, blocking_providers, member_checklist
 
+from tests.hierarchy_helpers import make_group
+
 NOW = datetime.now(timezone.utc)
 
 
@@ -61,7 +63,7 @@ def env(session):
     session.add(Membership(workspace_id=workspace.id, user_id=admin.id, role=Role.EMPLOYEE))
     session.add(Membership(workspace_id=workspace.id, user_id=member.id, role=Role.EMPLOYEE))
 
-    team = Team(workspace_id=workspace.id, name="development", slug="dev")
+    team = Team(workspace_id=workspace.id, group_id=make_group(session, workspace.id).id, name="development", slug="dev")
     session.add(team)
     session.flush()
     session.add(TeamMembership(team_id=team.id, user_id=admin.id, role=ChannelRole.CHANNEL_ADMIN))

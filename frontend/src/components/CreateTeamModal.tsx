@@ -77,7 +77,7 @@ export function CreateTeamModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Create a channel" onClose={onClose}>
       <form onSubmit={handleSubmit} className="max-h-[70vh] overflow-y-auto pr-1">
-        {error && <p className="mb-3 border border-crit/30 bg-crit/10 px-3 py-2 text-[12.5px] text-crit">{error}</p>}
+        {error && <p className="mb-3 border border-crit/30 bg-crit/10 px-3 py-2 text-small text-crit">{error}</p>}
 
         <div className="mb-3 flex gap-2">
           <input
@@ -85,7 +85,7 @@ export function CreateTeamModal({ onClose }: { onClose: () => void }) {
             onChange={(e) => setIcon(e.target.value)}
             placeholder="🛠️"
             aria-label="Channel icon (emoji, optional)"
-            className="w-14 border border-border bg-ground px-2 py-2.5 text-center text-[15px] outline-none focus:border-ink"
+            className="w-14 border border-border bg-ground px-2 py-2.5 text-center text-sub outline-none focus:border-ink"
           />
           <input
             required
@@ -93,30 +93,30 @@ export function CreateTeamModal({ onClose }: { onClose: () => void }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="development"
-            className="flex-1 border border-border bg-ground px-3.5 py-2.5 text-[13.5px] outline-none focus:border-ink"
+            className="flex-1 border border-border bg-ground px-3.5 py-2.5 text-body outline-none focus:border-ink"
           />
         </div>
         <input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Description (optional) — e.g. Workspace for the development team"
-          className="mb-3 w-full border border-border bg-ground px-3.5 py-2.5 text-[12.5px] outline-none focus:border-ink"
+          className="mb-3 w-full border border-border bg-ground px-3.5 py-2.5 text-small outline-none focus:border-ink"
         />
         <input
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           placeholder="Category (optional) — e.g. Teams, Projects"
-          className="mb-4 w-full border border-border bg-ground px-3.5 py-2.5 text-[12.5px] outline-none focus:border-ink"
+          className="mb-4 w-full border border-border bg-ground px-3.5 py-2.5 text-small outline-none focus:border-ink"
         />
 
-        <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-wide text-ink-faint">Privacy</div>
+        <div className="label-sub mb-1.5">Privacy</div>
         <div className="mb-4 flex flex-col gap-1.5">
           {PRIVACY_OPTIONS.map((opt) => (
             <label key={opt.value} className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border p-2.5 hover:border-accent">
               <input type="radio" name="privacy" checked={privacy === opt.value} onChange={() => setPrivacy(opt.value)} className="mt-0.5" />
               <span>
-                <span className="block text-[12.5px] font-semibold text-ink">{opt.label}</span>
-                <span className="block text-[11px] text-ink-faint">{opt.desc}</span>
+                <span className="block text-small font-semibold text-ink">{opt.label}</span>
+                <span className="block text-caption text-ink-faint">{opt.desc}</span>
               </span>
             </label>
           ))}
@@ -124,7 +124,7 @@ export function CreateTeamModal({ onClose }: { onClose: () => void }) {
 
         {otherMembers.length > 0 && (
           <>
-            <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-wide text-ink-faint">
+            <div className="label-sub mb-1.5">
               Members <span className="normal-case tracking-normal">(you're added as Channel Admin automatically)</span>
             </div>
             <div className="mb-4 flex max-h-40 flex-col gap-1 overflow-y-auto">
@@ -139,11 +139,11 @@ export function CreateTeamModal({ onClose }: { onClose: () => void }) {
                     }}
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12.5px] text-ink">{m.name}</span>
-                    <span className="block truncate text-[10.5px] text-ink-faint">{m.email}</span>
+                    <span className="block truncate text-small text-ink">{m.name}</span>
+                    <span className="block truncate text-caption text-ink-faint">{m.email}</span>
                   </span>
                   {selectedMembers.has(m.user_id) && (
-                    <label className="flex flex-none items-center gap-1 font-mono text-[10px] text-ink-faint">
+                    <label className="flex flex-none items-center gap-1 text-micro text-ink-faint">
                       <input
                         type="checkbox"
                         checked={selectedAdmins.has(m.user_id)}
@@ -160,8 +160,8 @@ export function CreateTeamModal({ onClose }: { onClose: () => void }) {
 
         {connections.length > 0 && (
           <>
-            <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-wide text-ink-faint">Connections</div>
-            <p className="mb-1.5 text-[10.5px] text-ink-faint">
+            <div className="label-sub mb-1.5">Connections</div>
+            <p className="mb-1.5 text-caption text-ink-faint">
               Assigning a connection grants no resource access by itself — allow-list specific resources afterwards in Channel Settings.
             </p>
             <div className="mb-4 flex flex-col gap-1">
@@ -172,7 +172,7 @@ export function CreateTeamModal({ onClose }: { onClose: () => void }) {
                     checked={selectedConnections.has(c.id)}
                     onChange={() => toggle(selectedConnections, c.id, setSelectedConnections)}
                   />
-                  <span className="text-[12px] text-ink-dim">
+                  <span className="text-small text-ink-dim">
                     {c.provider} · {c.org}
                     {c.provider === "github" && c.repo ? `/${c.repo}` : ""}
                   </span>
@@ -186,14 +186,14 @@ export function CreateTeamModal({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 border border-border py-2.5 text-[13px] text-ink-dim hover:border-crit hover:text-crit"
+            className="flex-1 border border-border py-2.5 text-body text-ink-dim hover:border-crit hover:text-crit"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting || !name.trim()}
-            className="flex-1 bg-ink py-2.5 text-[13.5px] font-semibold text-ground disabled:opacity-40"
+            className="flex-1 bg-ink py-2.5 text-body font-semibold text-ground disabled:opacity-40"
           >
             {submitting ? "Creating…" : "Create Channel"}
           </button>

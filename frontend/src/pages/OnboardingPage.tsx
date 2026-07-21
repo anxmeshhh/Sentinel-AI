@@ -94,13 +94,13 @@ export function OnboardingPage() {
 
   return (
     <div className="mx-auto max-w-3xl py-8">
-      <h1 className="mb-1.5 text-2xl font-semibold text-balance">How do you work?</h1>
-      <p className="mb-7 text-[13.5px] leading-relaxed text-ink-dim">
+      <h1 className="mb-1.5 text-h1 font-semibold text-balance">How do you work?</h1>
+      <p className="mb-7 text-body leading-relaxed text-ink-dim">
         Sentinel brings what matters to you from the tools you already use. This just sets your starting point —
         you can connect anything, change this later, and nothing is hidden permanently.
       </p>
 
-      {error && <p className="mb-4 rounded-md border border-crit/30 bg-crit/10 px-3 py-2 text-[12.5px] text-crit">{error}</p>}
+      {error && <p className="mb-4 rounded-md border border-crit/30 bg-crit/10 px-3 py-2 text-small text-crit">{error}</p>}
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {PERSONAS.map((p) => (
@@ -112,27 +112,27 @@ export function OnboardingPage() {
               selected === p.value ? "border-accent bg-accent/5" : "border-border bg-surface hover:border-accent"
             }`}
           >
-            <div className="mb-1.5 text-[20px]">{p.icon}</div>
-            <div className="text-[14px] font-semibold text-ink">{p.label}</div>
-            <div className="mb-1.5 font-mono text-[11px] text-accent-text">{p.tagline}</div>
-            <div className="text-[12px] leading-relaxed text-ink-faint">{p.focus}</div>
+            <div className="mb-1.5 text-h2">{p.icon}</div>
+            <div className="text-lead font-semibold text-ink">{p.label}</div>
+            <div className="mb-1.5 text-caption text-accent-text">{p.tagline}</div>
+            <div className="text-small leading-relaxed text-ink-faint">{p.focus}</div>
           </button>
         ))}
       </div>
 
-      <div className="rounded-lg border border-dashed border-border p-4">
+      <div className="rounded-lg border border-dashed border-border-strong p-4">
         <div className="mb-1 flex items-center gap-2">
-          <span className="text-[18px]">🧭</span>
-          <span className="text-[14px] font-semibold text-ink">Just exploring?</span>
+          <span className="text-h3">🧭</span>
+          <span className="text-lead font-semibold text-ink">Just exploring?</span>
         </div>
-        <p className="mb-3 text-[12.5px] leading-relaxed text-ink-faint">
+        <p className="mb-3 text-small leading-relaxed text-ink-faint">
           Try Sentinel on a realistic sample workspace — mail, calendar, documents and pull requests already in
           place. No accounts to connect, nothing of yours is touched.
         </p>
         <button
           onClick={explore}
           disabled={busy}
-          className="rounded-md bg-accent px-4 py-2 font-mono text-[12px] font-bold text-ground disabled:opacity-50"
+          className="btn-primary"
         >
           {busy && selected === "explorer" ? "Setting up…" : "Explore Sentinel →"}
         </button>

@@ -65,13 +65,13 @@ export function MeetPage() {
 
   if (connected === false) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border p-10 text-center text-ink-dim">
+      <div className="max-w-lg rounded-md border border-dashed border-border-strong p-10 text-center text-ink-dim">
         <BackNav
           back={{ to: "/connections/google", label: "Google Workspace" }}
           crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Meet" }]}
         />
-        <p className="mb-3 text-[14px]">Google Calendar isn't connected yet.</p>
-        <Link to="/connections/google" className="font-mono text-[13px] font-semibold text-accent-text hover:underline">
+        <p className="mb-3 text-lead">Google Calendar isn't connected yet.</p>
+        <Link to="/connections/google" className="text-body font-semibold text-accent-text hover:underline">
           Connect Google &rarr;
         </Link>
       </div>
@@ -84,8 +84,8 @@ export function MeetPage() {
         back={{ to: "/connections/google", label: "Google Workspace" }}
         crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Meet" }]}
       />
-      <h1 className="mb-1 text-xl font-semibold text-balance">Meet</h1>
-      <p className="mb-6 text-[13px] text-ink-dim">
+      <h1 className="mb-1 text-h2 font-semibold text-balance">Meet</h1>
+      <p className="mb-6 text-body text-ink-dim">
         Meeting history, built from your Calendar events — duration and attendees reflect what was
         scheduled, not real call attendance (Google doesn't expose that for personal accounts).
       </p>
@@ -96,7 +96,7 @@ export function MeetPage() {
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`rounded-full border px-3 py-1.5 font-mono text-[11.5px] capitalize transition-colors ${
+              className={`rounded-full border px-3 py-1.5 font-mono text-caption capitalize transition-colors ${
                 range === r ? "border-accent bg-accent/15 text-accent-text" : "border-border text-ink-faint hover:text-ink"
               }`}
             >
@@ -110,9 +110,9 @@ export function MeetPage() {
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && load()}
             placeholder="Search meetings…"
-            className="rounded-md border border-border bg-surface px-3 py-1.5 text-[12.5px] outline-none focus:border-accent"
+            className="rounded-lg border border-border bg-surface shadow-card px-3 py-1.5 text-small outline-none focus:border-accent"
           />
-          <button onClick={load} className="rounded-md border border-border bg-surface px-3 py-1.5 text-[11.5px] font-semibold text-ink-dim hover:border-accent hover:text-ink">
+          <button onClick={load} className="rounded-lg border border-border bg-surface shadow-card px-3 py-1.5 text-caption font-semibold text-ink-dim hover:border-accent hover:text-ink">
             Search
           </button>
         </div>
@@ -121,25 +121,25 @@ export function MeetPage() {
       {loading ? (
         <div className="text-ink-dim">Loading&hellip;</div>
       ) : meetings.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border p-8 text-center text-[13px] text-ink-faint">
+        <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-body text-ink-faint">
           No {range} meetings.
         </div>
       ) : (
-        <div className="rounded-md border border-border bg-surface">
+        <div className="rounded-lg border border-border bg-surface shadow-card">
           {meetings.map((m) => {
             const meta = STATUS_META[m.status];
             return (
               <div key={m.id} className="border-b border-border p-3.5 last:border-b-0">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="truncate text-[13.5px] font-semibold text-ink">{m.title}</div>
-                    <div className="mt-0.5 text-[11.5px] text-ink-faint">
+                    <div className="truncate text-body font-semibold text-ink">{m.title}</div>
+                    <div className="mt-0.5 text-caption text-ink-faint">
                       {m.start ? new Date(m.start).toLocaleString() : "—"}
                       {m.end && m.start && ` · ${durationLabel(m.start, m.end)}`}
                       {m.attendee_count > 0 && ` · ${m.attendee_count} attendee${m.attendee_count === 1 ? "" : "s"}`}
                     </div>
                   </div>
-                  <span className={`flex-none rounded-full border px-2 py-[3px] font-mono text-[9.5px] uppercase tracking-wide ${meta.cls}`}>
+                  <span className={`flex-none rounded-full border px-2 py-[3px] font-mono text-micro uppercase tracking-wide ${meta.cls}`}>
                     {meta.label}
                   </span>
                 </div>
@@ -149,7 +149,7 @@ export function MeetPage() {
                       href={m.calendar_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-mono text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink"
+                      className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
                     >
                       Open Calendar Event
                     </a>
@@ -159,7 +159,7 @@ export function MeetPage() {
                       href={m.meet_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-mono text-[11px] text-good underline underline-offset-2 hover:opacity-80"
+                      className="text-caption text-good underline underline-offset-2 hover:opacity-80"
                     >
                       Open Meet Link
                     </a>
@@ -172,7 +172,7 @@ export function MeetPage() {
                         void brief.load(`/meetings/${m.id}/prepare`);
                       }}
                       disabled={brief.loading && prepId === m.id}
-                      className={`font-mono text-[11px] underline underline-offset-2 disabled:opacity-50 ${
+                      className={`font-mono text-caption underline underline-offset-2 disabled:opacity-50 ${
                         prepId === m.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
                       }`}
                     >
@@ -184,7 +184,7 @@ export function MeetPage() {
                 {prepId === m.id && (brief.brief || brief.error) && (
                   <div className="mt-3">
                     {brief.error ? (
-                      <p className="text-[12px] text-crit">{brief.error}</p>
+                      <p className="text-small text-crit">{brief.error}</p>
                     ) : (
                       <MeetingBriefPanel
                         brief={brief.brief!}

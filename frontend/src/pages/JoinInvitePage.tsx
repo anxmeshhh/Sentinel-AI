@@ -50,15 +50,15 @@ export function JoinInvitePage() {
 
       {preview && (
         <div className="mb-6 text-center">
-          <p className="text-[16px] font-semibold text-ink">{target}</p>
+          <p className="text-title font-semibold text-ink">{target}</p>
         </div>
       )}
 
       {preview && !preview.valid && (
-        <p className="text-center text-[13px] text-ink-dim">{preview.reason_invalid}</p>
+        <p className="text-center text-body text-ink-dim">{preview.reason_invalid}</p>
       )}
 
-      {preview?.valid && authLoading && <p className="text-center text-[13px] text-ink-dim">Loading…</p>}
+      {preview?.valid && authLoading && <p className="text-center text-body text-ink-dim">Loading…</p>}
 
       {preview?.valid && !authLoading && !user && (
         <div className="flex flex-col gap-2.5">
@@ -67,7 +67,7 @@ export function JoinInvitePage() {
           </Link>
           <Link
             to={`/login?next=${encodeURIComponent(`/invite/${token}`)}`}
-            className="block text-center text-[12.5px] text-ink-dim underline underline-offset-2 hover:text-ink"
+            className="block text-center text-small text-ink-dim underline underline-offset-2 hover:text-ink"
           >
             Already have an account? Sign in
           </Link>

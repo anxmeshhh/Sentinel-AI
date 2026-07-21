@@ -160,10 +160,10 @@ export function MailPage() {
 
   if (connected === false) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border p-10 text-center text-ink-dim">
+      <div className="max-w-lg rounded-md border border-dashed border-border-strong p-10 text-center text-ink-dim">
         <BackNav back={{ to: "/connections/google", label: "Google Workspace" }} crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Gmail" }]} />
-        <p className="mb-3 text-[14px]">Gmail isn't connected yet.</p>
-        <Link to="/settings" className="font-mono text-[13px] font-semibold text-accent-text hover:underline">
+        <p className="mb-3 text-lead">Gmail isn't connected yet.</p>
+        <Link to="/settings" className="text-body font-semibold text-accent-text hover:underline">
           Connect Gmail &rarr;
         </Link>
       </div>
@@ -176,8 +176,8 @@ export function MailPage() {
         back={{ to: "/connections/google", label: "Google Workspace" }}
         crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Gmail" }]}
       />
-      <h1 className="mb-1 text-xl font-semibold text-balance">Mail</h1>
-      <p className="mb-5 text-[13px] text-ink-dim">
+      <h1 className="mb-1 text-h2 font-semibold text-balance">Mail</h1>
+      <p className="mb-5 text-body text-ink-dim">
         Click an email to read it — original content only, no AI call. Summarize is optional, on demand.
       </p>
 
@@ -189,11 +189,11 @@ export function MailPage() {
               onChange={(e) => setAskInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAsk()}
               placeholder="Ask: what's in starred, top 10…"
-              className="flex-1 rounded-md border border-border bg-surface px-3 py-2 text-[12.5px] outline-none focus:border-accent"
+              className="flex-1 rounded-lg border border-border bg-surface shadow-card px-3 py-2 text-small outline-none focus:border-accent"
             />
             <button
               onClick={handleAsk}
-              className="rounded-md border border-border bg-surface px-3 py-2 text-[11.5px] font-semibold text-ink-dim hover:border-accent hover:text-ink"
+              className="rounded-lg border border-border bg-surface shadow-card px-3 py-2 text-caption font-semibold text-ink-dim hover:border-accent hover:text-ink"
             >
               Ask
             </button>
@@ -204,7 +204,7 @@ export function MailPage() {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab)}
-                className={`rounded-full border px-2.5 py-1 font-mono text-[10.5px] transition-colors ${
+                className={`rounded-full border px-2.5 py-1 font-mono text-caption transition-colors ${
                   activeTab.key === tab.key
                     ? "border-accent bg-accent/15 text-accent-text"
                     : "border-border text-ink-faint hover:text-ink"
@@ -215,16 +215,16 @@ export function MailPage() {
             ))}
           </div>
 
-          {askMessage && <p className="mb-3 text-[12px] text-watch">{askMessage}</p>}
+          {askMessage && <p className="mb-3 text-small text-watch">{askMessage}</p>}
 
           {loading ? (
             <div className="text-ink-dim">Loading&hellip;</div>
           ) : threads.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border p-6 text-center text-[12.5px] text-ink-faint">
+            <div className="rounded-md border border-dashed border-border-strong p-6 text-center text-small text-ink-faint">
               Nothing here.
             </div>
           ) : (
-            <div className="rounded-md border border-border bg-surface">
+            <div className="rounded-lg border border-border bg-surface shadow-card">
               {threads.map((group) => {
                 const latest = group.messages[0];
                 const isUnread = group.messages.some((m) => m.is_unread);
@@ -240,19 +240,19 @@ export function MailPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         {latest.is_starred && <span className="text-watch">★</span>}
-                        <span className={`truncate text-[11.5px] ${isUnread ? "font-semibold text-ink" : "text-ink-faint"}`}>
+                        <span className={`truncate text-caption ${isUnread ? "font-semibold text-ink" : "text-ink-faint"}`}>
                           {latest.sender}
                         </span>
                         {group.messages.length > 1 && (
-                          <span className="flex-none rounded-full bg-surface-2 px-1.5 py-[1px] font-mono text-[9.5px] text-ink-dim">
+                          <span className="flex-none rounded-full bg-surface-2 px-1.5 py-[1px] text-micro text-ink-dim">
                             {group.messages.length}
                           </span>
                         )}
                       </div>
-                      <div className={`mt-0.5 truncate text-[12.5px] ${isUnread ? "font-semibold text-ink" : "text-ink-dim"}`}>
+                      <div className={`mt-0.5 truncate text-small ${isUnread ? "font-semibold text-ink" : "text-ink-dim"}`}>
                         {latest.subject}
                       </div>
-                      <div className="mt-0.5 font-mono text-[10.5px] text-ink-faint">
+                      <div className="mt-0.5 text-caption text-ink-faint">
                         {new Date(latest.occurred_at).toLocaleDateString()}
                       </div>
                     </div>
@@ -264,9 +264,9 @@ export function MailPage() {
           )}
         </div>
 
-        <div className={`min-w-0 flex-1 overflow-y-auto rounded-md border border-border bg-surface lg:block ${mobileReaderOpen ? "block" : "hidden"}`}>
+        <div className={`min-w-0 flex-1 overflow-y-auto rounded-lg border border-border bg-surface shadow-card lg:block ${mobileReaderOpen ? "block" : "hidden"}`}>
           {!selectedGroup || !selectedItem ? (
-            <div className="flex h-full items-center justify-center p-8 text-center text-[13px] text-ink-faint">
+            <div className="flex h-full items-center justify-center p-8 text-center text-body text-ink-faint">
               Select an email to read it.
             </div>
           ) : (
@@ -313,7 +313,7 @@ function EmailReader({
 
   return (
     <div>
-      <button onClick={onBack} className="border-b border-border px-4 py-2.5 font-mono text-[11px] text-ink-faint hover:text-ink lg:hidden">
+      <button onClick={onBack} className="border-b border-border px-4 py-2.5 text-caption text-ink-faint hover:text-ink lg:hidden">
         &larr; Back to list
       </button>
 
@@ -323,7 +323,7 @@ function EmailReader({
             <button
               key={m.id}
               onClick={() => onSelectMessage(m)}
-              className={`flex-none whitespace-nowrap rounded-full border px-2.5 py-1 font-mono text-[10.5px] ${
+              className={`flex-none whitespace-nowrap rounded-full border px-2.5 py-1 font-mono text-caption ${
                 m.id === selected.id ? "border-accent bg-accent/15 text-accent-text" : "border-border text-ink-faint hover:text-ink"
               }`}
             >
@@ -336,25 +336,25 @@ function EmailReader({
       <div className="p-4">
         <div className="mb-3 flex items-start justify-between gap-3 border-b border-border pb-3">
           <div className="min-w-0">
-            <div className="text-[15px] font-semibold text-ink">{selected.subject}</div>
-            <div className="mt-1 text-[12px] text-ink-faint">
+            <div className="text-sub font-semibold text-ink">{selected.subject}</div>
+            <div className="mt-1 text-small text-ink-faint">
               <span className="text-ink-dim">From:</span> {selected.sender}
             </div>
-            <div className="mt-0.5 text-[11.5px] text-ink-faint">{new Date(selected.occurred_at).toLocaleString()}</div>
+            <div className="mt-0.5 text-caption text-ink-faint">{new Date(selected.occurred_at).toLocaleString()}</div>
           </div>
           <div className="flex flex-none flex-col items-end gap-1.5">
             <a
               href={selected.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="whitespace-nowrap font-mono text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink"
+              className="whitespace-nowrap text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
             >
               Open in Gmail
             </a>
             <button
               onClick={onSummarize}
               disabled={summarizing}
-              className="whitespace-nowrap rounded-md bg-accent px-3 py-1.5 font-mono text-[11px] font-bold text-ground disabled:opacity-50"
+              className="btn-primary"
             >
               {summarizing ? "Summarizing…" : "Summarize ✨"}
             </button>
@@ -362,20 +362,20 @@ function EmailReader({
         </div>
 
         {summaryState && !(typeof summaryState === "object" && "error" in summaryState) && (
-          <div className="mb-4 rounded-md border border-accent/30 bg-accent/5">
+          <div className="mb-4 rounded-md border border-accent/25 bg-accent/[0.04] p-4 shadow-card">
             <button
               onClick={onToggleSummary}
-              className="flex w-full items-center justify-between px-3 py-2 text-left font-mono text-[11px] font-bold uppercase tracking-wide text-accent-text"
+              className="label-sub flex w-full items-center justify-between px-3 py-2 text-left font-bold text-accent-text"
             >
               <span>AI Summary ✨</span>
               <span className={`transition-transform ${summaryIsOpen ? "rotate-180" : ""}`}>&#9660;</span>
             </button>
             {summaryIsOpen && summaryState !== "loading" && (
-              <div className="border-t border-accent/20 px-3 py-3 text-[12.5px] leading-relaxed text-ink-dim">
+              <div className="border-t border-accent/20 px-3 py-3 text-small leading-relaxed text-ink-dim">
                 <p className="mb-3">{summaryState.summary}</p>
                 {summaryState.key_points.length > 0 && (
                   <>
-                    <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wide text-ink-dim">Key Points</div>
+                    <div className="label-sub mb-1 font-bold text-ink-dim">Key Points</div>
                     <ul className="mb-3 list-disc space-y-1 pl-4">
                       {summaryState.key_points.map((p, i) => (
                         <li key={i}>{p}</li>
@@ -385,7 +385,7 @@ function EmailReader({
                 )}
                 {summaryState.action_items.length > 0 && (
                   <>
-                    <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wide text-watch">Action Items</div>
+                    <div className="label-sub mb-1 font-bold text-watch">Action Items</div>
                     <ul className="list-disc space-y-1 pl-4 text-ink">
                       {summaryState.action_items.map((a, i) => (
                         <li key={i}>{a}</li>
@@ -398,11 +398,11 @@ function EmailReader({
           </div>
         )}
         {typeof summaryState === "object" && "error" in summaryState && (
-          <p className="mb-4 text-[12px] text-crit">{summaryState.error}</p>
+          <p className="mb-4 text-small text-crit">{summaryState.error}</p>
         )}
 
-        <div className="font-mono text-[10.5px] font-bold uppercase tracking-wide text-ink-faint">Original Email</div>
-        <div className="mt-2 text-[13px] leading-relaxed text-ink-dim">
+        <div className="label-sub font-bold">Original Email</div>
+        <div className="mt-2 text-body leading-relaxed text-ink-dim">
           {bodyState === "loading" && "Fetching…"}
           {typeof bodyState === "object" && "error" in bodyState && <span className="text-crit">{bodyState.error}</span>}
           {bodyState && bodyState !== "loading" && !("error" in bodyState) && (

@@ -63,9 +63,9 @@ export function ChannelWorkspacePage() {
   if (loading) return <div className="text-ink-dim">Loading&hellip;</div>;
   if (error || !team) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border p-10 text-center text-ink-dim">
-        <p className="text-[14px] text-crit">{error ?? "Channel not found."}</p>
-        <Link to="/" className="mt-3 inline-block text-[12.5px] underline underline-offset-2">
+      <div className="max-w-lg rounded-md border border-dashed border-border-strong p-10 text-center text-ink-dim">
+        <p className="text-lead text-crit">{error ?? "Channel not found."}</p>
+        <Link to="/" className="mt-3 inline-block text-small underline underline-offset-2">
           Back to dashboard
         </Link>
       </div>
@@ -75,25 +75,25 @@ export function ChannelWorkspacePage() {
   const definition = CHANNEL_MODULES.find((m) => m.key === activeModule);
 
   return (
-    <div className="max-w-5xl">
+    <div className="mx-auto w-full max-w-5xl">
       {path && <ChannelBreadcrumb path={path} />}
 
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-balance">
+          <h1 className="text-h2 font-semibold text-balance">
             {team.icon ? `${team.icon} ` : "#"}
             {team.name}
           </h1>
-          {team.description && <p className="mt-1 text-[13px] text-ink-dim">{team.description}</p>}
+          {team.description && <p className="mt-1 text-body text-ink-dim">{team.description}</p>}
         </div>
         <div className="flex items-center gap-2">
           {team.privacy !== "public" && (
-            <span className="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] text-ink-faint">
+            <span className="rounded-full border border-border px-2 py-0.5 text-micro text-ink-faint">
               {team.privacy === "private" ? "PRIVATE" : "INVITE ONLY"}
             </span>
           )}
           {isAdmin && (
-            <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent-text">
+            <span className="rounded-full border border-accent/35 bg-accent/10 px-2.5 py-0.5 label-sub text-accent-text">
               CHANNEL ADMIN
             </span>
           )}
@@ -101,7 +101,7 @@ export function ChannelWorkspacePage() {
       </div>
 
       {team.is_archived && (
-        <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-[12.5px] text-watch">
+        <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-small text-watch">
           This channel is archived — Channel AI is disabled and it's hidden from the sidebar.
           {isAdmin && " Unarchive it from Settings to bring it back."}
         </div>
@@ -113,7 +113,7 @@ export function ChannelWorkspacePage() {
           missing, say so on every module rather than letting each one
           render an empty state that looks like "nothing happening". */}
       {readiness && blockingCount > 0 && activeModule !== "extensions" && (
-        <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-[12.5px]">
+        <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-small">
           <span className="font-semibold text-watch">Setup incomplete.</span>{" "}
           <span className="text-ink-dim">
             You haven't connected {blockingCount} required integration{blockingCount === 1 ? "" : "s"} for this channel, so

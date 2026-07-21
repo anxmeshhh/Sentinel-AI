@@ -65,29 +65,29 @@ export function AttentionStrip() {
   return (
     <section className="mb-8">
       <div className="mb-2.5 flex items-center justify-between">
-        <h2 className="font-mono text-[11.5px] font-bold uppercase tracking-wide text-ink-dim">Needs Your Attention</h2>
-        <Link to="/attention" className="font-mono text-[11px] text-accent-text hover:underline">
+        <h2 className="label-sub font-bold text-ink-dim">Needs Your Attention</h2>
+        <Link to="/attention" className="text-caption text-accent-text hover:underline">
           View all &rarr;
         </Link>
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border p-5 text-center text-[12.5px] text-ink-faint">
+        <div className="rounded-md border border-dashed border-border-strong p-5 text-center text-small text-ink-faint">
           Nothing needs your attention right now. ✨
         </div>
       ) : (
         <div className="flex flex-col gap-2">
           {items.slice(0, 5).map((item) => (
-            <div key={item.id} className="flex items-start gap-3 rounded-md border border-border bg-surface p-3">
-              <span className="mt-0.5 flex-none text-[16px]">{attentionIcon(item)}</span>
+            <div key={item.id} className="flex items-start gap-3 rounded-lg border border-border bg-surface shadow-card p-3">
+              <span className="mt-0.5 flex-none text-title">{attentionIcon(item)}</span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-semibold text-ink">{item.title}</div>
-                <div className="truncate text-[11.5px] text-ink-faint">
+                <div className="truncate text-body font-semibold text-ink">{item.title}</div>
+                <div className="truncate text-caption text-ink-faint">
                   {item.why}
                   {item.origin === "detected" && <span className="ml-1.5">✨</span>}
                 </div>
               </div>
-              <div className="flex flex-none items-center gap-2.5 pt-0.5 font-mono text-[10.5px]">
+              <div className="flex flex-none items-center gap-2.5 pt-0.5 text-caption">
                 <button onClick={() => act(item, "done")} className="text-ink-faint underline underline-offset-2 hover:text-good">
                   Done
                 </button>
@@ -119,16 +119,16 @@ export function CatchMeUpCard() {
   const away = catchup.gap_hours < 48 ? `${Math.round(catchup.gap_hours)} hours` : `${Math.round(catchup.gap_hours / 24)} days`;
 
   return (
-    <section className="mb-6 rounded-md border border-accent/30 bg-accent/5 p-4">
+    <section className="mb-6 rounded-md border border-accent/25 bg-accent/[0.04] p-4 shadow-card">
       <div className="mb-1.5 flex items-center justify-between">
-        <span className="font-mono text-[10.5px] font-bold uppercase tracking-wide text-accent-text">
+        <span className="label-sub font-bold text-accent-text">
           Catch Me Up ✨ · away {away}
         </span>
-        <button onClick={() => setHidden(true)} aria-label="Dismiss" className="text-[13px] text-ink-faint hover:text-ink">
+        <button onClick={() => setHidden(true)} aria-label="Dismiss" className="text-body text-ink-faint hover:text-ink">
           &times;
         </button>
       </div>
-      <p className="text-[13px] leading-relaxed text-ink-dim">{catchup.narrative}</p>
+      <p className="text-body leading-relaxed text-ink-dim">{catchup.narrative}</p>
     </section>
   );
 }

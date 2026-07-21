@@ -29,22 +29,22 @@ export function ConnectScopeDialog({
 }) {
   return (
     <Modal title={`Connect ${providerName}`} onClose={onCancel}>
-      <p className="mb-3 text-[12.5px] text-ink-dim">You are connecting this to:</p>
+      <p className="mb-3 text-small text-ink-dim">You are connecting this to:</p>
 
       <div className="mb-4 rounded-md border border-border bg-ground p-3.5">
-        <div className="mb-1.5 text-[13.5px] font-semibold text-ink">
+        <div className="mb-1.5 text-body font-semibold text-ink">
           {scope === "personal" ? "Your Personal workspace" : workspaceName ?? "This workspace"}
         </div>
         <ScopeBadge scope={scope} workspaceName={workspaceName} />
-        <p className="mt-2 text-[12px] leading-relaxed text-ink-faint">{scopeExplanation(scope, workspaceName)}</p>
+        <p className="mt-2 text-small leading-relaxed text-ink-faint">{scopeExplanation(scope, workspaceName)}</p>
       </div>
 
       {services.length > 0 && (
         <div className="mb-4">
-          <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-ink-faint">Sentinel will be able to read</div>
+          <div className="label-sub mb-1.5">Sentinel will be able to read</div>
           <ul className="flex flex-col gap-1">
             {services.map((s) => (
-              <li key={s} className="text-[12.5px] text-ink-dim">
+              <li key={s} className="text-small text-ink-dim">
                 · {s}
               </li>
             ))}
@@ -52,7 +52,7 @@ export function ConnectScopeDialog({
         </div>
       )}
 
-      <p className="mb-4 text-[11.5px] leading-relaxed text-ink-faint">
+      <p className="mb-4 text-caption leading-relaxed text-ink-faint">
         You can disconnect at any time. {scope === "personal" && "Sentinel never shares a personal connection with a workspace or channel."}
       </p>
 
@@ -60,14 +60,14 @@ export function ConnectScopeDialog({
         <button
           onClick={onCancel}
           disabled={busy}
-          className="flex-1 rounded-md border border-border py-2.5 text-[13px] text-ink-dim hover:border-crit hover:text-crit disabled:opacity-50"
+          className="flex-1 rounded-md border border-border py-2.5 text-body text-ink-dim hover:border-crit hover:text-crit disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           onClick={onConfirm}
           disabled={busy}
-          className="flex-1 rounded-md bg-accent py-2.5 text-[13px] font-semibold text-ground disabled:opacity-50"
+          className="btn-primary flex-1"
         >
           {busy ? "Redirecting…" : "Continue"}
         </button>

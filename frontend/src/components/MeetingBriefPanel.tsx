@@ -31,34 +31,34 @@ export function MeetingBriefPanel({
   onClose: () => void;
 }) {
   return (
-    <div className="rounded-md border border-accent/30 bg-accent/5 p-4">
+    <div className="rounded-md border border-accent/25 bg-accent/[0.04] p-4 shadow-card">
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="font-mono text-[10.5px] font-bold uppercase tracking-wide text-accent-text">
+          <div className="label-sub font-bold text-accent-text">
             Meeting Brief ✨
           </div>
-          <div className="truncate text-[13.5px] font-semibold text-ink">{brief.title}</div>
+          <div className="truncate text-body font-semibold text-ink">{brief.title}</div>
         </div>
         <div className="flex flex-none items-center gap-2">
           <button
             onClick={onRefresh}
             disabled={refreshing}
-            className="font-mono text-[10.5px] text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
+            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
           >
             {refreshing ? "Rebuilding…" : "↻ Rebuild"}
           </button>
-          <button onClick={onClose} aria-label="Close" className="text-[14px] text-ink-faint hover:text-ink">
+          <button onClick={onClose} aria-label="Close" className="text-lead text-ink-faint hover:text-ink">
             &times;
           </button>
         </div>
       </div>
 
-      <p className="mb-3 text-[12.5px] leading-relaxed text-ink-dim">{brief.narrative}</p>
+      <p className="mb-3 text-small leading-relaxed text-ink-dim">{brief.narrative}</p>
 
       {brief.prep_points.length > 0 && (
         <div className="mb-3">
-          <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-ink-faint">Before the meeting</div>
-          <ul className="list-disc space-y-1 pl-4 text-[12px] text-ink-dim">
+          <div className="label-sub mb-1">Before the meeting</div>
+          <ul className="list-disc space-y-1 pl-4 text-small text-ink-dim">
             {brief.prep_points.map((p, i) => (
               <li key={i}>{p}</li>
             ))}
@@ -68,10 +68,10 @@ export function MeetingBriefPanel({
 
       {brief.sources.length > 0 && (
         <div>
-          <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-ink-faint">Sources</div>
+          <div className="label-sub mb-1">Sources</div>
           <div className="flex flex-col gap-1">
             {brief.sources.map((s, i) => (
-              <div key={i} className="flex items-center gap-2 text-[11.5px]">
+              <div key={i} className="flex items-center gap-2 text-caption">
                 <span className="flex-none" title={SOURCE_LABEL[s.kind]}>
                   {SOURCE_ICON[s.kind]}
                 </span>
@@ -81,7 +81,7 @@ export function MeetingBriefPanel({
                     href={s.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-none font-mono text-[10px] font-semibold text-accent-text hover:underline"
+                    className="flex-none text-micro font-semibold text-accent-text hover:underline"
                   >
                     Open &#8599;
                   </a>
@@ -93,7 +93,7 @@ export function MeetingBriefPanel({
       )}
 
       {brief.cached && (
-        <p className="mt-2.5 text-[10px] text-ink-faint">
+        <p className="mt-2.5 text-micro text-ink-faint">
           Generated {new Date(brief.created_at).toLocaleString()} · rebuild to refresh
         </p>
       )}

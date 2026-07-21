@@ -14,23 +14,158 @@ html {
      icon) render with light-mode assumptions and end up unreadable
      (dark text on a dark surface) against this UI. */
   color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   @apply bg-ground text-ink font-sans antialiased;
-  font-size: 14px;
-  line-height: 1.55;
+  /* 15px, up from 14px. Every unstyled element inherits this, so it is the
+     real floor for readability - the type scale in tailwind.config.ts sits
+     on top of it. */
+  font-size: 15px;
+  line-height: 1.6;
   overflow-x: hidden;
   font-variant-numeric: tabular-nums;
+  text-rendering: optimizeLegibility;
+}
+
+/* A faint vignette from the top-left. On a flat near-black ground large
+   empty areas read as dead space; this gives the page a light source
+   without introducing a visible gradient band. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(1100px 700px at 50% -10%, rgba(255, 255, 255, 0.035), transparent 65%);
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Headings default to tight tracking - at 22px+ the default spacing looks
+   loose against this ink colour. */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
 .tab-nums {
   font-variant-numeric: tabular-nums;
 }
 
+@layer components {
+  /* Section label. Sentence case, clean sans - the references reserve
+     uppercase mono for data, not chrome. Hierarchy comes from the size jump
+     to the heading beneath it, not from styling the label louder. */
+  .eyebrow {
+    @apply text-caption font-medium text-ink-faint;
+  }
+
+  /* Secondary label: section headers, column headers, metadata captions. */
+  .label-sub {
+    @apply text-caption font-medium text-ink-faint;
+  }
+
+  /* Monospace is for machine-generated values only: ids, hashes, HTTP
+     status, timestamps, resource keys. Applying it to prose labels made the
+     whole UI read as a terminal. */
+  .data {
+    @apply font-mono text-caption tabular-nums text-ink-dim;
+  }
+
+  /* Primary CTA: a white pill with dark text - the one high-contrast element
+     on the page, exactly as both references use it. */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-ink px-5 py-2.5
+           text-small font-semibold text-ground shadow-pill
+           transition-all duration-200 ease-out
+           hover:-translate-y-px hover:bg-white disabled:pointer-events-none disabled:opacity-45;
+  }
+
+  /* Secondary: same pill shape, outlined, so the pair reads as one family. */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-border-strong
+           bg-surface px-5 py-2.5 text-small font-medium text-ink-dim
+           transition-all duration-200 ease-out
+           hover:-translate-y-px hover:border-ink-faint hover:text-ink
+           disabled:pointer-events-none disabled:opacity-45;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-caption
+           text-ink-faint transition-colors hover:text-ink;
+  }
+
+  /* The card from Resend: generous padding, soft radius, hairline border,
+     and a hover lift that signals it's a destination. */
+  .card {
+    @apply rounded-lg border border-border bg-surface p-5 shadow-card sm:p-6;
+  }
+  .card-interactive {
+    @apply card transition-all duration-200 ease-out hover:border-border-strong hover:shadow-raised;
+  }
+
+  /* Status pill: colour carries the meaning, so the shape stays neutral. */
+  .status-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-micro font-medium;
+  }
+
+  /* ---- The ruled grid -------------------------------------------------
+     Hairline-separated cells with square corners and no fill - the box-and-
+     edge treatment from the reference. Structure comes from the rules
+     themselves, so cells must NOT also carry a background or a radius or
+     the effect collapses back into a row of cards.
+
+     Each child draws only its bottom and right rule; the container supplies
+     the top and left. That way interior lines are exactly one pixel instead
+     of two stacked, which is what makes the grid look drawn rather than
+     assembled. */
+  .rule-grid {
+    @apply grid border-l border-t border-rule;
+  }
+  .rule-grid > * {
+    @apply border-b border-r border-rule p-5 sm:p-7;
+  }
+  /* Rows rather than cells - same rules, full width. */
+  .rule-rows {
+    @apply border-t border-rule;
+  }
+  .rule-rows > * {
+    @apply border-b border-rule px-4 py-3.5 sm:px-5;
+  }
+
+  /* A cell that is also a link: the fill appears on hover only, so the grid
+     stays flat at rest. */
+  .rule-cell-interactive {
+    @apply transition-colors duration-200 hover:bg-surface/70;
+  }
+
+  /* The centred content column flanked by vertical rules, as on the
+     reference's section pages. */
+  .rule-frame {
+    @apply border-x border-rule;
+  }
+}
+
+/* Long-form text that should never run to an uncomfortable measure. */
+.prose-measure {
+  max-width: 68ch;
+}
+
+::selection {
+  background: rgba(237, 237, 242, 0.22);
+  color: #ffffff;
+}
+
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -38,9 +173,84 @@ body {
 ::-webkit-scrollbar-thumb {
   @apply bg-surface-2;
   border-radius: 999px;
+  /* Inset the thumb so it doesn't touch the pane edge. */
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-surface-3;
+  background-clip: content-box;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #191920 transparent;
 }
 
 :focus-visible {
   outline: 2px solid theme("colors.accent");
   outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Native selects render their popup list with the OS palette; without this
+   the options are near-invisible on some platforms. */
+option {
+  background-color: #111114;
+  color: #f4f4f6;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #6f6f7c;
+}
+
+/* Touch devices: the dense inline actions in this UI ("Remove", "Promote",
+   "Refresh") are comfortable with a mouse and too small for a thumb. Rather
+   than branching every call site on a breakpoint, widen the hit area for
+   coarse pointers only - this keeps the desktop density the app is designed
+   around while meeting a usable touch target on phones and tablets. */
+@media (pointer: coarse) {
+  button,
+  a[href],
+  [role="button"],
+  summary {
+    min-height: 40px;
+  }
+  /* Inline text links inside a paragraph must not become 40px blocks. */
+  p a[href],
+  li a[href],
+  .inline-link {
+    min-height: 0;
+  }
+  input,
+  select,
+  textarea {
+    /* Below 16px iOS zooms the whole page on focus. */
+    font-size: max(16px, 1em);
+  }
+}
+
+/* Horizontally scrollable strips (the channel module nav, filter rows)
+   shouldn't show a scrollbar - the content bleeding past the edge is the
+   affordance. */
+.scroll-x {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+}
+.scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

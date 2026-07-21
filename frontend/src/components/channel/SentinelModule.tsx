@@ -26,7 +26,7 @@ export function SentinelModule({
 
   if (isArchived) {
     return (
-      <div className="rounded-md border border-dashed border-border p-8 text-center text-[12.5px] text-ink-faint">
+      <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-small text-ink-faint">
         Channel AI is disabled while this channel is archived.
       </div>
     );
@@ -34,7 +34,7 @@ export function SentinelModule({
 
   return (
     <div>
-      <div className="rounded-md border border-border bg-surface">
+      <div className="rounded-lg border border-border bg-surface shadow-card">
         <GoogleAICommand
           endpointBase={`/teams/${teamId}/ai`}
           placeholder={`Ask Sentinel about #${channelName}…`}
@@ -49,11 +49,11 @@ export function SentinelModule({
 
       {history.length > 0 && (
         <div className="mt-5">
-          <div className="mb-2 font-mono text-[11px] uppercase tracking-wide text-ink-faint">Recent activity</div>
+          <div className="label-sub mb-2">Recent activity</div>
           <div className="flex flex-col gap-2">
             {history.slice(0, 10).map((h) => (
-              <div key={h.id} className="rounded-md border border-border bg-surface p-3 text-[12px]">
-                <div className="mb-1 flex items-center justify-between text-[10.5px] text-ink-faint">
+              <div key={h.id} className="rounded-lg border border-border bg-surface shadow-card p-3 text-small">
+                <div className="mb-1 flex items-center justify-between text-caption text-ink-faint">
                   <span>{h.user_name}</span>
                   <span>{new Date(h.created_at).toLocaleString()}</span>
                 </div>

@@ -30,14 +30,14 @@ export function FindingDetailPage() {
       <BackNav back={{ to: "/", label: "Today's Brief" }} crumbs={[{ label: "Dashboard", to: "/" }, { label: "Finding" }]} />
       <div className="mb-1 flex flex-wrap items-center gap-2.5">
         <SeverityChip severity={severity} />
-        <h1 className="text-xl font-semibold text-balance">{finding.summary}</h1>
+        <h1 className="text-h2 font-semibold text-balance">{finding.summary}</h1>
       </div>
-      <p className="mb-6 font-mono text-[13px] text-ink-dim">
+      <p className="mb-6 text-body text-ink-dim">
         {finding.agent} agent · {Math.round(finding.confidence * 100)}% confidence
       </p>
 
       <SectionLabel>Root cause</SectionLabel>
-      <p className="mb-6 max-w-2xl text-[14px]">{finding.root_cause}</p>
+      <p className="mb-6 max-w-2xl text-lead">{finding.root_cause}</p>
 
       <SectionLabel>Suggested action</SectionLabel>
       <div className="mb-6 flex max-w-2xl items-start gap-2.5 rounded-md border border-good bg-good/10 p-3.5">
@@ -53,7 +53,7 @@ export function FindingDetailPage() {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-2.5 mt-5 font-mono text-[13px] font-bold uppercase tracking-wide text-ink-dim">
+    <div className="label-sub mb-2.5 mt-5 text-body font-bold text-ink-dim">
       {children}
     </div>
   );
@@ -65,13 +65,13 @@ function EvidenceView({ evidence }: { evidence: Record<string, unknown> }) {
   if (Array.isArray(pullRequests) && pullRequests.length > 0) {
     return (
       <div className="overflow-x-auto rounded-md border border-border">
-        <table className="w-full border-collapse text-[12.5px]">
+        <table className="w-full border-collapse text-small">
           <thead>
             <tr>
               {Object.keys(pullRequests[0]).map((key) => (
                 <th
                   key={key}
-                  className="border-b border-border px-2.5 py-2 text-left font-mono text-[10.5px] uppercase tracking-wide text-ink-faint"
+                  className="label-sub border-b border-border px-2.5 py-2 text-left"
                 >
                   {key.replace(/_/g, " ")}
                 </th>
@@ -88,7 +88,7 @@ function EvidenceView({ evidence }: { evidence: Record<string, unknown> }) {
                         href={String(pr.url ?? "#")}
                         target="_blank"
                         rel="noreferrer"
-                        className="font-mono text-accent-text hover:underline"
+                        className="text-accent-text hover:underline"
                       >
                         #{String(pr.number ?? value)}
                       </a>
@@ -109,10 +109,10 @@ function EvidenceView({ evidence }: { evidence: Record<string, unknown> }) {
 
   return (
     <div className="rounded-md border border-border p-4">
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-[13px]">
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-body">
         {Object.entries(evidence).map(([key, value]) => (
           <React.Fragment key={key}>
-            <dt className="font-mono text-ink-faint">{key.replace(/_/g, " ")}</dt>
+            <dt className="text-ink-faint">{key.replace(/_/g, " ")}</dt>
             <dd className="text-ink-dim">{JSON.stringify(value)}</dd>
           </React.Fragment>
         ))}

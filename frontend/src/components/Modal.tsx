@@ -8,7 +8,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-[15px] font-semibold">{title}</h2>
+          <h2 className="text-sub font-semibold">{title}</h2>
           <button onClick={onClose} aria-label="Close" className="text-ink-faint hover:text-ink">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
               <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="1.4" />

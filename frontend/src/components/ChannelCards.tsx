@@ -45,43 +45,43 @@ export function ChannelCards({ onSelectWorkspace }: { onSelectWorkspace: (worksp
   return (
     <section className="mb-8">
       <div className="mb-2.5 flex items-center justify-between gap-3">
-        <div className="font-mono text-[13px] font-bold uppercase tracking-wide text-ink-dim">My Channels</div>
+        <div className="label-sub text-body font-bold text-ink-dim">My Channels</div>
         {teams.length > 3 && (
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter channels…"
-            className="w-40 rounded-md border border-border bg-surface px-2.5 py-1 text-[12px] outline-none focus:border-accent"
+            className="w-40 rounded-lg border border-border bg-surface shadow-card px-2.5 py-1 text-small outline-none focus:border-accent"
           />
         )}
       </div>
 
       {loading ? (
-        <div className="text-[12.5px] text-ink-faint">Loading&hellip;</div>
+        <div className="text-small text-ink-faint">Loading&hellip;</div>
       ) : teams.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border p-6 text-center text-[12.5px] text-ink-faint">
+        <div className="border-y border-rule px-6 py-12 text-center text-small text-ink-faint">
           You haven't joined any channels yet — join one from a group's channel rail in the sidebar.
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border p-6 text-center text-[12.5px] text-ink-faint">
+        <div className="border-y border-rule px-6 py-12 text-center text-small text-ink-faint">
           No channels match "{query}".
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rule-grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((t) => (
             <button
               key={t.id}
               onClick={() => handleSelect(t)}
-              className={`rounded-lg border p-4 text-left transition-colors ${
-                selected?.id === t.id ? "border-accent bg-accent/5" : "border-border bg-surface hover:border-accent/50"
+              className={`text-left transition-colors duration-200 ${
+                selected?.id === t.id ? "bg-surface-2" : "hover:bg-surface/70"
               }`}
             >
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-ink-faint">#</span>
-                <span className="truncate text-[13.5px] font-semibold text-ink">{t.name}</span>
+                <span className="truncate text-body font-semibold text-ink">{t.name}</span>
               </div>
-              <div className="mb-2 truncate text-[11.5px] text-ink-faint">in {t.workspace_name}</div>
-              <div className="flex items-center gap-3 text-[11px] text-ink-dim">
+              <div className="mb-2 truncate text-caption text-ink-faint">in {t.workspace_name}</div>
+              <div className="flex items-center gap-3 text-caption text-ink-dim">
                 <span>{t.member_count} member{t.member_count === 1 ? "" : "s"}</span>
                 <span>&middot;</span>
                 <span>{formatRole(t.role)}</span>
@@ -106,18 +106,18 @@ function ChannelDetailPanel({ team, onClose, onLeave }: { team: MyTeam; onClose:
   const [inviteOpen, setInviteOpen] = useState(false);
 
   return (
-    <div className="mt-3 rounded-md border border-border bg-surface p-4">
+    <div className="mt-3 rounded-lg border border-border bg-surface shadow-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[14px] font-semibold text-ink">#{team.name}</div>
-          <div className="text-[12px] text-ink-faint">in {team.workspace_name}</div>
+          <div className="text-lead font-semibold text-ink">#{team.name}</div>
+          <div className="text-small text-ink-faint">in {team.workspace_name}</div>
         </div>
         <button onClick={onClose} aria-label="Close" className="flex-none text-ink-faint hover:text-ink">
           ✕
         </button>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-dim">
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-small text-ink-dim">
         <span>{team.member_count} member{team.member_count === 1 ? "" : "s"}</span>
         <span>Your role: {formatRole(team.role)}</span>
       </div>
@@ -125,17 +125,17 @@ function ChannelDetailPanel({ team, onClose, onLeave }: { team: MyTeam; onClose:
       <div className="mt-4 flex gap-2.5">
         <Link
           to={`/channels/${team.id}`}
-          className="rounded-md bg-accent px-3 py-1.5 font-mono text-[11.5px] font-bold text-ground hover:opacity-90"
+          className="btn-primary"
         >
           Open channel &rarr;
         </Link>
         <button
           onClick={() => setInviteOpen(true)}
-          className="rounded-md border border-border px-3 py-1.5 font-mono text-[11.5px] text-ink-dim hover:border-accent hover:text-ink"
+          className="rounded-md border border-border px-3 py-1.5 text-caption text-ink-dim hover:border-accent hover:text-ink"
         >
           Invite
         </button>
-        <button onClick={onLeave} className="font-mono text-[11.5px] text-crit underline underline-offset-2">
+        <button onClick={onLeave} className="text-caption text-crit underline underline-offset-2">
           Leave channel
         </button>
       </div>

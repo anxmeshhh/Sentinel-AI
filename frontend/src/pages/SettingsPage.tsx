@@ -14,19 +14,19 @@ export function SettingsPage() {
   return (
     <div className="max-w-2xl">
       <BackNav back={{ to: "/", label: "Dashboard" }} />
-      <h1 className="mb-1 text-xl font-semibold text-balance">Agents</h1>
-      <p className="mb-7 text-[13px] text-ink-dim">
+      <h1 className="mb-1 text-h2 font-semibold text-balance">Agents</h1>
+      <p className="mb-7 text-body text-ink-dim">
         Which agents are allowed to run. Connections live on the Dashboard now.
       </p>
 
-      <div className="rounded-md border border-border bg-surface">
+      <div className="rounded-lg border border-border bg-surface shadow-card">
         {AGENTS.map((agent) => (
           <div key={agent.name} className="flex items-center gap-3.5 border-b border-border p-3 last:border-b-0">
             <div>
-              <div className="text-[13.5px] font-semibold">{agent.name}</div>
-              <div className="mt-0.5 text-[12px] text-ink-faint">{agent.desc}</div>
+              <div className="text-body font-semibold">{agent.name}</div>
+              <div className="mt-0.5 text-small text-ink-faint">{agent.desc}</div>
             </div>
-            <span className="ml-auto whitespace-nowrap rounded-full border border-border px-2 py-[3px] font-mono text-[10px] text-ink-faint">
+            <span className="ml-auto whitespace-nowrap rounded-full border border-border px-2 py-[3px] text-micro text-ink-faint">
               {agent.tag}
             </span>
             <div className={`h-[19px] w-[34px] flex-none rounded-full ${agent.on ? "bg-accent" : "bg-border"}`}>

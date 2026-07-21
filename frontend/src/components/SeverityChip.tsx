@@ -15,7 +15,7 @@ const CLASSES: Record<Severity, string> = {
 export function SeverityChip({ severity }: { severity: Severity }) {
   return (
     <span
-      className={`rounded-full px-2 py-[3px] font-mono text-[10.5px] font-bold uppercase tracking-wide ${CLASSES[severity]}`}
+      className={`rounded-full px-2 py-[3px] font-mono text-caption font-bold uppercase tracking-wide ${CLASSES[severity]}`}
     >
       {LABEL[severity]}
     </span>

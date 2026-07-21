@@ -100,8 +100,8 @@ export function GoogleAICommand({
 
   return (
     <div className="border-t border-border p-3.5">
-      <div className="mb-1 text-[11.5px] font-semibold text-ink-dim">AI Command</div>
-      <p className="mb-3 text-[11px] leading-relaxed text-ink-faint">
+      <div className="mb-1 text-caption font-semibold text-ink-dim">AI Command</div>
+      <p className="mb-3 text-caption leading-relaxed text-ink-faint">
         {helpText ?? (
           <>
             Ask across Gmail + Calendar together — e.g. "summarize my important emails and schedule a follow-up
@@ -115,26 +115,26 @@ export function GoogleAICommand({
         <div className="mb-3 flex flex-col gap-2.5">
           {turns.map((turn, i) => (
             <div key={i} className="rounded-md border border-border bg-ground/40 p-3">
-              <div className="mb-1.5 text-[12px] font-semibold text-ink">{turn.command}</div>
+              <div className="mb-1.5 text-small font-semibold text-ink">{turn.command}</div>
 
               {turn.status === "streaming" && (
-                <div className="flex items-center gap-2 text-[12px] text-ink-faint">
+                <div className="flex items-center gap-2 text-small text-ink-faint">
                   <span className="h-3 w-3 flex-none animate-spin rounded-full border-2 border-ink-faint border-t-transparent" />
                   {turn.statusMessage ?? "Working…"}
                 </div>
               )}
 
               {turn.status === "done" && turn.reply && (
-                <div className="text-[12px] leading-relaxed text-ink-dim">
+                <div className="text-small leading-relaxed text-ink-dim">
                   <Markdown text={turn.reply} />
                 </div>
               )}
-              {turn.status === "error" && <p className="text-[12px] text-crit">{turn.reply ?? "Something went wrong."}</p>}
-              {turn.status === "cancelled" && <p className="text-[12px] text-ink-faint">Cancelled — nothing was changed.</p>}
+              {turn.status === "error" && <p className="text-small text-crit">{turn.reply ?? "Something went wrong."}</p>}
+              {turn.status === "cancelled" && <p className="text-small text-ink-faint">Cancelled — nothing was changed.</p>}
 
               {(turn.status === "confirmation_required" || turn.status === "executing") && turn.plan && (
                 <div className="rounded-md border border-watch/40 bg-watch/5 p-2.5">
-                  <div className="mb-1.5 font-mono text-[10.5px] font-bold uppercase tracking-wide text-watch">
+                  <div className="label-sub mb-1.5 font-bold text-watch">
                     Sentinel plans to:
                   </div>
                   <PlanDetails plan={turn.plan} />
@@ -142,14 +142,14 @@ export function GoogleAICommand({
                     <button
                       onClick={() => confirmAction(i)}
                       disabled={turn.status === "executing"}
-                      className="rounded-md bg-accent px-3 py-1.5 font-mono text-[11px] font-bold text-ground disabled:opacity-50"
+                      className="btn-primary"
                     >
                       {turn.status === "executing" ? "Executing…" : "Confirm & Execute"}
                     </button>
                     <button
                       onClick={() => cancelAction(i)}
                       disabled={turn.status === "executing"}
-                      className="rounded-md border border-border px-3 py-1.5 font-mono text-[11px] text-ink-dim hover:border-crit hover:text-crit disabled:opacity-50"
+                      className="rounded-md border border-border px-3 py-1.5 text-caption text-ink-dim hover:border-crit hover:text-crit disabled:opacity-50"
                     >
                       Cancel
                     </button>
@@ -158,7 +158,7 @@ export function GoogleAICommand({
               )}
 
               {turn.status === "executed" && turn.executedResult && (
-                <div className="rounded-md border border-good/40 bg-good/5 p-2.5 text-[12px] text-good">
+                <div className="rounded-md border border-good/40 bg-good/5 p-2.5 text-small text-good">
                   Done — event created{turn.executedResult.meet_link ? " with a Meet link" : ""}.
                   {typeof turn.executedResult.url === "string" && (
                     <>
@@ -182,12 +182,12 @@ export function GoogleAICommand({
           onKeyDown={(e) => e.key === "Enter" && !sending && send()}
           disabled={sending}
           placeholder={placeholder ?? "Try: what are my most important unread emails?"}
-          className="flex-1 rounded-md border border-border bg-ground px-3 py-2 text-[12.5px] outline-none focus:border-accent disabled:opacity-60"
+          className="flex-1 rounded-md border border-border bg-ground px-3 py-2 text-small outline-none focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-60"
         />
         <button
           onClick={send}
           disabled={sending || !input.trim()}
-          className="rounded-md bg-accent px-3.5 py-2 font-mono text-[11.5px] font-bold text-ground disabled:opacity-50"
+          className="btn-primary"
         >
           {sending ? "…" : "Send"}
         </button>
@@ -199,7 +199,7 @@ export function GoogleAICommand({
 function PlanDetails({ plan }: { plan: Record<string, unknown> }) {
   const entries = Object.entries(plan).filter(([k]) => k !== "action");
   return (
-    <div className="flex flex-col gap-1 text-[11.5px]">
+    <div className="flex flex-col gap-1 text-caption">
       {entries.map(([k, v]) => (
         <div key={k} className="flex gap-2">
           <span className="w-24 flex-none capitalize text-ink-faint">{k.replace(/_/g, " ")}</span>

@@ -36,7 +36,7 @@ export function scopeExplanation(scope: Scope, workspaceName?: string): string {
 export function ScopeBadge({ scope, workspaceName, className = "" }: { scope: Scope; workspaceName?: string; className?: string }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-[3px] font-mono text-[10.5px] ${STYLES[scope]} ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-[3px] font-mono text-caption ${STYLES[scope]} ${className}`}
     >
       <span aria-hidden="true">{ICONS[scope]}</span>
       {scopeLabel(scope, workspaceName)}
@@ -49,9 +49,9 @@ export function ScopeBadge({ scope, workspaceName, className = "" }: { scope: Sc
  * opening settings or hovering anything. */
 export function ScopeNotice({ scope, workspaceName }: { scope: Scope; workspaceName?: string }) {
   return (
-    <div className="mb-5 rounded-md border border-border bg-surface p-3.5">
+    <div className="mb-5 rounded-lg border border-border bg-surface shadow-card p-3.5">
       <ScopeBadge scope={scope} workspaceName={workspaceName} />
-      <p className="mt-2 text-[12.5px] leading-relaxed text-ink-dim">{scopeExplanation(scope, workspaceName)}</p>
+      <p className="mt-2 text-small leading-relaxed text-ink-dim">{scopeExplanation(scope, workspaceName)}</p>
     </div>
   );
 }

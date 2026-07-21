@@ -54,7 +54,7 @@ export function SignupPage() {
       <AuthLayout title="Check your email" subtitle={`We sent a verification code to ${email}.`}>
         <ErrorText>{error}</ErrorText>
         <form onSubmit={handleVerify}>
-          <p className="mb-4 text-[12.5px] text-ink-dim">
+          <p className="mb-4 text-small text-ink-dim">
             No SMTP configured in this environment yet — read the code from{" "}
             <code className="text-ink">docker compose logs backend</code> instead of your inbox.
           </p>

@@ -57,20 +57,20 @@ export function AdminPage() {
       <BackNav back={{ to: "/", label: "Dashboard" }} />
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="mb-1 text-xl font-semibold text-balance">Admin &amp; Observability</h1>
-          <p className="text-[13px] text-ink-dim">
+          <h1 className="mb-1 text-h2 font-semibold text-balance">Admin &amp; Observability</h1>
+          <p className="text-body text-ink-dim">
             Operator view — agent run history, system counts, and live logs. Not part of the
             customer-facing product.
           </p>
         </div>
         <div className="flex items-center gap-2.5">
-          <label className="flex items-center gap-1.5 font-mono text-[11.5px] text-ink-dim">
+          <label className="flex items-center gap-1.5 text-caption text-ink-dim">
             <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
             auto-refresh (5s)
           </label>
           <button
             onClick={loadAll}
-            className="rounded-md border border-border bg-surface px-3 py-1.5 font-mono text-[11.5px] text-ink-dim hover:border-accent hover:text-ink"
+            className="rounded-lg border border-border bg-surface shadow-card px-3 py-1.5 text-caption text-ink-dim hover:border-accent hover:text-ink"
           >
             ↻ REFRESH
           </button>
@@ -90,7 +90,7 @@ export function AdminPage() {
 
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="mb-2.5 mt-6 font-mono text-[13px] font-bold uppercase tracking-wide text-ink-dim">
+    <div className="label-sub mb-2.5 mt-6 text-body font-bold text-ink-dim">
       {children}
     </div>
   );
@@ -109,9 +109,9 @@ function StatsRow({ stats }: { stats: SystemStats }) {
   return (
     <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-7">
       {tiles.map((t) => (
-        <div key={t.label} className="rounded-md border border-border bg-surface p-3">
-          <div className="font-mono text-[10.5px] uppercase tracking-wide text-ink-faint">{t.label}</div>
-          <div className={`tab-nums font-mono text-xl font-bold ${t.cls ?? ""}`}>{t.value}</div>
+        <div key={t.label} className="rounded-lg border border-border bg-surface shadow-card p-3">
+          <div className="label-sub">{t.label}</div>
+          <div className={`tab-nums font-mono text-h3 font-bold ${t.cls ?? ""}`}>{t.value}</div>
         </div>
       ))}
     </div>
@@ -120,17 +120,17 @@ function StatsRow({ stats }: { stats: SystemStats }) {
 
 function RunsTable({ runs }: { runs: AgentRun[] }) {
   if (runs.length === 0) {
-    return <p className="text-[13px] text-ink-dim">No agent runs yet.</p>;
+    return <p className="text-body text-ink-dim">No agent runs yet.</p>;
   }
   return (
-    <div className="overflow-x-auto rounded-md border border-border bg-surface">
-      <table className="w-full min-w-[720px] border-collapse text-[12.5px]">
+    <div className="overflow-x-auto rounded-lg border border-border bg-surface shadow-card">
+      <table className="w-full min-w-[720px] border-collapse text-small">
         <thead>
           <tr>
             {["Status", "Connection", "Trigger", "Started", "Duration", "Findings", "Error"].map((h) => (
               <th
                 key={h}
-                className="border-b border-border px-3 py-2 text-left font-mono text-[10.5px] uppercase tracking-wide text-ink-faint"
+                className="label-sub border-b border-border px-3 py-2 text-left"
               >
                 {h}
               </th>
@@ -141,14 +141,14 @@ function RunsTable({ runs }: { runs: AgentRun[] }) {
           {runs.map((run) => (
             <tr key={run.id}>
               <td className="border-b border-border px-3 py-2">
-                <span className={`rounded-full px-2 py-[3px] font-mono text-[10.5px] font-bold uppercase ${STATUS_CLASSES[run.status]}`}>
+                <span className={`rounded-full px-2 py-[3px] font-mono text-caption font-bold uppercase ${STATUS_CLASSES[run.status]}`}>
                   {run.status}
                 </span>
               </td>
-              <td className="border-b border-border px-3 py-2 font-mono text-ink-dim">
+              <td className="border-b border-border px-3 py-2 text-ink-dim">
                 {run.connection_label ?? "—"}
               </td>
-              <td className="border-b border-border px-3 py-2 font-mono text-ink-faint">{run.triggered_by}</td>
+              <td className="border-b border-border px-3 py-2 text-ink-faint">{run.triggered_by}</td>
               <td className="tab-nums border-b border-border px-3 py-2 text-ink-dim">
                 {new Date(run.started_at).toLocaleString()}
               </td>
@@ -169,10 +169,10 @@ function RunsTable({ runs }: { runs: AgentRun[] }) {
 
 function LogViewer({ logs }: { logs: LogLine[] }) {
   if (logs.length === 0) {
-    return <p className="text-[13px] text-ink-dim">No logs captured yet.</p>;
+    return <p className="text-body text-ink-dim">No logs captured yet.</p>;
   }
   return (
-    <div className="max-h-[420px] overflow-y-auto rounded-md border border-border bg-ground p-3 font-mono text-[12px]">
+    <div className="max-h-[420px] overflow-y-auto rounded-md border border-border bg-ground p-3 text-small">
       {logs.map((log, i) => (
         <div key={i} className="mb-1 flex gap-2 border-b border-border/50 pb-1 last:border-b-0">
           <span className="tab-nums whitespace-nowrap text-ink-faint">

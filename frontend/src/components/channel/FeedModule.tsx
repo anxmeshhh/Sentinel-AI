@@ -27,11 +27,11 @@ export function FeedModule({ teamId }: { teamId: string }) {
     void load();
   }, [load]);
 
-  if (loading) return <div className="text-[13px] text-ink-dim">Loading feed&hellip;</div>;
+  if (loading) return <div className="text-body text-ink-dim">Loading feed&hellip;</div>;
 
   if (!feed || feed.no_connections) {
     return (
-      <div className="rounded-md border border-dashed border-border p-8 text-center text-[12.5px] text-ink-faint">
+      <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-small text-ink-faint">
         No connections are assigned to this channel yet, so there's nothing to show. Assign one in Extensions.
       </div>
     );
@@ -40,28 +40,28 @@ export function FeedModule({ teamId }: { teamId: string }) {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-[11px] text-ink-faint">
+        <p className="text-caption text-ink-faint">
           From {feed.connection_labels.length} authorized connection{feed.connection_labels.length === 1 ? "" : "s"}
         </p>
-        <button onClick={load} className="font-mono text-[10.5px] text-ink-faint underline hover:text-ink">
+        <button onClick={load} className="text-caption text-ink-faint underline hover:text-ink">
           Refresh
         </button>
       </div>
 
       {feed.items.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border p-8 text-center text-[12.5px] text-ink-faint">
+        <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-small text-ink-faint">
           Nothing has synced into this channel's connections yet.
         </div>
       ) : (
-        <div className="flex flex-col divide-y divide-border rounded-md border border-border bg-surface">
+        <div className="rule-rows border-b-0">
           {feed.items.map((item) => (
-            <div key={item.id} className="flex items-start gap-3 px-3.5 py-2.5">
-              <span className="mt-px flex-none rounded border border-border px-1.5 py-px font-mono text-[9.5px] uppercase text-ink-faint">
+            <div key={item.id} className="rule-cell-interactive flex items-start gap-3">
+              <span className="label-sub mt-px flex-none rounded border border-border px-1.5 py-px">
                 {item.type_label}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[12.5px] text-ink">{item.title}</div>
-                <div className="truncate text-[10.5px] text-ink-faint">
+                <div className="truncate text-body text-ink">{item.title}</div>
+                <div className="truncate text-caption text-ink-faint">
                   {item.actor ? `${item.actor} · ` : ""}
                   {item.source_label} · {new Date(item.occurred_at).toLocaleString()}
                 </div>
@@ -71,7 +71,7 @@ export function FeedModule({ teamId }: { teamId: string }) {
                   href={item.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex-none font-mono text-[10px] font-semibold text-accent-text hover:underline"
+                  className="flex-none text-micro font-semibold text-accent-text hover:underline"
                 >
                   Open
                 </a>

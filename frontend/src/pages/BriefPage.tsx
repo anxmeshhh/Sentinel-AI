@@ -62,7 +62,7 @@ export function BriefPage() {
       )}
 
       {active?.is_demo && (
-        <div className="mb-5 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-[12.5px] text-watch">
+        <div className="mb-5 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-small text-watch">
           <b>Sample workspace.</b> Everything here is realistic demo data — no real account is connected, and nothing
           you do here touches your own mail, calendar or files. Sentinel's detection and AI are genuinely running
           against it.
@@ -78,7 +78,7 @@ export function BriefPage() {
       <GroupCards workspaces={workspaces} activeId={active?.id ?? null} onSelect={setActiveId} />
       <ChannelCards onSelectWorkspace={setActiveId} />
 
-      <div className="mb-2.5 font-mono text-[13px] font-bold uppercase tracking-wide text-ink-dim">My Connections</div>
+      <div className="label-sub mb-2.5 text-body font-bold text-ink-dim">My Connections</div>
       <IntegrationCardGrid connections={connections} />
     </div>
   );
@@ -87,7 +87,7 @@ export function BriefPage() {
 function Banner({ tone, children, onDismiss }: { tone: "good" | "crit"; children: string; onDismiss: () => void }) {
   return (
     <div
-      className={`mb-5 flex items-center justify-between gap-3 rounded-md border px-3.5 py-2.5 text-[12.5px] ${
+      className={`mb-5 flex items-center justify-between gap-3 rounded-md border px-3.5 py-2.5 text-small ${
         tone === "good" ? "border-good/40 bg-good/10 text-good" : "border-crit/40 bg-crit/10 text-crit"
       }`}
     >

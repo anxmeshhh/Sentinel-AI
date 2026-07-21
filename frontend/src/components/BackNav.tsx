@@ -15,21 +15,21 @@ export function BackNav({ back, crumbs }: { back: { to: string; label: string };
       <div className="flex flex-wrap items-center gap-2">
         <Link
           to={back.to}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-[12.5px] font-semibold text-ink-dim transition-colors hover:border-accent hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface shadow-card px-3 py-1.5 text-small font-semibold text-ink-dim transition-colors hover:border-accent hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           <span aria-hidden="true">&larr;</span> {back.label}
         </Link>
         {back.to !== "/" && (
           <Link
             to="/"
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[12.5px] text-ink-faint transition-colors hover:border-accent hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-small text-ink-faint transition-colors hover:border-accent hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             Dashboard
           </Link>
         )}
       </div>
       {crumbs && crumbs.length > 0 && (
-        <nav aria-label="Breadcrumb" className="mt-2 flex flex-wrap items-center gap-1 font-mono text-[11px] text-ink-faint">
+        <nav aria-label="Breadcrumb" className="mt-2 flex flex-wrap items-center gap-1 text-caption text-ink-faint">
           {crumbs.map((c, i) => (
             <span key={i} className="flex items-center gap-1">
               {i > 0 && <span aria-hidden="true">&rsaquo;</span>}

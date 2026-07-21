@@ -26,12 +26,12 @@ export function AttentionModule({ teamId }: { teamId: string }) {
     void load();
   }, [load]);
 
-  if (loading) return <div className="text-[13px] text-ink-dim">Loading&hellip;</div>;
-  if (!briefing) return <div className="text-[13px] text-crit">Couldn't load this channel's attention.</div>;
+  if (loading) return <div className="text-body text-ink-dim">Loading&hellip;</div>;
+  if (!briefing) return <div className="text-body text-crit">Couldn't load this channel's attention.</div>;
 
   if (briefing.no_connections) {
     return (
-      <div className="rounded-md border border-dashed border-border p-8 text-center text-[12.5px] text-ink-faint">
+      <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-small text-ink-faint">
         No connections are assigned to this channel yet, so there's nothing to watch. Assign one in Extensions.
       </div>
     );
@@ -39,7 +39,7 @@ export function AttentionModule({ teamId }: { teamId: string }) {
 
   if (briefing.items.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-border p-8 text-center text-[12.5px] text-ink-dim">
+      <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-small text-ink-dim">
         {briefing.blocking_providers.length > 0 ? (
           <>
             Empty <em>for you</em> because you haven't connected{" "}
@@ -54,29 +54,29 @@ export function AttentionModule({ teamId }: { teamId: string }) {
   }
 
   return (
-    <div className="rounded-md border border-accent/30 bg-accent/5 p-4">
+    <div className="rounded-md border border-accent/25 bg-accent/[0.04] p-4 shadow-card">
       <div className="mb-2 flex items-center justify-between">
-        <span className="font-mono text-[10.5px] font-bold uppercase tracking-wide text-accent-text">
+        <span className="label-sub font-bold text-accent-text">
           {briefing.items.length} item{briefing.items.length === 1 ? "" : "s"}
         </span>
-        <button onClick={load} className="font-mono text-[10.5px] text-ink-faint underline hover:text-ink">
+        <button onClick={load} className="text-caption text-ink-faint underline hover:text-ink">
           Refresh
         </button>
       </div>
-      {briefing.narrative && <p className="mb-3 text-[12.5px] leading-relaxed text-ink-dim">{briefing.narrative}</p>}
+      {briefing.narrative && <p className="mb-3 text-small leading-relaxed text-ink-dim">{briefing.narrative}</p>}
       <div className="flex flex-col gap-1.5">
         {briefing.items.map((item) => (
-          <div key={item.id} className="flex items-start gap-2.5 text-[12px]">
+          <div key={item.id} className="flex items-start gap-2.5 text-small">
             <span className="mt-px flex-none">{attentionIcon(item)}</span>
             <div className="min-w-0 flex-1">
               <div className="truncate font-semibold text-ink">{item.title}</div>
-              <div className="truncate text-[11px] text-ink-faint">{item.why}</div>
+              <div className="truncate text-caption text-ink-faint">{item.why}</div>
             </div>
-            <EvidenceLink item={item} className="flex-none font-mono text-[10px] font-semibold text-accent-text hover:underline" />
+            <EvidenceLink item={item} className="flex-none text-micro font-semibold text-accent-text hover:underline" />
           </div>
         ))}
       </div>
-      <p className="mt-3 text-[10.5px] text-ink-faint">
+      <p className="mt-3 text-caption text-ink-faint">
         Scoped to this channel's authorized connections
         {briefing.connection_labels.length > 0 && `: ${briefing.connection_labels.join(", ")}`}. Mark items done in your
         personal{" "}

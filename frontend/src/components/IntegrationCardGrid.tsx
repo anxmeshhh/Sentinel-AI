@@ -22,7 +22,7 @@ export function IntegrationCardGrid({ connections }: { connections: Connection[]
           matters most - visible, but deliberately quiet. */}
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <ScopeBadge scope={scope} workspaceName={active?.name} />
-        <span className="text-[11.5px] text-ink-faint">
+        <span className="text-caption text-ink-faint">
           {scope === "personal"
             ? "Personal connections stay private — Sentinel never shares them with a workspace or channel."
             : "Shared connections are available to this workspace's members through the channels you authorize."}

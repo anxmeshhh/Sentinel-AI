@@ -12,7 +12,7 @@ import type { ChannelPath } from "../api/types";
  */
 export function ChannelBreadcrumb({ path }: { path: ChannelPath }) {
   return (
-    <nav aria-label="Breadcrumb" className="mb-3 flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-faint">
+    <nav aria-label="Breadcrumb" className="scroll-x mb-4 flex items-center gap-2 whitespace-nowrap pb-1 text-caption text-ink-faint sm:flex-wrap sm:whitespace-normal">
       <Link to="/" className="hover:text-ink hover:underline underline-offset-2">
         {path.workspace_name.trim()}
       </Link>

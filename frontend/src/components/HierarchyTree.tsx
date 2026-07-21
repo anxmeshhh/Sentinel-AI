@@ -37,15 +37,15 @@ export function HierarchyTree() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-none border-b border-border px-4 py-3">
-        <div className="truncate text-[13.5px] font-semibold text-ink" title={active.name}>
+      <div className="flex-none border-b border-border px-4 py-4">
+        <div className="truncate text-lead font-semibold text-ink" title={active.name}>
           {active.name.trim()}
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-[10.5px] uppercase tracking-wide text-ink-faint">{active.kind}</span>
+          <span className="text-caption text-ink-faint">{active.kind}</span>
           <button
             onClick={() => setInviting(true)}
-            className="text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink"
+            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
           >
             Invite
           </button>
@@ -56,11 +56,11 @@ export function HierarchyTree() {
         <InviteModal scope={{ type: "workspace", id: active.id }} label={active.name.trim()} onClose={() => setInviting(false)} />
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-4">
         {loading && <div className="mx-2 h-6 animate-pulse rounded bg-surface-2" />}
 
         {!loading && tree.length === 0 && (
-          <div className="px-2 py-4 text-[12px] leading-relaxed text-ink-faint">
+          <div className="px-2 py-4 text-small leading-relaxed text-ink-faint">
             No classes yet.
             {canManageClasses
               ? " Create one (e.g. Development) to start organizing teams and channels."
@@ -85,9 +85,9 @@ export function HierarchyTree() {
             ) : (
               <button
                 onClick={() => setCreatingClass(true)}
-                className="flex w-full items-center gap-1.5 py-1.5 text-left text-[12px] text-ink-faint hover:text-ink"
+                className="flex w-full items-center gap-1.5 py-1.5 text-left text-small text-ink-faint hover:text-ink"
               >
-                <span className="text-[14px] leading-none">+</span> Create class
+                <span className="text-lead leading-none">+</span> Create class
               </button>
             )}
           </div>
@@ -110,7 +110,7 @@ function ClassNode({ klass }: { klass: TreeClass }) {
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center gap-1 px-2 py-1 text-left text-[10.5px] font-semibold uppercase tracking-[0.12em] text-ink-faint hover:text-ink-dim"
+        className="flex w-full items-center gap-1 px-2 py-1 text-left text-caption font-semibold text-ink-faint hover:text-ink-dim"
       >
         <Chevron open={open} />
         <span className="truncate">
@@ -122,7 +122,7 @@ function ClassNode({ klass }: { klass: TreeClass }) {
       {open && (
         <div className="ml-2 border-l border-border pl-1.5">
           {klass.groups.length === 0 && (
-            <div className="px-2 py-1 text-[11.5px] text-ink-faint">No groups yet</div>
+            <div className="px-2 py-1 text-caption text-ink-faint">No groups yet</div>
           )}
           {klass.groups.map((group) => (
             <GroupNode key={group.id} group={group} />
@@ -144,7 +144,7 @@ function ClassNode({ klass }: { klass: TreeClass }) {
             ) : (
               <button
                 onClick={() => setCreatingGroup(true)}
-                className="px-2 py-1 text-left text-[11.5px] text-ink-faint hover:text-ink"
+                className="px-2 py-1 text-left text-caption text-ink-faint hover:text-ink"
               >
                 + Group
               </button>
@@ -177,7 +177,7 @@ function GroupNode({ group }: { group: TreeGroup }) {
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center gap-1 px-2 py-1 text-left text-[12px] font-medium text-ink-dim hover:text-ink"
+        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-small font-medium text-ink-dim transition-colors hover:text-ink"
       >
         <Chevron open={open} />
         <span className="truncate">
@@ -193,19 +193,21 @@ function GroupNode({ group }: { group: TreeGroup }) {
               key={channel.id}
               to={`/channels/${channel.id}`}
               className={({ isActive }) =>
-                `flex items-center gap-1 rounded px-2 py-1 text-[12.5px] transition-colors ${
-                  isActive ? "bg-surface-2 font-semibold text-ink" : "text-ink-dim hover:text-ink"
+                `relative flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-small transition-colors ${
+                  isActive
+                    ? "bg-surface-2 font-semibold text-ink before:absolute before:-left-1 before:top-1/2 before:h-4 before:w-[2.5px] before:-translate-y-1/2 before:rounded-full before:bg-accent"
+                    : "text-ink-dim hover:bg-surface/60 hover:text-ink"
                 }`
               }
             >
               <span className="text-ink-faint">{channel.icon || "#"}</span>
               <span className="min-w-0 flex-1 truncate">{channel.name}</span>
-              {channel.privacy !== "public" && <span className="text-[9.5px] text-ink-faint">🔒</span>}
+              {channel.privacy !== "public" && <span className="text-micro text-ink-faint">🔒</span>}
             </NavLink>
           ))}
 
           {group.channels.length === 0 && !creatingChannel && (
-            <div className="px-2 py-1 text-[11px] text-ink-faint">No channels</div>
+            <div className="px-2 py-1 text-caption text-ink-faint">No channels</div>
           )}
 
           {canCreateChannel &&
@@ -228,7 +230,7 @@ function GroupNode({ group }: { group: TreeGroup }) {
             ) : (
               <button
                 onClick={() => setCreatingChannel(true)}
-                className="px-2 py-1 text-left text-[11px] text-ink-faint hover:text-ink"
+                className="px-2 py-1 text-left text-caption text-ink-faint hover:text-ink"
               >
                 + Channel
               </button>
@@ -256,8 +258,8 @@ function PersonalNav() {
   ];
   return (
     <>
-      <div className="mb-1 px-2 text-[13.5px] font-semibold text-ink">Personal</div>
-      <p className="mb-3 px-2 text-[11px] leading-relaxed text-ink-faint">
+      <div className="mb-1 px-2 text-body font-semibold text-ink">Personal</div>
+      <p className="mb-3 px-2 text-caption leading-relaxed text-ink-faint">
         What matters to you, across your own connected accounts. Private to you.
       </p>
       <nav className="flex flex-col">
@@ -267,8 +269,8 @@ function PersonalNav() {
             to={item.to}
             end={item.end}
             className={({ isActive }) =>
-              `rounded px-2 py-1.5 text-[12.5px] transition-colors ${
-                isActive ? "bg-surface-2 font-semibold text-ink" : "text-ink-dim hover:text-ink"
+              `rounded-sm px-2.5 py-2 text-small transition-colors ${
+                isActive ? "bg-surface-2 font-semibold text-ink" : "text-ink-dim hover:bg-surface/60 hover:text-ink"
               }`
             }
           >
@@ -332,9 +334,9 @@ function InlineCreate({
         onBlur={() => !value.trim() && onCancel()}
         placeholder={placeholder}
         disabled={busy}
-        className="w-full rounded border border-border bg-ground px-2 py-1 text-[11.5px] outline-none focus:border-accent disabled:opacity-50"
+        className="w-full rounded border border-border bg-ground px-3 py-2 text-caption outline-none focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-50"
       />
-      {error && <p className="mt-0.5 text-[10.5px] text-crit">{error}</p>}
+      {error && <p className="mt-0.5 text-caption text-crit">{error}</p>}
     </div>
   );
 }

@@ -56,7 +56,7 @@ export function ExtensionsModule({
     void load();
   }, [load]);
 
-  if (loading) return <div className="text-[13px] text-ink-dim">Loading&hellip;</div>;
+  if (loading) return <div className="text-body text-ink-dim">Loading&hellip;</div>;
 
   const total = readiness?.requirements.filter((r) => r.is_required).length ?? 0;
   const ready = readiness?.requirements.filter((r) => r.is_required && r.state === "ready").length ?? 0;
@@ -64,10 +64,10 @@ export function ExtensionsModule({
   return (
     <div className="flex flex-col gap-6">
       {total > 0 && (
-        <div className="rounded-md border border-border bg-surface px-4 py-3">
+        <div className="rounded-lg border border-border bg-surface shadow-card px-4 py-3">
           <div className="flex items-center justify-between">
-            <span className="text-[12.5px] font-semibold text-ink">Your channel setup</span>
-            <span className={`font-mono text-[11.5px] ${ready === total ? "text-good" : "text-watch"}`}>
+            <span className="text-small font-semibold text-ink">Your channel setup</span>
+            <span className={`font-mono text-caption ${ready === total ? "text-good" : "text-watch"}`}>
               {ready}/{total} complete
             </span>
           </div>
@@ -136,24 +136,24 @@ function RequirementsSection({
 
   return (
     <section>
-      <h2 className="mb-1 text-[13px] font-semibold text-ink">Required integrations</h2>
-      <p className="mb-3 text-[11.5px] leading-relaxed text-ink-faint">
+      <h2 className="mb-1 text-body font-semibold text-ink">Required integrations</h2>
+      <p className="mb-3 text-caption leading-relaxed text-ink-faint">
         What this channel needs. Each member connects their own account — an admin can never connect one on someone
         else's behalf.
       </p>
 
       {requirements.length === 0 ? (
-        <p className="text-[12px] text-ink-faint">
+        <p className="text-small text-ink-faint">
           None yet.{isAdmin ? " Add one below and every member will be prompted to connect their own account." : ""}
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="rule-grid sm:grid-cols-2">
           {requirements.map((r) => (
-            <div key={r.id} className="rounded-md border border-border bg-surface px-3 py-2">
+            <div key={r.id}>
               <div className="flex items-center justify-between">
-                <span className="text-[12.5px] font-semibold text-ink">{PROVIDER_LABEL[r.provider] ?? r.provider}</span>
+                <span className="text-small font-semibold text-ink">{PROVIDER_LABEL[r.provider] ?? r.provider}</span>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[9.5px] uppercase text-ink-faint">
+                  <span className="label-sub">
                     {r.is_required ? "required" : "optional"}
                   </span>
                   {isAdmin && (
@@ -162,27 +162,27 @@ function RequirementsSection({
                         await api.delete(`/teams/${teamId}/requirements/${r.id}`);
                         await onChanged();
                       }}
-                      className="text-[10.5px] text-ink-faint underline hover:text-crit"
+                      className="text-caption text-ink-faint underline hover:text-crit"
                     >
                       Remove
                     </button>
                   )}
                 </div>
               </div>
-              {r.reason && <p className="mt-1 text-[11px] text-ink-dim">{r.reason}</p>}
+              {r.reason && <p className="mt-1 text-caption text-ink-dim">{r.reason}</p>}
             </div>
           ))}
         </div>
       )}
 
       {isAdmin && (
-        <div className="mt-3 rounded-md border border-dashed border-border p-3">
+        <div className="mt-3 rounded-md border border-dashed border-border-strong p-3">
           <div className="flex flex-wrap gap-1.5">
             <select
               value={provider}
               onChange={(e) => setProvider(e.target.value)}
               aria-label="Integration"
-              className="rounded-md border border-border bg-ground px-2 py-1 text-[11.5px] outline-none focus:border-accent"
+              className="rounded-md border border-border bg-ground px-3 py-2 text-caption outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
             >
               {REQUIREABLE_PROVIDERS.map((p) => (
                 <option key={p} value={p}>
@@ -194,21 +194,21 @@ function RequirementsSection({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Why this channel needs it (shown to members)"
-              className="min-w-[200px] flex-1 rounded-md border border-border bg-ground px-2 py-1 text-[11px] outline-none focus:border-accent"
+              className="min-w-[200px] flex-1 rounded-md border border-border bg-ground px-3 py-2 text-caption outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
             />
             <button
               onClick={add}
               disabled={busy}
-              className="rounded-md bg-accent px-2.5 py-1 font-mono text-[10.5px] font-bold text-ground disabled:opacity-50"
+              className="btn-primary"
             >
               Add
             </button>
           </div>
-          <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-dim">
+          <label className="mt-1.5 flex items-center gap-1.5 text-caption text-ink-dim">
             <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} />
             Required (unchecked = suggested only, never blocks)
           </label>
-          {error && <p className="mt-1 text-[10.5px] text-crit">{error}</p>}
+          {error && <p className="mt-1 text-caption text-crit">{error}</p>}
         </div>
       )}
     </section>
@@ -256,19 +256,19 @@ function AssignedConnectionsSection({
 
   return (
     <section>
-      <h2 className="mb-1 text-[13px] font-semibold text-ink">What Sentinel can read here</h2>
-      <p className="mb-3 text-[11.5px] leading-relaxed text-ink-faint">
+      <h2 className="mb-1 text-body font-semibold text-ink">What Sentinel can read here</h2>
+      <p className="mb-3 text-caption leading-relaxed text-ink-faint">
         Connections assigned to this channel, and the specific resources authorized within them. Sentinel can use nothing
         else from the workspace.
       </p>
 
-      {connections.length === 0 && <p className="text-[12px] text-ink-faint">Nothing assigned yet.</p>}
+      {connections.length === 0 && <p className="text-small text-ink-faint">Nothing assigned yet.</p>}
 
       <div className="flex flex-col gap-2">
         {connections.map((c) => (
-          <div key={c.id} className="rounded-md border border-border bg-surface p-3">
+          <div key={c.id} className="card">
             <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-[12.5px] font-semibold text-ink">
+              <span className="text-small font-semibold text-ink">
                 {PROVIDER_LABEL[c.provider] ?? c.provider} · {c.label}
               </span>
               {isAdmin && (
@@ -283,23 +283,23 @@ function AssignedConnectionsSection({
                     await api.delete(`/teams/${teamId}/connections/${c.id}`);
                     await onChanged();
                   }}
-                  className="text-[10.5px] text-ink-faint underline hover:text-crit"
+                  className="text-caption text-ink-faint underline hover:text-crit"
                 >
                   Remove
                 </button>
               )}
             </div>
-            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-ink-faint">
+            <div className="label-sub mb-1.5">
               Allow-listed resources
             </div>
             {c.resources.length === 0 ? (
-              <p className="mb-1.5 text-[11px] text-ink-faint">
+              <p className="mb-1.5 text-caption text-ink-faint">
                 None yet — nothing here is usable by Channel AI until a resource is added.
               </p>
             ) : (
               <div className="mb-1.5 flex flex-col gap-1">
                 {c.resources.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between text-[11.5px] text-ink-dim">
+                  <div key={r.id} className="flex items-center justify-between text-caption text-ink-dim">
                     <span className="truncate">{r.resource_label}</span>
                     {isAdmin && (
                       <button
@@ -307,7 +307,7 @@ function AssignedConnectionsSection({
                           await api.delete(`/teams/${teamId}/connections/${c.id}/resources/${r.id}`);
                           await onChanged();
                         }}
-                        className="text-[10px] text-ink-faint underline hover:text-crit"
+                        className="text-micro text-ink-faint underline hover:text-crit"
                       >
                         Remove
                       </button>
@@ -324,7 +324,7 @@ function AssignedConnectionsSection({
                     setResourceForm((f) => ({ ...f, [c.id]: { key: e.target.value, label: f[c.id]?.label ?? "" } }))
                   }
                   placeholder="resource id/key"
-                  className="w-1/2 rounded-md border border-border bg-ground px-2 py-1 text-[11px] outline-none focus:border-accent"
+                  className="w-1/2 rounded-md border border-border bg-ground px-3 py-2 text-caption outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
                 />
                 <input
                   value={resourceForm[c.id]?.label ?? ""}
@@ -332,7 +332,7 @@ function AssignedConnectionsSection({
                     setResourceForm((f) => ({ ...f, [c.id]: { key: f[c.id]?.key ?? "", label: e.target.value } }))
                   }
                   placeholder="display name"
-                  className="w-1/2 rounded-md border border-border bg-ground px-2 py-1 text-[11px] outline-none focus:border-accent"
+                  className="w-1/2 rounded-md border border-border bg-ground px-3 py-2 text-caption outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
                 />
                 <button
                   onClick={async () => {
@@ -345,7 +345,7 @@ function AssignedConnectionsSection({
                     setResourceForm((f) => ({ ...f, [c.id]: { key: "", label: "" } }));
                     await onChanged();
                   }}
-                  className="flex-none rounded-md bg-accent px-2.5 py-1 font-mono text-[10.5px] font-bold text-ground"
+                  className="btn-primary flex-none"
                 >
                   Add
                 </button>
@@ -360,18 +360,18 @@ function AssignedConnectionsSection({
           {!showPicker ? (
             <button
               onClick={() => setShowPicker(true)}
-              className="font-mono text-[11px] text-ink-faint underline hover:text-ink"
+              className="text-caption text-ink-faint underline hover:text-ink"
             >
               + Assign a connection
             </button>
           ) : (
-            <div className="rounded-md border border-dashed border-border p-3">
-              <p className="mb-2 text-[10.5px] leading-relaxed text-ink-faint">
+            <div className="rounded-md border border-dashed border-border-strong p-3">
+              <p className="mb-2 text-caption leading-relaxed text-ink-faint">
                 Assigning a connection lets Sentinel use it here. It still can't read anything until you allow-list
                 specific resources.
               </p>
               {assignable.length === 0 ? (
-                <p className="mb-2 text-[11px] text-ink-faint">Everything in this workspace is already assigned here.</p>
+                <p className="mb-2 text-caption text-ink-faint">Everything in this workspace is already assigned here.</p>
               ) : (
                 assignable.map((c) => (
                   <button
@@ -381,7 +381,7 @@ function AssignedConnectionsSection({
                       setShowPicker(false);
                       await onChanged();
                     }}
-                    className="block w-full rounded-md px-2 py-1.5 text-left text-[11.5px] text-ink-dim hover:bg-surface-2 hover:text-ink"
+                    className="block w-full rounded-md px-2 py-1.5 text-left text-caption text-ink-dim hover:bg-surface-2 hover:text-ink"
                   >
                     {c.provider} · {c.org}
                     {c.repo && c.provider === "github" ? `/${c.repo}` : ""}
@@ -392,20 +392,20 @@ function AssignedConnectionsSection({
                 <button
                   onClick={connectGoogleHere}
                   disabled={busy}
-                  className="block w-full rounded-md px-2 py-1.5 text-left text-[11.5px] text-ink-dim hover:bg-surface-2 hover:text-ink disabled:opacity-50"
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-caption text-ink-dim hover:bg-surface-2 hover:text-ink disabled:opacity-50"
                 >
                   + Connect Google (Gmail, Calendar, Drive)
                 </button>
                 <Link
                   to="/connections/github"
-                  className="block w-full rounded-md px-2 py-1.5 text-left text-[11.5px] text-ink-dim hover:bg-surface-2 hover:text-ink"
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-caption text-ink-dim hover:bg-surface-2 hover:text-ink"
                 >
                   + Connect GitHub
                 </Link>
               </div>
               <button
                 onClick={() => setShowPicker(false)}
-                className="mt-1 font-mono text-[10.5px] text-ink-faint underline hover:text-ink"
+                className="mt-1 text-caption text-ink-faint underline hover:text-ink"
               >
                 Cancel
               </button>
@@ -432,23 +432,23 @@ function RosterSection({ teamId, hasRequirements }: { teamId: string; hasRequire
 
   return (
     <section>
-      <h2 className="mb-1 text-[13px] font-semibold text-ink">Member setup</h2>
-      <p className="mb-3 text-[11.5px] text-ink-faint">
+      <h2 className="mb-1 text-body font-semibold text-ink">Member setup</h2>
+      <p className="mb-3 text-caption text-ink-faint">
         Who still needs to connect. You see states, never anyone's credentials.
       </p>
       <div className="flex flex-col gap-1.5">
         {roster.map((m) => (
-          <div key={m.user_id} className="flex items-start justify-between gap-2 text-[12px]">
+          <div key={m.user_id} className="flex items-start justify-between gap-2 text-small">
             <div className="min-w-0">
               <div className="truncate text-ink">{m.name ?? m.email}</div>
-              <div className="truncate text-[10.5px] text-ink-faint">
+              <div className="truncate text-caption text-ink-faint">
                 {m.requirements
                   .filter((r) => r.state !== "ready")
                   .map((r) => `${PROVIDER_LABEL[r.provider] ?? r.provider}: ${r.state.replace("_", " ")}`)
                   .join(" · ") || "all connected"}
               </div>
             </div>
-            <span className={`flex-none font-mono text-[10px] ${m.is_ready ? "text-good" : "text-watch"}`}>
+            <span className={`flex-none font-mono text-micro ${m.is_ready ? "text-good" : "text-watch"}`}>
               {m.is_ready ? "ready" : "pending"}
             </span>
           </div>

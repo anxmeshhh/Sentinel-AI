@@ -76,35 +76,35 @@ export function SettingsModule({ team, onChanged }: { team: Team; onChanged: () 
 
   return (
     <div className="flex max-w-md flex-col gap-3">
-      <div className="font-mono text-[10px] uppercase tracking-wide text-ink-faint">General</div>
+      <div className="label-sub">General</div>
       <div className="flex gap-1.5">
         <input
           value={icon}
           onChange={(e) => setIcon(e.target.value)}
           placeholder="#"
           aria-label="Channel icon"
-          className="w-12 rounded-md border border-border bg-ground px-2 py-1.5 text-center text-[13px] outline-none focus:border-accent"
+          className="w-12 rounded-md border border-border bg-ground px-3 py-2 text-center text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           aria-label="Channel name"
-          className="flex-1 rounded-md border border-border bg-ground px-2.5 py-1.5 text-[12.5px] outline-none focus:border-accent"
+          className="flex-1 rounded-md border border-border bg-ground px-3 py-2 text-small outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
       </div>
       <input
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         placeholder="Description"
-        className="rounded-md border border-border bg-ground px-2.5 py-1.5 text-[12px] outline-none focus:border-accent"
+        className="rounded-md border border-border bg-ground px-3 py-2 text-small outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
       />
 
-      <div className="font-mono text-[10px] uppercase tracking-wide text-ink-faint">Privacy</div>
+      <div className="label-sub">Privacy</div>
       <select
         value={privacy}
         onChange={(e) => setPrivacy(e.target.value as ChannelPrivacy)}
         aria-label="Channel privacy"
-        className="rounded-md border border-border bg-ground px-2.5 py-1.5 text-[12px] outline-none focus:border-accent"
+        className="rounded-md border border-border bg-ground px-3 py-2 text-small outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
       >
         <option value="public">Public to Group</option>
         <option value="invite_only">Invite Only</option>
@@ -114,23 +114,23 @@ export function SettingsModule({ team, onChanged }: { team: Team; onChanged: () 
       <button
         onClick={save}
         disabled={busy || !name.trim()}
-        className="rounded-md bg-accent px-3 py-1.5 font-mono text-[11px] font-bold text-ground disabled:opacity-50"
+        className="btn-primary"
       >
         {busy ? "Saving…" : "Save changes"}
       </button>
-      {message && <p className={`text-[11px] ${message === "Saved." ? "text-good" : "text-crit"}`}>{message}</p>}
+      {message && <p className={`text-caption ${message === "Saved." ? "text-good" : "text-crit"}`}>{message}</p>}
 
       <div className="mt-2 rounded-md border border-crit/30 p-2.5">
-        <div className="mb-2 font-mono text-[10px] uppercase tracking-wide text-crit">Danger Zone</div>
+        <div className="label-sub mb-2 text-crit">Danger Zone</div>
         <div className="flex flex-col gap-1.5">
           <button
             onClick={toggleArchive}
             disabled={busy}
-            className="text-left text-[11.5px] text-ink-dim underline underline-offset-2 hover:text-watch"
+            className="text-left text-caption text-ink-dim underline underline-offset-2 hover:text-watch"
           >
             {team.is_archived ? "Unarchive this channel" : "Archive this channel"}
           </button>
-          <button onClick={deleteChannel} disabled={busy} className="text-left text-[11.5px] text-crit underline underline-offset-2">
+          <button onClick={deleteChannel} disabled={busy} className="text-left text-caption text-crit underline underline-offset-2">
             Delete this channel permanently
           </button>
         </div>

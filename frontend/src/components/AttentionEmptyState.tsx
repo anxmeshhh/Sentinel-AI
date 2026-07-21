@@ -18,8 +18,8 @@ export function AttentionEmptyState({ context, filter }: { context: AttentionCon
     return (
       <Shell>
         <p className="mb-2 text-ink-dim">Nothing is connected to this workspace yet.</p>
-        <p className="mb-3 text-[12px]">Sentinel needs a connection before it can find anything that matters.</p>
-        <Link to="/connections/google" className="font-mono text-[12px] font-semibold text-accent-text hover:underline">
+        <p className="mb-3 text-small">Sentinel needs a connection before it can find anything that matters.</p>
+        <Link to="/connections/google" className="text-small font-semibold text-accent-text hover:underline">
           Connect Google &rarr;
         </Link>
       </Shell>
@@ -34,7 +34,7 @@ export function AttentionEmptyState({ context, filter }: { context: AttentionCon
     return (
       <Shell>
         <p className="mb-2 text-ink-dim">Still syncing your connections.</p>
-        <p className="text-[12px]">This usually takes under a minute. Re-check in a moment.</p>
+        <p className="text-small">This usually takes under a minute. Re-check in a moment.</p>
       </Shell>
     );
   }
@@ -42,8 +42,8 @@ export function AttentionEmptyState({ context, filter }: { context: AttentionCon
   // 3. Synced and genuinely clear - show the work so "nothing" is credible.
   return (
     <Shell>
-      <p className="mb-2 text-[14px] text-ink">Nothing needs your attention. ✨</p>
-      <p className="text-[12px]">
+      <p className="mb-2 text-lead text-ink">Nothing needs your attention. ✨</p>
+      <p className="text-small">
         Checked {context.signals_seen.toLocaleString()} item{context.signals_seen === 1 ? "" : "s"}
         {context.filtered_as_noise > 0 && (
           <>
@@ -53,7 +53,7 @@ export function AttentionEmptyState({ context, filter }: { context: AttentionCon
         .
       </p>
       {context.last_synced_at && (
-        <p className="mt-2 text-[11px] text-ink-faint">Last checked {new Date(context.last_synced_at).toLocaleString()}</p>
+        <p className="mt-2 text-caption text-ink-faint">Last checked {new Date(context.last_synced_at).toLocaleString()}</p>
       )}
     </Shell>
   );
@@ -61,6 +61,6 @@ export function AttentionEmptyState({ context, filter }: { context: AttentionCon
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-dashed border-border p-8 text-center text-[13px] text-ink-faint">{children}</div>
+    <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-body text-ink-faint">{children}</div>
   );
 }

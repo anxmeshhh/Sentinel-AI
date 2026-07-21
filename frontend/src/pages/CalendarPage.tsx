@@ -136,13 +136,13 @@ export function CalendarPage() {
 
   if (connected === false) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border p-10 text-center text-ink-dim">
+      <div className="max-w-lg rounded-md border border-dashed border-border-strong p-10 text-center text-ink-dim">
         <BackNav
           back={{ to: "/connections/google", label: "Google Workspace" }}
           crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Calendar" }]}
         />
-        <p className="mb-3 text-[14px]">Google Calendar isn't connected yet.</p>
-        <Link to="/settings" className="font-mono text-[13px] font-semibold text-accent-text hover:underline">
+        <p className="mb-3 text-lead">Google Calendar isn't connected yet.</p>
+        <Link to="/settings" className="text-body font-semibold text-accent-text hover:underline">
           Connect Calendar &rarr;
         </Link>
       </div>
@@ -159,27 +159,27 @@ export function CalendarPage() {
       />
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="mb-1 text-xl font-semibold text-balance">Calendar</h1>
-          <p className="text-[13px] text-ink-dim">
+          <h1 className="mb-1 text-h2 font-semibold text-balance">Calendar</h1>
+          <p className="text-body text-ink-dim">
             Your events, plus Indian holidays &amp; festivals from Sentinel's calendar layer — clearly separate from your own.
           </p>
         </div>
         <button
           onClick={() => setScheduleOpen((o) => !o)}
-          className="flex-none rounded-md bg-accent px-3.5 py-1.5 font-mono text-[11.5px] font-bold text-ground"
+          className="btn-primary flex-none"
         >
           {scheduleOpen ? "Close" : "+ Schedule"}
         </button>
       </div>
 
       {scheduleOpen && (
-        <div className="mb-6 rounded-md border border-border bg-surface">
+        <div className="mb-6 rounded-lg border border-border bg-surface shadow-card">
           <div className="flex gap-1.5 border-b border-border p-2.5">
             {(["manual", "ai"] as ScheduleTab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setScheduleTab(t)}
-                className={`rounded-full border px-3 py-1.5 font-mono text-[11px] transition-colors ${
+                className={`rounded-full border px-3 py-1.5 font-mono text-caption transition-colors ${
                   scheduleTab === t ? "border-accent bg-accent/15 text-accent-text" : "border-border text-ink-faint hover:text-ink"
                 }`}
               >
@@ -206,7 +206,7 @@ export function CalendarPage() {
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`rounded-full border px-3 py-1.5 font-mono text-[11.5px] capitalize transition-colors ${
+              className={`rounded-full border px-3 py-1.5 font-mono text-caption capitalize transition-colors ${
                 view === v ? "border-accent bg-accent/15 text-accent-text" : "border-border text-ink-faint hover:text-ink"
               }`}
             >
@@ -221,7 +221,7 @@ export function CalendarPage() {
               <button
                 key={r}
                 onClick={() => setAgendaRange(r)}
-                className={`rounded-full border px-3 py-1.5 font-mono text-[11.5px] capitalize transition-colors ${
+                className={`rounded-full border px-3 py-1.5 font-mono text-caption capitalize transition-colors ${
                   agendaRange === r ? "border-accent bg-accent/15 text-accent-text" : "border-border text-ink-faint hover:text-ink"
                 }`}
               >
@@ -231,14 +231,14 @@ export function CalendarPage() {
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <button onClick={() => stepAnchor(-1)} className="rounded-md border border-border px-2.5 py-1 text-[12px] text-ink-dim hover:border-accent">
+            <button onClick={() => stepAnchor(-1)} className="rounded-md border border-border px-2.5 py-1 text-small text-ink-dim hover:border-accent">
               &larr;
             </button>
-            <span className="min-w-[8rem] text-center font-mono text-[12px] text-ink-dim">{anchorLabel(view, anchor)}</span>
-            <button onClick={() => stepAnchor(1)} className="rounded-md border border-border px-2.5 py-1 text-[12px] text-ink-dim hover:border-accent">
+            <span className="min-w-[8rem] text-center text-small text-ink-dim">{anchorLabel(view, anchor)}</span>
+            <button onClick={() => stepAnchor(1)} className="rounded-md border border-border px-2.5 py-1 text-small text-ink-dim hover:border-accent">
               &rarr;
             </button>
-            <button onClick={() => setAnchor(new Date())} className="ml-1 font-mono text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink">
+            <button onClick={() => setAnchor(new Date())} className="ml-1 text-caption text-ink-faint underline underline-offset-2 hover:text-ink">
               Today
             </button>
           </div>
@@ -253,7 +253,7 @@ export function CalendarPage() {
             <button
               key={cat}
               onClick={() => toggleCategory(cat)}
-              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10.5px] transition-colors ${
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-caption transition-colors ${
                 on ? `${meta.border} ${meta.text}` : "border-border text-ink-faint opacity-50"
               }`}
             >
@@ -265,7 +265,7 @@ export function CalendarPage() {
         <select
           value={holidayState}
           onChange={(e) => setHolidayState(e.target.value)}
-          className="rounded-full border border-border bg-surface px-2.5 py-1 font-mono text-[10.5px] text-ink-dim outline-none focus:border-accent"
+          className="rounded-full border border-border bg-surface px-2.5 py-1 text-caption text-ink-dim outline-none focus:border-accent"
         >
           <option value="">All regional holidays</option>
           {INDIAN_STATES.map((s) => (
@@ -306,7 +306,7 @@ function MonthGrid({
     <div className="overflow-hidden rounded-md border border-border">
       <div className="grid grid-cols-7 border-b border-border bg-surface">
         {WEEKDAY_LABELS.map((w) => (
-          <div key={w} className="p-2 text-center font-mono text-[10.5px] uppercase tracking-wide text-ink-faint">
+          <div key={w} className="label-sub p-2 text-center">
             {w}
           </div>
         ))}
@@ -327,20 +327,20 @@ function MonthGrid({
               }`}
             >
               <span
-                className={`font-mono text-[11px] ${isToday ? "flex h-5 w-5 items-center justify-center rounded-full bg-accent text-ground" : inMonth ? "text-ink-dim" : "text-ink-faint"}`}
+                className={`font-mono text-caption ${isToday ? "flex h-5 w-5 items-center justify-center rounded-full bg-accent text-ground" : inMonth ? "text-ink-dim" : "text-ink-faint"}`}
               >
                 {d.getDate()}
               </span>
               {dayHolidays.slice(0, 1).map((h) => (
                 <span
                   key={h.title}
-                  className={`w-full truncate rounded-full px-1.5 py-[1px] font-mono text-[9px] ${CATEGORY_META[h.category].text}`}
+                  className={`w-full truncate rounded-full px-1.5 py-[1px] font-mono text-micro ${CATEGORY_META[h.category].text}`}
                 >
                   &#9679; {h.title}
                 </span>
               ))}
               {dayEvents.length > 0 && (
-                <span className="truncate rounded-full bg-accent/15 px-1.5 py-[1px] font-mono text-[9.5px] text-accent-text">
+                <span className="rounded-full border border-accent/35 bg-accent/10 px-2.5 py-0.5 label-sub text-accent-text">
                   {dayEvents.length} event{dayEvents.length === 1 ? "" : "s"}
                 </span>
               )}
@@ -355,28 +355,28 @@ function MonthGrid({
 function AgendaList({ events, holidays, emptyLabel }: { events: CalendarEvent[]; holidays: Holiday[]; emptyLabel: string }) {
   if (events.length === 0 && holidays.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-border p-8 text-center text-[13px] text-ink-faint">{emptyLabel}</div>
+      <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-body text-ink-faint">{emptyLabel}</div>
     );
   }
   return (
-    <div className="rounded-md border border-border bg-surface">
+    <div className="rounded-lg border border-border bg-surface shadow-card">
       {holidays.map((h) => {
         const meta = CATEGORY_META[h.category];
         return (
           <div key={`${h.title}-${h.date}`} className={`flex items-center gap-3 border-b border-l-[3px] border-border ${meta.border} p-3.5 last:border-b-0`}>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="truncate text-[13px] font-semibold text-ink">{h.title}</span>
-                <span className={`flex-none rounded-full border px-2 py-[2px] font-mono text-[9px] uppercase tracking-wide ${meta.border} ${meta.text}`}>
+                <span className="truncate text-body font-semibold text-ink">{h.title}</span>
+                <span className={`flex-none rounded-full border px-2 py-[2px] font-mono text-micro uppercase tracking-wide ${meta.border} ${meta.text}`}>
                   {meta.label}
                 </span>
               </div>
-              <div className="mt-0.5 text-[11.5px] text-ink-faint">
+              <div className="mt-0.5 text-caption text-ink-faint">
                 {new Date(h.date).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
                 {h.states && ` · ${h.states.join(", ")}`}
               </div>
             </div>
-            <span className="flex-none font-mono text-[10px] uppercase tracking-wide text-ink-faint">Sentinel Calendar</span>
+            <span className="label-sub flex-none">Sentinel Calendar</span>
           </div>
         );
       })}
@@ -384,12 +384,12 @@ function AgendaList({ events, holidays, emptyLabel }: { events: CalendarEvent[];
         <div key={e.id} className="flex items-start gap-3 border-b border-border p-3.5 last:border-b-0">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate text-[13px] font-semibold text-ink">{e.title}</span>
+              <span className="truncate text-body font-semibold text-ink">{e.title}</span>
               {e.status === "cancelled" && (
-                <span className="flex-none rounded-full border border-crit/40 px-2 py-[2px] font-mono text-[9px] uppercase text-crit">Cancelled</span>
+                <span className="label-sub flex-none rounded-full border border-crit/40 px-2 py-[2px] text-crit">Cancelled</span>
               )}
             </div>
-            <div className="mt-0.5 text-[11.5px] text-ink-faint">
+            <div className="mt-0.5 text-caption text-ink-faint">
               {e.start ? new Date(e.start).toLocaleString() : "—"}
               {e.attendee_count > 0 && ` · ${e.attendee_count} attendee${e.attendee_count === 1 ? "" : "s"}`}
               {e.organizer && ` · ${e.organizer}`}
@@ -397,10 +397,10 @@ function AgendaList({ events, holidays, emptyLabel }: { events: CalendarEvent[];
           </div>
           <div className="flex flex-none items-center gap-2">
             {e.has_meeting_link && (
-              <span className="rounded-full border border-good/40 px-2 py-[3px] font-mono text-[9.5px] text-good">MEET</span>
+              <span className="rounded-full border border-good/40 px-2 py-[3px] text-micro text-good">MEET</span>
             )}
             {e.url && (
-              <a href={e.url} target="_blank" rel="noopener noreferrer" className="text-[11.5px] text-ink-faint underline underline-offset-2 hover:text-ink">
+              <a href={e.url} target="_blank" rel="noopener noreferrer" className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink">
                 Open
               </a>
             )}
@@ -459,27 +459,27 @@ function NewEventForm({ onCreated }: { onCreated: () => void }) {
         placeholder="Event title"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+        className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
       />
       <div className="mb-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <label className="block">
-          <span className="mb-1 block font-mono text-[10.5px] uppercase tracking-wide text-ink-faint">Start</span>
+          <span className="label-sub mb-1 block">Start</span>
           <input
             required
             type="datetime-local"
             value={start}
             onChange={(e) => setStart(e.target.value)}
-            className="w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+            className="w-full rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
           />
         </label>
         <label className="block">
-          <span className="mb-1 block font-mono text-[10.5px] uppercase tracking-wide text-ink-faint">End</span>
+          <span className="label-sub mb-1 block">End</span>
           <input
             required
             type="datetime-local"
             value={end}
             onChange={(e) => setEnd(e.target.value)}
-            className="w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+            className="w-full rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
           />
         </label>
       </div>
@@ -487,17 +487,17 @@ function NewEventForm({ onCreated }: { onCreated: () => void }) {
         placeholder="Attendee emails, comma-separated (optional)"
         value={attendees}
         onChange={(e) => setAttendees(e.target.value)}
-        className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+        className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
       />
-      <label className="mb-3 flex items-center gap-2 text-[12.5px] text-ink-dim">
+      <label className="mb-3 flex items-center gap-2 text-small text-ink-dim">
         <input type="checkbox" checked={createMeetLink} onChange={(e) => setCreateMeetLink(e.target.checked)} />
         Add a Google Meet link
       </label>
-      {error && <p className="mb-2 text-[12.5px] text-crit">{error}</p>}
+      {error && <p className="mb-2 text-small text-crit">{error}</p>}
       <button
         type="submit"
         disabled={submitting}
-        className="rounded-md bg-accent px-4 py-2 font-mono text-[12.5px] font-bold text-ground disabled:opacity-50"
+        className="btn-primary"
       >
         {submitting ? "Creating…" : "Create event"}
       </button>

@@ -23,7 +23,7 @@ export function OAuthCallbackPage() {
   if (status === "error") return <Navigate to="/login" replace />;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-ground text-[13px] text-ink-dim">
+    <div className="flex min-h-screen items-center justify-center bg-ground text-body text-ink-dim">
       Signing you in&hellip;
     </div>
   );

@@ -36,14 +36,14 @@ export function OAuthButtons() {
     <div className="mt-6">
       <div className="mb-4 flex items-center gap-3">
         <div className="h-px flex-1 bg-border" />
-        <span className="text-[11px] uppercase tracking-wide text-ink-faint">or continue with</span>
+        <span className="text-caption text-ink-faint">or continue with</span>
         <div className="h-px flex-1 bg-border" />
       </div>
       <div className="flex flex-col gap-2.5">
         {providers.google && (
           <a
             href={`${API_BASE}/auth/google/login`}
-            className="flex items-center justify-center gap-2.5 border border-border py-2.5 text-[13px] font-medium text-ink transition-colors hover:border-ink"
+            className="flex items-center justify-center gap-2.5 border border-border py-2.5 text-body font-medium text-ink transition-colors hover:border-ink"
           >
             <GoogleMark />
             Google
@@ -52,7 +52,7 @@ export function OAuthButtons() {
         {providers.microsoft && (
           <a
             href={`${API_BASE}/auth/microsoft/login`}
-            className="flex items-center justify-center gap-2.5 border border-border py-2.5 text-[13px] font-medium text-ink transition-colors hover:border-ink"
+            className="flex items-center justify-center gap-2.5 border border-border py-2.5 text-body font-medium text-ink transition-colors hover:border-ink"
           >
             <MicrosoftMark />
             Microsoft
@@ -62,7 +62,7 @@ export function OAuthButtons() {
       {/* Naming the boundary here heads off a real confusion: signing in
           with Google and connecting Gmail are separate OAuth flows with
           different scopes, and users reasonably assume one implies the other. */}
-      <p className="mt-3 text-center text-[11.5px] text-ink-faint">
+      <p className="mt-3 text-center text-caption text-ink-faint">
         Signing in with Google creates your account — it doesn't give Sentinel access to your email.
         You choose what to connect later.
       </p>

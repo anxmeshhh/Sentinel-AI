@@ -135,16 +135,16 @@ export function AttentionPage() {
     <div className="max-w-5xl">
       <BackNav back={{ to: "/", label: "Dashboard" }} />
       <div className="mb-1 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-balance">Attention</h1>
+        <h1 className="text-h2 font-semibold text-balance">Attention</h1>
         <button
           onClick={refresh}
           disabled={refreshing}
-          className="rounded-md border border-border bg-surface px-3 py-1.5 font-mono text-[11.5px] text-ink-dim hover:border-accent hover:text-ink disabled:opacity-50"
+          className="rounded-lg border border-border bg-surface shadow-card px-3 py-1.5 text-caption text-ink-dim hover:border-accent hover:text-ink disabled:opacity-50"
         >
           {refreshing ? "Checking…" : "↻ Re-check now"}
         </button>
       </div>
-      <p className="mb-5 text-[13px] text-ink-dim">
+      <p className="mb-5 text-body text-ink-dim">
         Everything that needs you, across every connection. ✨ items were detected by Sentinel — the reason shown is a
         fact, not a guess. 📌 items are reminders you created.
       </p>
@@ -154,16 +154,16 @@ export function AttentionPage() {
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
           placeholder="Add a reminder — e.g. Follow up with the design team"
-          className="flex-1 rounded-md border border-border bg-surface px-3.5 py-2 text-[13px] outline-none focus:border-accent"
+          className="flex-1 rounded-lg border border-border bg-surface shadow-card px-3.5 py-2 text-body outline-none focus:border-accent"
         />
         <input
           type="datetime-local"
           value={newDue}
           onChange={(e) => setNewDue(e.target.value)}
           aria-label="Due (optional)"
-          className="rounded-md border border-border bg-surface px-2.5 py-2 text-[12px] text-ink-dim outline-none focus:border-accent"
+          className="rounded-lg border border-border bg-surface shadow-card px-2.5 py-2 text-small text-ink-dim outline-none focus:border-accent"
         />
-        <button type="submit" disabled={!newTitle.trim()} className="rounded-md bg-accent px-3.5 py-2 font-mono text-[11.5px] font-bold text-ground disabled:opacity-50">
+        <button type="submit" disabled={!newTitle.trim()} className="btn-primary">
           Add
         </button>
       </form>
@@ -173,7 +173,7 @@ export function AttentionPage() {
           <button
             key={f.key}
             onClick={() => setStateFilter(f.key)}
-            className={`rounded-full border px-3 py-1.5 font-mono text-[11.5px] transition-colors ${
+            className={`rounded-full border px-3 py-1.5 font-mono text-caption transition-colors ${
               stateFilter === f.key ? "border-accent bg-accent/15 text-accent-text" : "border-border text-ink-faint hover:text-ink"
             }`}
           >
@@ -182,32 +182,32 @@ export function AttentionPage() {
         ))}
       </div>
 
-      {error && <p className="mb-4 text-[12.5px] text-crit">{error}</p>}
+      {error && <p className="mb-4 text-small text-crit">{error}</p>}
       {planResult && (
-        <p className={`mb-4 text-[12.5px] ${planResult.startsWith("Added") ? "text-good" : "text-crit"}`}>{planResult}</p>
+        <p className={`mb-4 text-small ${planResult.startsWith("Added") ? "text-good" : "text-crit"}`}>{planResult}</p>
       )}
 
       {plan && (
         <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 p-3.5">
-          <div className="mb-2 font-mono text-[10.5px] font-bold uppercase tracking-wide text-watch">
+          <div className="label-sub mb-2 font-bold text-watch">
             Sentinel plans to create this event
           </div>
-          <div className="mb-1 text-[13px] font-semibold text-ink">{plan.plan.title}</div>
-          <div className="mb-3 text-[11.5px] text-ink-dim">
+          <div className="mb-1 text-body font-semibold text-ink">{plan.plan.title}</div>
+          <div className="mb-3 text-caption text-ink-dim">
             {new Date(plan.plan.start).toLocaleString()} — {new Date(plan.plan.end).toLocaleTimeString()}
           </div>
           <div className="flex gap-2">
             <button
               onClick={confirmCalendar}
               disabled={planBusy}
-              className="rounded-md bg-accent px-3 py-1.5 font-mono text-[11px] font-bold text-ground disabled:opacity-50"
+              className="btn-primary"
             >
               {planBusy ? "Adding…" : "Confirm & Add"}
             </button>
             <button
               onClick={() => setPlan(null)}
               disabled={planBusy}
-              className="rounded-md border border-border px-3 py-1.5 font-mono text-[11px] text-ink-dim hover:border-crit hover:text-crit disabled:opacity-50"
+              className="rounded-md border border-border px-3 py-1.5 text-caption text-ink-dim hover:border-crit hover:text-crit disabled:opacity-50"
             >
               Cancel
             </button>
@@ -226,12 +226,12 @@ export function AttentionPage() {
               {items.map((item) => (
                 <div key={item.id} className={`rounded-md border bg-surface p-3.5 ${askItem?.id === item.id ? "border-accent" : "border-border"}`}>
                   <div className="flex items-start gap-3">
-                    <span className="mt-0.5 flex-none text-[17px]">{attentionIcon(item)}</span>
+                    <span className="mt-0.5 flex-none text-h3">{attentionIcon(item)}</span>
                     <div className="min-w-0 flex-1">
-                      <div className={`text-[13.5px] font-semibold ${item.state === "done" ? "text-ink-faint line-through" : "text-ink"}`}>
+                      <div className={`text-body font-semibold ${item.state === "done" ? "text-ink-faint line-through" : "text-ink"}`}>
                         {item.title}
                       </div>
-                      <div className="mt-0.5 text-[11.5px] text-ink-faint">
+                      <div className="mt-0.5 text-caption text-ink-faint">
                         {item.why}
                         {item.origin === "detected" ? " · ✨ AI-detected" : " · 📌 manual"}
                         {item.due_at && ` · due ${new Date(item.due_at).toLocaleString()}`}
@@ -239,7 +239,7 @@ export function AttentionPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="mt-2.5 flex flex-wrap items-center gap-3 pl-8 font-mono text-[10.5px]">
+                  <div className="mt-2.5 flex flex-wrap items-center gap-3 pl-8 text-caption">
                     {item.state === "new" && (
                       <>
                         <button onClick={() => setState(item, "done")} className="text-ink-faint underline underline-offset-2 hover:text-good">
@@ -253,12 +253,12 @@ export function AttentionPage() {
                             Snooze &#9662;
                           </button>
                           {snoozeMenuFor === item.id && (
-                            <span className="absolute left-0 top-5 z-10 flex flex-col rounded-md border border-border bg-surface shadow-lg">
+                            <span className="absolute left-0 top-5 z-10 flex flex-col rounded-lg border border-border bg-surface shadow-card shadow-lg">
                               {SNOOZE_OPTIONS.map((o) => (
                                 <button
                                   key={o.label}
                                   onClick={() => setState(item, "snoozed", o.hours)}
-                                  className="px-3 py-1.5 text-left text-[11px] text-ink-dim hover:bg-surface-2 hover:text-ink"
+                                  className="px-3 py-1.5 text-left text-caption text-ink-dim hover:bg-surface-2 hover:text-ink"
                                 >
                                   {o.label}
                                 </button>
@@ -307,7 +307,7 @@ export function AttentionPage() {
                   {prepItemId === item.id && (meetingBrief.brief || meetingBrief.error) && (
                     <div className="mt-3">
                       {meetingBrief.error ? (
-                        <p className="text-[12px] text-crit">{meetingBrief.error}</p>
+                        <p className="text-small text-crit">{meetingBrief.error}</p>
                       ) : (
                         <MeetingBriefPanel
                           brief={meetingBrief.brief!}
@@ -329,13 +329,13 @@ export function AttentionPage() {
 
         {askItem && (
           <div className="w-full flex-none lg:sticky lg:top-6 lg:w-[380px]">
-            <div className="rounded-md border border-border bg-surface">
+            <div className="rounded-lg border border-border bg-surface shadow-card">
               <div className="flex items-center justify-between border-b border-border p-3.5">
                 <div className="min-w-0">
-                  <div className="text-[11px] text-ink-faint">Investigating</div>
-                  <div className="truncate text-[13px] font-semibold text-ink">{askItem.title}</div>
+                  <div className="text-caption text-ink-faint">Investigating</div>
+                  <div className="truncate text-body font-semibold text-ink">{askItem.title}</div>
                 </div>
-                <button onClick={() => setAskItem(null)} aria-label="Close" className="ml-2 flex-none rounded-md px-2 py-1 text-[13px] text-ink-faint hover:bg-surface-2 hover:text-ink">
+                <button onClick={() => setAskItem(null)} aria-label="Close" className="ml-2 flex-none rounded-md px-2 py-1 text-body text-ink-faint hover:bg-surface-2 hover:text-ink">
                   &times;
                 </button>
               </div>

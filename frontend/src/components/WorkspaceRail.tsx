@@ -30,9 +30,9 @@ export function WorkspaceRail({ onOpenCreate }: { onOpenCreate: () => void }) {
   }
 
   return (
-    <div className="flex h-full w-[60px] flex-none flex-col items-center gap-2 border-r border-border bg-ground py-3">
-      <div className="relative mb-1 h-[22px] w-[22px] flex-none rounded-full border border-ink" title="Sentinel">
-        <div className="absolute inset-[6px] rounded-full bg-ink" />
+    <div className="flex h-full w-[68px] flex-none flex-col items-center gap-2.5 border-r border-border bg-ground py-4">
+      <div className="relative mb-2 h-[26px] w-[26px] flex-none rounded-full border border-ink" title="Sentinel">
+        <div className="absolute inset-[7px] rounded-full bg-ink" />
       </div>
 
       {personal.map((w) => (
@@ -48,7 +48,7 @@ export function WorkspaceRail({ onOpenCreate }: { onOpenCreate: () => void }) {
         />
       ))}
 
-      {organizations.length > 0 && <div className="my-1 h-px w-6 bg-border" />}
+      {organizations.length > 0 && <div className="my-1.5 h-px w-7 bg-border" />}
 
       {organizations.map((w) => (
         <RailButton
@@ -71,7 +71,7 @@ export function WorkspaceRail({ onOpenCreate }: { onOpenCreate: () => void }) {
           onClick={handleLogout}
           title={`Log out (${user?.email ?? ""})`}
           aria-label="Log out"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-[11px] font-semibold uppercase text-ink-dim hover:text-ink"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-small font-semibold text-ink-dim transition-colors hover:bg-surface-3 hover:text-ink"
         >
           {user?.name?.[0] ?? "?"}
         </button>
@@ -97,13 +97,13 @@ function RailButton({
       title={label}
       aria-label={label}
       aria-current={isActive ? "true" : undefined}
-      className={`relative flex h-10 w-10 flex-none items-center justify-center rounded-md text-[12px] font-semibold transition-colors ${
+      className={`relative flex h-10 w-10 flex-none items-center justify-center rounded-md text-small font-semibold transition-colors ${
         isActive ? "bg-ink text-ground" : "bg-surface text-ink-dim hover:bg-surface-2 hover:text-ink"
       }`}
     >
       {/* Active marker on the rail edge, so the current context is readable
           without relying on fill colour alone. */}
-      {isActive && <span className="absolute -left-3 h-5 w-[3px] rounded-r bg-ink" />}
+      {isActive && <span className="absolute -left-4 h-6 w-[3px] rounded-r-full bg-accent" />}
       {glyph}
     </button>
   );

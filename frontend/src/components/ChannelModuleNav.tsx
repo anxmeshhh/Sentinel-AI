@@ -52,14 +52,16 @@ export function ChannelModuleNav({
   blockingCount: number;
 }) {
   return (
-    <nav className="mb-5 flex flex-wrap gap-1 border-b border-border pb-2">
+    <nav className="scroll-x mb-6 flex gap-1 border-b border-rule-strong pb-2.5 sm:flex-wrap">
       {CHANNEL_MODULES.filter((m) => !m.adminOnly || isAdmin).map((module) => (
         <NavLink
           key={module.key}
           to={`/channels/${teamId}/${module.key}`}
           className={({ isActive }) =>
-            `flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12.5px] transition-colors ${
-              isActive ? "bg-surface-2 font-semibold text-ink" : "text-ink-dim hover:text-ink"
+            `flex flex-none items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-small transition-colors ${
+              isActive
+                ? "bg-surface-2 font-semibold text-ink shadow-card"
+                : "text-ink-dim hover:bg-surface hover:text-ink"
             }`
           }
         >
@@ -67,12 +69,12 @@ export function ChannelModuleNav({
           {module.key === "extensions" && blockingCount > 0 && (
             <span
               title={`${blockingCount} required integration${blockingCount === 1 ? "" : "s"} still to connect`}
-              className="rounded-full bg-watch/20 px-1.5 py-px font-mono text-[9.5px] font-bold text-watch"
+              className="rounded-full bg-watch/20 px-1.5 py-px text-micro font-bold text-watch"
             >
               {blockingCount}
             </span>
           )}
-          {!module.built && <span className="font-mono text-[9px] text-ink-faint">soon</span>}
+          {!module.built && <span className="text-micro text-ink-faint">soon</span>}
         </NavLink>
       ))}
     </nav>

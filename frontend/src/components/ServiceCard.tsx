@@ -40,9 +40,9 @@ export function ServiceCard({ icon, name, status, desc, connected, active, disab
         </button>
       )}
       <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-md bg-surface-2">{icon}</div>
-      <div className="mb-1 truncate pr-4 text-[14px] font-semibold text-ink">{name}</div>
-      <div className={`mb-2 text-[12.5px] font-semibold ${connected ? "text-good" : "text-ink-faint"}`}>{status}</div>
-      <div className="text-[11.5px] leading-relaxed text-ink-faint">{desc}</div>
+      <div className="mb-1 truncate pr-4 text-lead font-semibold text-ink">{name}</div>
+      <div className={`mb-2 text-small font-semibold ${connected ? "text-good" : "text-ink-faint"}`}>{status}</div>
+      <div className="text-caption leading-relaxed text-ink-faint">{desc}</div>
     </>
   );
 

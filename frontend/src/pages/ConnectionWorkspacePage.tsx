@@ -45,14 +45,14 @@ export function ConnectionWorkspacePage() {
       <BackNav back={{ to: "/", label: "Dashboard" }} crumbs={meta ? [{ label: "Dashboard", to: "/" }, { label: "Connections", to: "/" }, { label: meta.label }] : undefined} />
 
       {!meta ? (
-        <div className="rounded-md border border-dashed border-border p-8 text-center text-[13px] text-ink-faint">
+        <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-body text-ink-faint">
           Unknown connection.
         </div>
       ) : (
         <>
           <div className="mb-4 flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-md bg-surface-2">{meta.icon}</div>
-            <h1 className="text-xl font-semibold text-balance">{meta.label}</h1>
+            <h1 className="text-h2 font-semibold text-balance">{meta.label}</h1>
           </div>
 
           {/* Who can use anything connected here - stated up front, not
@@ -151,40 +151,40 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
         <button
           onClick={() => setShowScopeDialog(true)}
           disabled={connecting}
-          className="rounded-md bg-accent px-3.5 py-1.5 font-mono text-[11.5px] font-bold text-ground disabled:opacity-50"
+          className="btn-primary"
         >
           {connecting ? "Redirecting…" : connectedCount > 0 ? "Reconnect Google" : "Connect Google"}
         </button>
         {gmail && (
-          <button onClick={() => handleDisconnect(gmail.id)} className="font-mono text-[11.5px] text-ink-faint underline underline-offset-2 hover:text-crit">
+          <button onClick={() => handleDisconnect(gmail.id)} className="text-caption text-ink-faint underline underline-offset-2 hover:text-crit">
             Disconnect Gmail
           </button>
         )}
         {googleCalendar && (
-          <button onClick={() => handleDisconnect(googleCalendar.id)} className="font-mono text-[11.5px] text-ink-faint underline underline-offset-2 hover:text-crit">
+          <button onClick={() => handleDisconnect(googleCalendar.id)} className="text-caption text-ink-faint underline underline-offset-2 hover:text-crit">
             Disconnect Calendar
           </button>
         )}
         {googleDrive && (
-          <button onClick={() => handleDisconnect(googleDrive.id)} className="font-mono text-[11.5px] text-ink-faint underline underline-offset-2 hover:text-crit">
+          <button onClick={() => handleDisconnect(googleDrive.id)} className="text-caption text-ink-faint underline underline-offset-2 hover:text-crit">
             Disconnect Drive
           </button>
         )}
         {connectedCount > 0 && (
-          <button onClick={handleDisconnectAll} className="font-mono text-[11.5px] text-crit underline underline-offset-2">
+          <button onClick={handleDisconnectAll} className="text-caption text-crit underline underline-offset-2">
             Disconnect all
           </button>
         )}
       </div>
 
       {googleDrive === undefined && (gmail || googleCalendar) && (
-        <p className="mb-4 text-[12px] text-watch">
+        <p className="mb-4 text-small text-watch">
           Drive needs the newer Google connection scope — click "Reconnect Google" above to add it.
         </p>
       )}
 
       {connectedCount > 0 && (
-        <div className="rounded-md border border-border bg-surface">
+        <div className="rounded-lg border border-border bg-surface shadow-card">
           <GoogleAICommand />
         </div>
       )}
@@ -259,21 +259,21 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
         </div>
       )}
 
-      <form onSubmit={handleConnect} className="rounded-md border border-border bg-surface p-4">
+      <form onSubmit={handleConnect} className="rounded-lg border border-border bg-surface shadow-card p-4">
         <div className="mb-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           <input
             required
             placeholder="org (e.g. northwind)"
             value={org}
             onChange={(e) => setOrg(e.target.value)}
-            className="rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+            className="rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
           />
           <input
             required
             placeholder="repo (e.g. checkout-service)"
             value={repo}
             onChange={(e) => setRepo(e.target.value)}
-            className="rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+            className="rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
           />
         </div>
         <input
@@ -282,17 +282,17 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
           placeholder="GitHub personal access token"
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-[13px] outline-none focus:border-accent"
+          className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
-        {error && <p className="mb-2 text-[12.5px] text-crit">{error}</p>}
+        {error && <p className="mb-2 text-small text-crit">{error}</p>}
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-accent px-4 py-2 font-mono text-[12.5px] font-bold text-ground disabled:opacity-50"
+          className="btn-primary"
         >
           {submitting ? "Connecting…" : "Connect repository"}
         </button>
-        <p className="mt-2 text-[11.5px] text-ink-dim">🔒 PR, commit, issue, and review metadata only — never source code.</p>
+        <p className="mt-2 text-caption text-ink-dim">🔒 PR, commit, issue, and review metadata only — never source code.</p>
       </form>
     </div>
   );
@@ -300,7 +300,7 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
 
 function ComingSoonWorkspace({ label }: { label: string }) {
   return (
-    <div className="rounded-md border border-dashed border-border p-8 text-center text-[13px] text-ink-faint">
+    <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-body text-ink-faint">
       {label} isn't available yet — check back soon.
     </div>
   );

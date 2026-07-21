@@ -109,7 +109,7 @@ export function LoginPage() {
           <button
             type="button"
             onClick={() => setMode("otp-request")}
-            className="mt-3 w-full text-center text-[12.5px] text-ink-dim underline underline-offset-2 hover:text-ink"
+            className="mt-3 w-full text-center text-small text-ink-dim underline underline-offset-2 hover:text-ink"
           >
             Use an email code instead
           </button>
@@ -135,7 +135,7 @@ export function LoginPage() {
           <button
             type="button"
             onClick={() => setMode("password")}
-            className="mt-3 w-full text-center text-[12.5px] text-ink-dim underline underline-offset-2 hover:text-ink"
+            className="mt-3 w-full text-center text-small text-ink-dim underline underline-offset-2 hover:text-ink"
           >
             Use a password instead
           </button>
@@ -144,7 +144,7 @@ export function LoginPage() {
 
       {mode === "otp-verify" && (
         <form onSubmit={handleVerifyCode}>
-          <p className="mb-4 text-[12.5px] text-ink-dim">
+          <p className="mb-4 text-small text-ink-dim">
             We sent a code to <b className="text-ink">{email}</b>. In dev mode without SMTP configured, check{" "}
             <code className="text-ink">docker compose logs backend</code> for it.
           </p>

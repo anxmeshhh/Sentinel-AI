@@ -25,7 +25,7 @@ export function Markdown({ text }: { text: string }) {
     if (heading) {
       const level = heading[1].length;
       const Tag = (level <= 2 ? "h3" : "h4") as "h3" | "h4";
-      const cls = level <= 2 ? "mb-1.5 mt-3 text-[13.5px] font-bold text-ink first:mt-0" : "mb-1 mt-2.5 text-[12.5px] font-bold text-ink first:mt-0";
+      const cls = level <= 2 ? "mb-1.5 mt-3 text-body font-bold text-ink first:mt-0" : "mb-1 mt-2.5 text-small font-bold text-ink first:mt-0";
       blocks.push(
         <Tag key={key++} className={cls}>
           {renderInline(heading[2])}

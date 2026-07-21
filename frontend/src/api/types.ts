@@ -452,3 +452,44 @@ export interface ChannelFeed {
   no_connections: boolean;
   connection_labels: string[];
 }
+
+// --- The three built-out channel modules ---------------------------------
+
+export interface ChannelInsights {
+  no_connections: boolean;
+  window_days: number;
+  total: number;
+  connection_labels: string[];
+  by_type: { type: string; label: string; count: number }[];
+  top_actors: { actor: string; count: number }[];
+  busiest_day: { date: string; count: number } | null;
+}
+
+export interface KnowledgeDoc {
+  id: string;
+  title: string;
+  url: string | null;
+  owner: string | null;
+  modified_at: string;
+  source_label: string;
+}
+
+export interface ChannelKnowledge {
+  no_connections: boolean;
+  documents: KnowledgeDoc[];
+  connection_labels: string[];
+}
+
+export interface UpcomingMeeting {
+  signal_id: string;
+  external_id: string;
+  title: string;
+  start: string | null;
+  attendee_count: number;
+  url: string | null;
+}
+
+export interface ChannelPrepare {
+  no_connections: boolean;
+  meetings: UpcomingMeeting[];
+}

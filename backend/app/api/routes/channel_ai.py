@@ -18,11 +18,22 @@ from app.models.channel_ai_history import ChannelAIHistoryEntry
 from app.models.team import ChannelRole, Team
 from app.models.user import User
 from app.api.routes.attention import _to_out as _attention_out
-from app.schemas.attention import ChannelBriefingOut, ChannelFeedOut
+from app.schemas.attention import (
+    ChannelBriefingOut,
+    ChannelFeedOut,
+    ChannelInsightsOut,
+    ChannelKnowledgeOut,
+    ChannelPrepareOut,
+)
+from app.schemas.meeting_prep import MeetingBriefOut
 from app.schemas.channel_ai import ChannelAIHistoryOut
 from app.schemas.orchestrator import CommandRequest, CommandResponse, ExecuteActionRequest, ExecuteActionResponse
 from app.services.channel_briefing import build_channel_briefing
 from app.services.channel_feed import build_channel_feed
+from app.services.channel_insights import build_channel_insights
+from app.services.channel_knowledge import build_channel_knowledge
+from app.services.channel_prepare import list_upcoming_meetings
+from app.services.meeting_prep import prepare_meeting
 from app.services.channel_readiness import blocking_providers
 from app.services.orchestrator import execute_planned_action, run_command, run_command_stream
 
@@ -157,3 +168,65 @@ def channel_feed(
     _get_team_or_404(session, team_id)
     result = build_channel_feed(session, team_id, limit=min(limit, 200))
     return ChannelFeedOut(**result)
+
+
+@router.get("/teams/{team_id}/insights", response_model=ChannelInsightsOut)
+def channel_insights(
+    team_id: uuid.UUID,
+    days: int = 30,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChannelInsightsOut:
+    """Deterministic operational stats over this channel's authorized
+    signals - no LLM, every number traceable to a real signal."""
+    require_channel_role(session, user, team_id, allowed=_ANY_MEMBER)
+    _get_team_or_404(session, team_id)
+    return ChannelInsightsOut(**build_channel_insights(session, team_id, days=min(max(days, 1), 90)))
+
+
+@router.get("/teams/{team_id}/knowledge", response_model=ChannelKnowledgeOut)
+def channel_knowledge(
+    team_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChannelKnowledgeOut:
+    """The authorized documents this channel can reference - Drive files on
+    the channel's allow-list, fail-closed."""
+    require_channel_role(session, user, team_id, allowed=_ANY_MEMBER)
+    _get_team_or_404(session, team_id)
+    return ChannelKnowledgeOut(**build_channel_knowledge(session, team_id))
+
+
+@router.get("/teams/{team_id}/prepare", response_model=ChannelPrepareOut)
+def channel_prepare(
+    team_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChannelPrepareOut:
+    """Upcoming meetings this channel is authorized to see - each preparable
+    into a brief via the prepare endpoint below."""
+    require_channel_role(session, user, team_id, allowed=_ANY_MEMBER)
+    _get_team_or_404(session, team_id)
+    return ChannelPrepareOut(**list_upcoming_meetings(session, team_id))
+
+
+@router.post("/teams/{team_id}/prepare/{signal_id}", response_model=MeetingBriefOut)
+def channel_prepare_meeting(
+    team_id: uuid.UUID,
+    signal_id: uuid.UUID,
+    refresh: bool = False,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MeetingBriefOut:
+    """Build (or return the cached) brief for one meeting, scoped to this
+    channel's authorized connections - reuses the Phase 2u meeting_prep
+    service with team_id so it can't read beyond the channel's grant."""
+    require_channel_role(session, user, team_id, allowed=_ANY_MEMBER)
+    team = _get_team_or_404(session, team_id)
+    from app.models.signal import Signal, SignalType
+
+    event = session.get(Signal, signal_id)
+    if event is None or event.type != SignalType.CALENDAR_EVENT or event.workspace_id != team.workspace_id:
+        raise HTTPException(status_code=404, detail="Meeting not found in this channel")
+    brief = prepare_meeting(session, team.workspace_id, event, team_id=team_id, refresh=refresh)
+    return MeetingBriefOut.model_validate(brief)

@@ -10,6 +10,9 @@ import { ChannelSetupChecklist } from "../components/ChannelSetupChecklist";
 import { AttentionModule } from "../components/channel/AttentionModule";
 import { ExtensionsModule } from "../components/channel/ExtensionsModule";
 import { FeedModule } from "../components/channel/FeedModule";
+import { InsightsModule } from "../components/channel/InsightsModule";
+import { KnowledgeModule } from "../components/channel/KnowledgeModule";
+import { PrepareModule } from "../components/channel/PrepareModule";
 import { MembersModule } from "../components/channel/MembersModule";
 import { NotBuiltModule } from "../components/channel/NotBuiltModule";
 import { SentinelModule } from "../components/channel/SentinelModule";
@@ -157,6 +160,9 @@ export function ChannelWorkspacePage() {
           {activeModule === "sentinel" && <SentinelModule teamId={teamId} channelName={team.name} isArchived={team.is_archived} />}
           {activeModule === "attention" && <AttentionModule teamId={teamId} />}
           {activeModule === "feed" && <FeedModule teamId={teamId} />}
+          {activeModule === "prepare" && <PrepareModule teamId={teamId} />}
+          {activeModule === "insights" && <InsightsModule teamId={teamId} />}
+          {activeModule === "knowledge" && <KnowledgeModule teamId={teamId} />}
           {activeModule === "extensions" && (
             <ExtensionsModule
               teamId={teamId}

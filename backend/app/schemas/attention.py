@@ -77,3 +77,55 @@ class ChannelFeedOut(BaseModel):
     items: list[ChannelFeedItemOut]
     no_connections: bool
     connection_labels: list[str]
+
+
+# --- Channel Insights / Knowledge / Prepare (the three "soon" modules) ----
+
+class InsightTypeCount(BaseModel):
+    type: str
+    label: str
+    count: int
+
+
+class InsightActor(BaseModel):
+    actor: str
+    count: int
+
+
+class ChannelInsightsOut(BaseModel):
+    no_connections: bool
+    window_days: int
+    total: int
+    connection_labels: list[str] = []
+    by_type: list[InsightTypeCount] = []
+    top_actors: list[InsightActor] = []
+    busiest_day: dict | None = None
+
+
+class KnowledgeDocOut(BaseModel):
+    id: str
+    title: str
+    url: str | None
+    owner: str | None
+    modified_at: datetime
+    source_label: str
+
+
+class ChannelKnowledgeOut(BaseModel):
+    no_connections: bool
+    documents: list[KnowledgeDocOut] = []
+    connection_labels: list[str] = []
+
+
+class UpcomingMeetingOut(BaseModel):
+    signal_id: uuid.UUID
+    external_id: str
+    title: str
+    start: str | None
+    attendee_count: int
+    url: str | None
+
+
+class ChannelPrepareOut(BaseModel):
+    no_connections: bool
+    meetings: list[UpcomingMeetingOut] = []

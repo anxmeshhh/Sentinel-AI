@@ -27,5 +27,5 @@ export function ChannelBreadcrumb({ path }: { path: ChannelPath }) {
 }
 
 function Separator() {
-  return <span aria-hidden="true">/</span>;
+  return <span aria-hidden="true" className="text-brand/60">/</span>;
 }

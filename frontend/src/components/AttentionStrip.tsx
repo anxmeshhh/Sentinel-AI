@@ -119,9 +119,9 @@ export function CatchMeUpCard() {
   const away = catchup.gap_hours < 48 ? `${Math.round(catchup.gap_hours)} hours` : `${Math.round(catchup.gap_hours / 24)} days`;
 
   return (
-    <section className="mb-6 rounded-md border border-accent/25 bg-accent/[0.04] p-4 shadow-card">
+    <section className="mb-6 rounded-md border border-brand/25 bg-brand/[0.05] p-4 shadow-card">
       <div className="mb-1.5 flex items-center justify-between">
-        <span className="label-sub font-bold text-accent-text">
+        <span className="label-sub font-bold text-brand">
           Catch Me Up ✨ · away {away}
         </span>
         <button onClick={() => setHidden(true)} aria-label="Dismiss" className="text-body text-ink-faint hover:text-ink">

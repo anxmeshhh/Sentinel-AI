@@ -81,7 +81,7 @@ export function ChannelWorkspacePage() {
 
       <div className="mb-7 flex flex-col gap-4 sm:mb-9 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-h2 font-semibold text-balance">
+          <h1 className="text-h2 font-medium text-balance">
             {team.icon ? `${team.icon} ` : "#"}
             {team.name}
           </h1>
@@ -94,7 +94,7 @@ export function ChannelWorkspacePage() {
             </span>
           )}
           {isAdmin && (
-            <span className="rounded-full border border-accent/35 bg-accent/10 px-2.5 py-0.5 label-sub text-accent-text">
+            <span className="rounded-full border border-brand/35 bg-brand/10 px-2.5 py-0.5 label-sub text-brand">
               CHANNEL ADMIN
             </span>
           )}

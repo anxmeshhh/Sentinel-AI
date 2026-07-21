@@ -18,6 +18,7 @@ export function HistoryPage() {
   return (
     <div>
       <BackNav back={{ to: "/", label: "Dashboard" }} />
+      <p className="eyebrow mb-2.5">Personal</p>
       <div className="section-head">
         <h1>Brief History</h1>
         <p>

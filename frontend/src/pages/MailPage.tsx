@@ -177,6 +177,7 @@ export function MailPage() {
         back={{ to: "/connections/google", label: "Google Workspace" }}
         crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Gmail" }]}
       />
+      <p className="eyebrow mb-2.5">Personal</p>
       <div className="section-head">
         <h1>Mail</h1>
         <p>
@@ -365,7 +366,7 @@ function EmailReader({
         </div>
 
         {summaryState && !(typeof summaryState === "object" && "error" in summaryState) && (
-          <div className="mb-4 rounded-md border border-accent/25 bg-accent/[0.04] p-4 shadow-card">
+          <div className="mb-4 rounded-md border border-brand/25 bg-brand/[0.05] p-4 shadow-card">
             <button
               onClick={onToggleSummary}
               className="label-sub flex w-full items-center justify-between px-3 py-2 text-left font-bold text-accent-text"

@@ -196,7 +196,7 @@ function GroupNode({ group }: { group: TreeGroup }) {
               className={({ isActive }) =>
                 `relative flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-small transition-colors ${
                   isActive
-                    ? "bg-surface-2 font-semibold text-ink before:absolute before:-left-1 before:top-1/2 before:h-4 before:w-[2.5px] before:-translate-y-1/2 before:rounded-full before:bg-accent"
+                    ? "bg-surface-2 font-semibold text-ink before:absolute before:-left-1 before:top-1/2 before:h-4 before:w-[2.5px] before:-translate-y-1/2 before:rounded-full before:bg-brand"
                     : "text-ink-dim hover:bg-surface/60 hover:text-ink"
                 }`
               }

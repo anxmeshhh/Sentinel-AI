@@ -57,7 +57,8 @@ export function AdminPage() {
       <BackNav back={{ to: "/", label: "Dashboard" }} />
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="mb-1.5 text-h2 font-semibold text-balance">Admin &amp; Observability</h1>
+          <p className="eyebrow mb-2.5">Operator</p>
+          <h1 className="mb-1.5 text-h2 font-medium text-balance">Admin &amp; Observability</h1>
           <p className="text-body text-ink-dim">
             Operator view — agent run history, system counts, and live logs. Not part of the
             customer-facing product.

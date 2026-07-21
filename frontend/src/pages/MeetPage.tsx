@@ -85,6 +85,7 @@ export function MeetPage() {
         back={{ to: "/connections/google", label: "Google Workspace" }}
         crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Meet" }]}
       />
+      <p className="eyebrow mb-2.5">Personal</p>
       <div className="section-head">
         <h1>Meet</h1>
         <p>

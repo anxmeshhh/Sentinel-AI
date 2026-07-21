@@ -51,11 +51,19 @@ h3 {
 }
 
 @layer components {
-  /* Section label. Sentence case, clean sans - the references reserve
-     uppercase mono for data, not chrome. Hierarchy comes from the size jump
-     to the heading beneath it, not from styling the label louder. */
+  /* Section eyebrow: the "// SERVICES" mark from the reference. Small mono
+     uppercase in the warm brand tone, sitting above a large quiet heading -
+     the size gap between the two IS the hierarchy.
+
+     This is the one deliberate exception to the "mono is for data" rule:
+     the slash prefix and typewriter set are what make it read as a mark
+     rather than a label, and it appears once per page at most. */
   .eyebrow {
-    @apply text-caption font-medium text-ink-faint;
+    @apply font-mono text-micro font-medium uppercase tracking-[0.16em] text-brand;
+  }
+  .eyebrow::before {
+    content: "// ";
+    @apply opacity-60;
   }
 
   /* Secondary label: section headers, column headers, metadata captions. */
@@ -185,8 +193,10 @@ h3 {
   max-width: 68ch;
 }
 
+/* Selecting text is the one interaction everyone hits constantly - a faint
+   warm wash here is the subtlest possible place to carry the brand tone. */
 ::selection {
-  background: rgba(237, 237, 237, 0.22);
+  background: rgba(201, 160, 107, 0.28);
   color: #ffffff;
 }
 

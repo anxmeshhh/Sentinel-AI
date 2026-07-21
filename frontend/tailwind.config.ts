@@ -45,6 +45,15 @@ export default {
         "accent-text": "#EDEDED",
         "accent-ink": "#000000", // text on top of an accent fill
 
+        // The one warm note, from the Hyperstudio reference: a desaturated
+        // tan used as *punctuation* - eyebrow labels, the active-position
+        // bar, the featured-panel tint - never as a fill on controls and
+        // never competing with the severity hues. The restraint is the
+        // point: the moment this shows up on buttons or headings the whole
+        // surface stops being monochrome and starts being "a theme".
+        brand: "#C9A06B",
+        "brand-bright": "#DDB584",
+
         // Hairline rules used to draw the editorial grid. Deliberately
         // dimmer than `border`: these are structure, not edges, and at
         // `border` strength a full-page grid reads as a table.

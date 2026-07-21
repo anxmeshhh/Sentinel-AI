@@ -136,7 +136,7 @@ export function AttentionPage() {
     <div className="max-w-5xl">
       <BackNav back={{ to: "/", label: "Dashboard" }} />
       <div className="mb-1 flex items-center justify-between">
-        <h1 className="text-h2 font-semibold text-balance">Attention</h1>
+        <h1 className="text-h2 font-medium text-balance">Attention</h1>
         <button
           onClick={refresh}
           disabled={refreshing}

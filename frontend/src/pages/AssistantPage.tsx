@@ -44,7 +44,7 @@ export function AssistantPage() {
     <div className="mx-auto flex min-h-[70vh] max-w-2xl flex-col md:h-[calc(100dvh-6rem)] md:min-h-0">
       <BackNav back={{ to: "/", label: "Dashboard" }} />
       <div className="mb-8">
-        <h1 className="mb-1.5 text-h2 font-semibold text-balance">AI Assistant</h1>
+        <h1 className="mb-1.5 text-h2 font-medium text-balance">AI Assistant</h1>
         <p className="text-body leading-relaxed text-ink-dim">
           Ask about your own workspace. Answers are grounded only in your latest brief and
           findings — if something isn't in there yet, it'll say so.

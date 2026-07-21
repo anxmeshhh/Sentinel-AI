@@ -105,7 +105,7 @@ function RailButton({
     >
       {/* Active marker on the rail edge, so the current context is readable
           without relying on fill colour alone. */}
-      {isActive && <span className="absolute -left-4 h-6 w-[3px] rounded-r-full bg-accent" />}
+      {isActive && <span className="absolute -left-4 h-6 w-[3px] rounded-r-full bg-brand" />}
       {glyph}
     </button>
   );

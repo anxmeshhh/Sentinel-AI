@@ -31,7 +31,7 @@ export function MeetingBriefPanel({
   onClose: () => void;
 }) {
   return (
-    <div className="rounded-md border border-accent/25 bg-accent/[0.04] p-4 shadow-card">
+    <div className="rounded-md border border-brand/25 bg-brand/[0.05] p-4 shadow-card">
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="label-sub font-bold text-accent-text">

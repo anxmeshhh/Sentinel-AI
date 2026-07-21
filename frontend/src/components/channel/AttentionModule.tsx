@@ -58,9 +58,9 @@ export function AttentionModule({ teamId }: { teamId: string }) {
   }
 
   return (
-    <div className="rounded-md border border-accent/25 bg-accent/[0.04] p-4 shadow-card">
+    <div className="rounded-md border border-brand/25 bg-brand/[0.05] p-4 shadow-card">
       <div className="mb-2 flex items-center justify-between">
-        <span className="label-sub font-bold text-accent-text">
+        <span className="label-sub font-bold text-brand">
           {briefing.items.length} item{briefing.items.length === 1 ? "" : "s"}
         </span>
         <Button size="sm" variant="ghost" onClick={load}>

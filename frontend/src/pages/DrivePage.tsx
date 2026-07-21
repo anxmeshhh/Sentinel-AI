@@ -81,6 +81,7 @@ export function DrivePage() {
         back={{ to: "/connections/google", label: "Google Workspace" }}
         crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Drive" }]}
       />
+      <p className="eyebrow mb-2.5">Personal</p>
       <div className="section-head">
         <h1>Drive</h1>
         <p>
@@ -112,7 +113,7 @@ export function DrivePage() {
                       </div>
                       <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
                         <div
-                          className="h-full rounded-full bg-accent"
+                          className="h-full rounded-full bg-brand"
                           style={{ width: `${Math.min(100, (analytics.storage_used_bytes / analytics.storage_limit_bytes) * 100)}%` }}
                         />
                       </div>

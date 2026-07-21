@@ -53,7 +53,7 @@ export function ConnectionWorkspacePage() {
         <>
           <div className="mb-4 flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-md bg-surface-2">{meta.icon}</div>
-            <h1 className="text-h2 font-semibold text-balance">{meta.label}</h1>
+            <h1 className="text-h2 font-medium text-balance">{meta.label}</h1>
           </div>
 
           {/* Who can use anything connected here - stated up front, not

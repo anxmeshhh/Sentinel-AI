@@ -68,7 +68,7 @@ export function GroupCards({
                   <div className="text-caption text-ink-faint">{formatKind(w.kind)}</div>
                 </div>
                 {w.id === activeId && (
-                  <span className="flex-none rounded-full border border-accent/40 px-2 py-[2px] text-micro text-accent-text">
+                  <span className="flex-none rounded-full border border-brand/40 px-2 py-[2px] text-micro text-brand">
                     ACTIVE
                   </span>
                 )}

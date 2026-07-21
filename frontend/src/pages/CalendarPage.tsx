@@ -21,7 +21,7 @@ const INDIAN_STATES = [
 const CATEGORY_META: Record<HolidayCategory, { label: string; dot: string; text: string; border: string }> = {
   national: { label: "National", dot: "bg-crit", text: "text-crit", border: "border-crit/40" },
   regional: { label: "Regional", dot: "bg-watch", text: "text-watch", border: "border-watch/40" },
-  festival: { label: "Festival", dot: "bg-accent", text: "text-accent-text", border: "border-accent/40" },
+  festival: { label: "Festival", dot: "bg-brand", text: "text-brand", border: "border-brand/40" },
   observance: { label: "Observance", dot: "bg-ink-faint", text: "text-ink-faint", border: "border-border" },
 };
 
@@ -160,7 +160,8 @@ export function CalendarPage() {
       />
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="mb-1.5 text-h2 font-semibold text-balance">Calendar</h1>
+          <p className="eyebrow mb-2.5">Personal</p>
+          <h1 className="mb-1.5 text-h2 font-medium text-balance">Calendar</h1>
           <p className="text-body text-ink-dim">
             Your events, plus Indian holidays &amp; festivals from Sentinel's calendar layer — clearly separate from your own.
           </p>
@@ -341,7 +342,7 @@ function MonthGrid({
                 </span>
               ))}
               {dayEvents.length > 0 && (
-                <span className="rounded-full border border-accent/35 bg-accent/10 px-2.5 py-0.5 label-sub text-accent-text">
+                <span className="rounded-full border border-brand/35 bg-brand/10 px-2.5 py-0.5 label-sub text-brand">
                   {dayEvents.length} event{dayEvents.length === 1 ? "" : "s"}
                 </span>
               )}

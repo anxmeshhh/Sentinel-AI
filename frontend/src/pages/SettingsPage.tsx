@@ -14,6 +14,7 @@ export function SettingsPage() {
   return (
     <div className="max-w-2xl">
       <BackNav back={{ to: "/", label: "Dashboard" }} />
+      <p className="eyebrow mb-2.5">Personal</p>
       <div className="section-head">
         <h1>Agents</h1>
         <p>

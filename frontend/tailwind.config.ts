@@ -13,12 +13,16 @@ export default {
         // `surface` and `surface-2` sat close enough together that a card on
         // a panel read as one flat plane, which is why the UI felt airless
         // regardless of spacing.
-        ground: "#08080A",
-        surface: "#111114",
-        "surface-2": "#191920",
-        "surface-3": "#22222B",
-        border: "#2C2C36",
-        "border-strong": "#3D3D4A",
+        // True black, neutral grays. The previous ramp carried a slight
+        // blue-violet cast (#08080A / #2C2C36) that read "warm dark theme";
+        // the reference is pure #000 with untinted gray borders, and the
+        // difference is visible the moment the two sit side by side.
+        ground: "#000000",
+        surface: "#0A0A0A",
+        "surface-2": "#141414",
+        "surface-3": "#1E1E1E",
+        border: "#2E2E2E",
+        "border-strong": "#454545",
 
         // Ink ramp, contrast-checked against `ground`:
         //   ink        ~17:1   body and headings
@@ -27,25 +31,25 @@ export default {
         // ink-faint was #6B6B6B (~3.6:1), which fails WCAG AA for the 11-13px
         // text it was mostly used on. Small text is exactly where contrast
         // matters most, so it moved up rather than the sizes moving down.
-        ink: "#F4F4F6",
-        "ink-dim": "#AFAFBA",
-        "ink-faint": "#8A8A98",
+        ink: "#F5F5F5",
+        "ink-dim": "#B0B0B0",
+        "ink-faint": "#8C8C8C",
 
         // Near-monochrome. Both x.ai and Resend drive emphasis with a white
         // pill CTA and keep hue for *status* only (Opened / Bounced /
         // Delivered) - which is what crit/warn/watch/good below already are.
         // An accent hue competing with those would make severity ambiguous,
         // so "accent" here is simply light ink.
-        accent: "#EDEDF2",
+        accent: "#EDEDED",
         "accent-hover": "#FFFFFF",
-        "accent-text": "#EDEDF2",
-        "accent-ink": "#08080A", // text on top of an accent fill
+        "accent-text": "#EDEDED",
+        "accent-ink": "#000000", // text on top of an accent fill
 
         // Hairline rules used to draw the editorial grid. Deliberately
         // dimmer than `border`: these are structure, not edges, and at
         // `border` strength a full-page grid reads as a table.
-        rule: "#17171C",
-        "rule-strong": "#22222A",
+        rule: "#1A1A1A",
+        "rule-strong": "#242424",
 
         crit: "#F0736A",
         warn: "#E8B25E",
@@ -101,27 +105,26 @@ export default {
         h1: ["clamp(28px, 5.6vw, 36px)", { lineHeight: "1.15", letterSpacing: "-0.025em" }],
       },
       borderRadius: {
-        // Softened from a near-flat 2px. At 2px every card, input and button
-        // read as an unfinished box; these values are still restrained but
-        // let surfaces look intentional.
-        sm: "6px",
-        DEFAULT: "8px",
-        md: "10px",
-        lg: "14px",
-        xl: "18px",
+        // Near-square, verified against the rendered reference side by side
+        // with the app's own first screenshot: its cards, inputs and code
+        // panels all sit around 3-4px. The earlier 10px cards were the most
+        // visible difference between the two.
+        sm: "3px",
+        DEFAULT: "4px",
+        md: "4px",
+        lg: "6px",
+        xl: "8px",
       },
       boxShadow: {
-        // Depth on a near-black ground can't come from dark shadows - they
-        // are invisible. Elevation is a hairline top highlight plus a soft
-        // ambient shadow, which is what actually separates a card from the
-        // panel behind it here.
-        card: "0 1px 0 0 rgba(255,255,255,0.04) inset, 0 2px 8px -2px rgba(0,0,0,0.6)",
-        raised: "0 1px 0 0 rgba(255,255,255,0.06) inset, 0 8px 24px -8px rgba(0,0,0,0.75)",
-        overlay: "0 24px 60px -12px rgba(0,0,0,0.85)",
-        // The primary CTA in the reference is a light pill that looks
-        // physically raised off the black ground.
-        pill: "0 1px 0 0 rgba(255,255,255,0.5) inset, 0 4px 14px -4px rgba(0,0,0,0.9)",
-        "accent-glow": "0 0 0 1px rgba(237,237,242,0.16), 0 6px 20px -6px rgba(0,0,0,0.6)",
+        // The reference is completely flat - separation comes from the
+        // border alone, never from elevation. Every surface token is
+        // therefore none; only true overlays (modals, floating menus) keep
+        // a drop shadow, since they genuinely sit above the page.
+        card: "none",
+        raised: "none",
+        pill: "none",
+        "accent-glow": "none",
+        overlay: "0 24px 60px -12px rgba(0,0,0,0.9)",
       },
       transitionTimingFunction: {
         out: "cubic-bezier(0.22, 1, 0.36, 1)",

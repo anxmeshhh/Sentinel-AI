@@ -65,7 +65,7 @@ export function AttentionStrip() {
   return (
     <section className="mb-8">
       <div className="mb-2.5 flex items-center justify-between">
-        <h2 className="label-sub font-bold text-ink-dim">Needs Your Attention</h2>
+        <h2 className="text-title font-medium text-ink">Needs Your Attention</h2>
         <Link to="/attention" className="text-caption text-accent-text hover:underline">
           View all &rarr;
         </Link>

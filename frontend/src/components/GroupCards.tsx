@@ -30,7 +30,7 @@ export function GroupCards({
   return (
     <section className="mb-8">
       <div className="mb-2.5 flex items-center justify-between gap-3">
-        <div className="label-sub text-body font-bold text-ink-dim">My Groups</div>
+        <h2 className="text-title font-medium text-ink">My Groups</h2>
         {workspaces.length > 3 && (
           <input
             value={query}

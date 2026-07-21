@@ -29,18 +29,9 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* A faint vignette from the top-left. On a flat near-black ground large
-   empty areas read as dead space; this gives the page a light source
-   without introducing a visible gradient band. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background: radial-gradient(1100px 700px at 50% -10%, rgba(255, 255, 255, 0.035), transparent 65%);
-}
-
+/* No vignette. The reference is a flat, untinted black - seen rendered next
+   to it, even a 3.5% radial wash made the app read as a different (warmer)
+   surface. Structure comes from borders, full stop. */
 #root {
   position: relative;
   z-index: 1;
@@ -81,19 +72,20 @@ h3 {
 
   /* Primary CTA: a white pill with dark text - the one high-contrast element
      on the page, exactly as both references use it. */
+  /* Flat, near-square, no lift on hover - the reference's controls change
+     colour only. The white fill is still the one high-contrast element. */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full bg-ink px-5 py-2.5
-           text-small font-semibold text-ground shadow-pill
-           transition-all duration-200 ease-out
-           hover:-translate-y-px hover:bg-white disabled:pointer-events-none disabled:opacity-45;
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-ink px-4 py-2
+           text-small font-medium text-ground
+           transition-colors duration-200 ease-out
+           hover:bg-white disabled:pointer-events-none disabled:opacity-45;
   }
 
-  /* Secondary: same pill shape, outlined, so the pair reads as one family. */
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full border border-border-strong
-           bg-surface px-5 py-2.5 text-small font-medium text-ink-dim
-           transition-all duration-200 ease-out
-           hover:-translate-y-px hover:border-ink-faint hover:text-ink
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-border
+           bg-transparent px-4 py-2 text-small font-medium text-ink-dim
+           transition-colors duration-200 ease-out
+           hover:border-border-strong hover:text-ink
            disabled:pointer-events-none disabled:opacity-45;
   }
 
@@ -135,9 +127,12 @@ h3 {
   .section-head {
     @apply mb-7 grid gap-x-10 gap-y-3 sm:mb-9 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)];
   }
+  /* Medium, not semibold: at display size the reference's headings carry
+     their weight through scale alone, and bolding them on a pure-black
+     ground reads heavier than it did on the old tinted surface. */
   .section-head h1,
   .section-head h2 {
-    @apply text-h2 font-semibold text-ink;
+    @apply text-h2 font-medium text-ink;
   }
   .section-head p {
     @apply max-w-[52ch] text-body text-ink-dim lg:pt-1;
@@ -191,7 +186,7 @@ h3 {
 }
 
 ::selection {
-  background: rgba(237, 237, 242, 0.22);
+  background: rgba(237, 237, 237, 0.22);
   color: #ffffff;
 }
 
@@ -217,7 +212,7 @@ h3 {
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #191920 transparent;
+  scrollbar-color: #141414 transparent;
 }
 
 :focus-visible {
@@ -229,13 +224,13 @@ h3 {
 /* Native selects render their popup list with the OS palette; without this
    the options are near-invisible on some platforms. */
 option {
-  background-color: #111114;
-  color: #f4f4f6;
+  background-color: #0A0A0A;
+  color: #f5f5f5;
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: #6f6f7c;
+  color: #707070;
 }
 
 /* Touch devices: the dense inline actions in this UI ("Remove", "Promote",

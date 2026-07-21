@@ -46,7 +46,7 @@ export function ChannelCards({ onSelectWorkspace }: { onSelectWorkspace: (worksp
   return (
     <section className="mb-8">
       <div className="mb-2.5 flex items-center justify-between gap-3">
-        <div className="label-sub text-body font-bold text-ink-dim">My Channels</div>
+        <h2 className="text-title font-medium text-ink">My Channels</h2>
         {teams.length > 3 && (
           <input
             value={query}

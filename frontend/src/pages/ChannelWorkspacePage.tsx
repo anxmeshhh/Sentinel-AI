@@ -140,6 +140,16 @@ export function ChannelWorkspacePage() {
         </div>
       )}
 
+      {/* A blocked member's own checklist leads the Extensions module: the
+          thing they must act on comes before the admin-facing configuration
+          (requirements, assigned connections, roster) underneath it. When
+          they're already set up it drops to the bottom as a quiet
+          confirmation instead. This is the "prominently guide incomplete
+          users" the setup gateway is for. */}
+      {activeModule === "extensions" && readiness && blockingCount > 0 && (
+        <ChannelSetupChecklist readiness={readiness} teamId={teamId} workspaceId={team.workspace_id} />
+      )}
+
       {definition && !definition.built ? (
         <NotBuiltModule label={definition.label} />
       ) : (
@@ -161,9 +171,9 @@ export function ChannelWorkspacePage() {
         </>
       )}
 
-      {/* The checklist itself lives in Extensions; this keeps the component
-          used in exactly one place rather than duplicated per module. */}
-      {activeModule === "extensions" && readiness && (
+      {/* When already set up, the checklist sits at the bottom as a quiet
+          "you're connected" confirmation rather than leading the page. */}
+      {activeModule === "extensions" && readiness && blockingCount === 0 && (
         <ChannelSetupChecklist readiness={readiness} teamId={teamId} workspaceId={team.workspace_id} />
       )}
     </div>

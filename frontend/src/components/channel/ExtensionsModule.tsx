@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api, ApiError } from "../../api/client";
 import type { ChannelConnection, ChannelReadiness, ChannelRequirement, Connection } from "../../api/types";
 import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
+import { LoadingBlock } from "../ui";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const REQUIREABLE_PROVIDERS = ["gmail", "google_calendar", "google_drive", "github"];
@@ -56,7 +57,7 @@ export function ExtensionsModule({
     void load();
   }, [load]);
 
-  if (loading) return <div className="text-body text-ink-dim">Loading&hellip;</div>;
+  if (loading) return <LoadingBlock />;
 
   const total = readiness?.requirements.filter((r) => r.is_required).length ?? 0;
   const ready = readiness?.requirements.filter((r) => r.is_required && r.state === "ready").length ?? 0;
@@ -176,13 +177,13 @@ function RequirementsSection({
       )}
 
       {isAdmin && (
-        <div className="mt-3 rounded-md border border-dashed border-border-strong p-3">
+        <div className="mt-3 rounded-md border border-dashed border-border px-5 py-8 text-center text-caption text-ink-faint">
           <div className="flex flex-wrap gap-1.5">
             <select
               value={provider}
               onChange={(e) => setProvider(e.target.value)}
               aria-label="Integration"
-              className="rounded-md border border-border bg-ground px-3 py-2 text-caption outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+              className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {REQUIREABLE_PROVIDERS.map((p) => (
                 <option key={p} value={p}>
@@ -194,7 +195,7 @@ function RequirementsSection({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Why this channel needs it (shown to members)"
-              className="min-w-[200px] flex-1 rounded-md border border-border bg-ground px-3 py-2 text-caption outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+              className="min-w-[200px] flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
             />
             <button
               onClick={add}
@@ -324,7 +325,7 @@ function AssignedConnectionsSection({
                     setResourceForm((f) => ({ ...f, [c.id]: { key: e.target.value, label: f[c.id]?.label ?? "" } }))
                   }
                   placeholder="resource id/key"
-                  className="w-1/2 rounded-md border border-border bg-ground px-3 py-2 text-caption outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+                  className="w-1/2 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <input
                   value={resourceForm[c.id]?.label ?? ""}
@@ -332,7 +333,7 @@ function AssignedConnectionsSection({
                     setResourceForm((f) => ({ ...f, [c.id]: { key: f[c.id]?.key ?? "", label: e.target.value } }))
                   }
                   placeholder="display name"
-                  className="w-1/2 rounded-md border border-border bg-ground px-3 py-2 text-caption outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+                  className="w-1/2 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <button
                   onClick={async () => {
@@ -365,7 +366,7 @@ function AssignedConnectionsSection({
               + Assign a connection
             </button>
           ) : (
-            <div className="rounded-md border border-dashed border-border-strong p-3">
+            <div className="rounded-md border border-dashed border-border px-5 py-8 text-center text-caption text-ink-faint">
               <p className="mb-2 text-caption leading-relaxed text-ink-faint">
                 Assigning a connection lets Sentinel use it here. It still can't read anything until you allow-list
                 specific resources.

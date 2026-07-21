@@ -1,7 +1,9 @@
+import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { Icon } from "./ui";
 
 /**
  * The context switcher: the narrow icon column on the far left.
@@ -39,7 +41,7 @@ export function WorkspaceRail({ onOpenCreate }: { onOpenCreate: () => void }) {
         <RailButton
           key={w.id}
           label="Personal"
-          glyph="👤"
+          glyph={<Icon name="user" size={17} />}
           isActive={w.id === active?.id}
           onClick={() => {
             setActiveId(w.id);
@@ -63,10 +65,10 @@ export function WorkspaceRail({ onOpenCreate }: { onOpenCreate: () => void }) {
         />
       ))}
 
-      <RailButton label="Create or join a workspace" glyph="+" isActive={false} onClick={onOpenCreate} />
+      <RailButton label="Create or join a workspace" glyph={<Icon name="plus" size={17} />} isActive={false} onClick={onOpenCreate} />
 
       <div className="mt-auto flex flex-col items-center gap-2">
-        <RailButton label="Agents & settings" glyph="⚙" isActive={false} onClick={() => navigate("/settings")} />
+        <RailButton label="Agents & settings" glyph={<Icon name="settings" size={17} />} isActive={false} onClick={() => navigate("/settings")} />
         <button
           onClick={handleLogout}
           title={`Log out (${user?.email ?? ""})`}
@@ -87,7 +89,7 @@ function RailButton({
   onClick,
 }: {
   label: string;
-  glyph: string;
+  glyph: ReactNode;
   isActive: boolean;
   onClick: () => void;
 }) {

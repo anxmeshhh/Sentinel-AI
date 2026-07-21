@@ -8,6 +8,7 @@ import { attentionIcon, EvidenceLink } from "../components/AttentionStrip";
 import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
+import { LoadingBlock } from "../components/ui";
 
 const STATE_FILTERS = [
   { key: "new", label: "Open" },
@@ -154,14 +155,14 @@ export function AttentionPage() {
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
           placeholder="Add a reminder — e.g. Follow up with the design team"
-          className="flex-1 card px-3.5 py-2 text-body outline-none focus:border-accent"
+          className="flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
         />
         <input
           type="datetime-local"
           value={newDue}
           onChange={(e) => setNewDue(e.target.value)}
           aria-label="Due (optional)"
-          className="card px-2.5 py-2 text-small text-ink-dim outline-none focus:border-accent"
+          className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
         />
         <button type="submit" disabled={!newTitle.trim()} className="btn-primary">
           Add
@@ -218,7 +219,7 @@ export function AttentionPage() {
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="min-w-0 flex-1">
           {loading ? (
-            <div className="text-ink-dim">Loading&hellip;</div>
+            <LoadingBlock />
           ) : items.length === 0 ? (
             <AttentionEmptyState context={context} filter={stateFilter} />
           ) : (

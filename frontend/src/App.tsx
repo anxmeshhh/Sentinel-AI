@@ -26,6 +26,7 @@ import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignupPage } from "./pages/SignupPage";
+import { Icon, LoadingBlock } from "./components/ui";
 
 /**
  * Three panes, one per level of the hierarchy question:
@@ -71,9 +72,7 @@ function AppShell({ children }: { children: ReactNode }) {
           onClick={() => setMobileNavOpen(true)}
           className="flex flex-none items-center gap-2 border-b border-border bg-surface px-4 py-3 text-small text-ink-dim md:hidden"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M1 4h14M1 8h14M1 12h14" stroke="currentColor" strokeWidth="1.4" />
-          </svg>
+<Icon name="menu" size={16} />
           Navigate
         </button>
         <main className="min-w-0 flex-1 overflow-y-auto px-5 py-8 pb-24 sm:px-8 sm:py-12 md:px-12 lg:px-16">
@@ -102,7 +101,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
   const { state: onboarding, loading: onboardingLoading } = useOnboarding();
 
   if (loading || onboardingLoading) {
-    return <div className="flex min-h-screen items-center justify-center text-body text-ink-dim">Loading&hellip;</div>;
+    return <div className="flex min-h-screen items-center justify-center"><LoadingBlock /></div>;
   }
   if (!user) return <Navigate to="/login" replace />;
   // First run: pick how you work before landing in the product. If the
@@ -117,7 +116,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 function OnboardingRoute() {
   const { user, loading } = useAuth();
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-body text-ink-dim">Loading&hellip;</div>;
+    return <div className="flex min-h-screen items-center justify-center"><LoadingBlock /></div>;
   }
   if (!user) return <Navigate to="/login" replace />;
   return (

@@ -28,7 +28,7 @@ export function HistoryPage() {
       {error && <p className="text-crit">{error}</p>}
 
       {briefs.length === 0 ? (
-        <div className="max-w-lg rounded-md border border-dashed border-border-strong p-10 text-center text-ink-dim">
+        <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
           No briefs generated yet.
         </div>
       ) : (

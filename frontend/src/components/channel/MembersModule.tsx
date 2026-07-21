@@ -4,6 +4,7 @@ import { api, ApiError } from "../../api/client";
 import type { MemberReadiness, TeamMember } from "../../api/types";
 import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
 import { InviteModal } from "../InviteModal";
+import { LoadingBlock } from "../ui";
 
 /** Who is in this channel, and - for admins - how far along their setup is.
  *
@@ -37,7 +38,7 @@ export function MembersModule({ teamId, isAdmin, channelName }: { teamId: string
     void load();
   }, [load]);
 
-  if (loading) return <div className="text-body text-ink-dim">Loading&hellip;</div>;
+  if (loading) return <LoadingBlock />;
 
   const readinessByUser = new Map(roster.map((r) => [r.user_id, r]));
 

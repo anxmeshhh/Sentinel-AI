@@ -1,3 +1,5 @@
+import { EmptyState } from "../ui";
+
 /**
  * An honest placeholder for a module that has no backend yet.
  *
@@ -7,12 +9,9 @@
  */
 export function NotBuiltModule({ label }: { label: string }) {
   return (
-    <div className="rule-frame border-y border-rule px-6 py-16 text-center">
-      <p className="text-title font-semibold text-ink-dim">{label} isn't built yet</p>
-      <p className="mx-auto mt-2 max-w-md text-small leading-relaxed text-ink-faint">
-        This module is part of the planned channel experience but has no backend behind it today. It's listed here so the
-        structure is visible — not because there's data waiting. Nothing is hidden from you.
-      </p>
-    </div>
+    <EmptyState
+      title={`${label} isn't built yet`}
+      description="This module is part of the planned channel experience but has no backend behind it today. It's listed so the structure is visible - not because there's data waiting. Nothing is hidden from you."
+    />
   );
 }

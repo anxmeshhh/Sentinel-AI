@@ -5,6 +5,7 @@ import { api, ApiError } from "../api/client";
 import type { Connection, MailAskResult, MailBody, MailItem, MailSummary } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { Markdown } from "../components/Markdown";
+import { LoadingBlock } from "../components/ui";
 
 type Tab = { key: string; label: string; filter: string; category?: string };
 
@@ -160,7 +161,7 @@ export function MailPage() {
 
   if (connected === false) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border-strong p-10 text-center text-ink-dim">
+      <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
         <BackNav back={{ to: "/connections/google", label: "Google Workspace" }} crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Gmail" }]} />
         <p className="mb-3 text-lead">Gmail isn't connected yet.</p>
         <Link to="/settings" className="text-body font-semibold text-accent-text hover:underline">
@@ -191,7 +192,7 @@ export function MailPage() {
               onChange={(e) => setAskInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAsk()}
               placeholder="Ask: what's in starred, top 10…"
-              className="flex-1 card px-3 py-2 text-small outline-none focus:border-accent"
+              className="flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
             />
             <button
               onClick={handleAsk}
@@ -220,9 +221,9 @@ export function MailPage() {
           {askMessage && <p className="mb-3 text-small text-watch">{askMessage}</p>}
 
           {loading ? (
-            <div className="text-ink-dim">Loading&hellip;</div>
+            <LoadingBlock />
           ) : threads.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border-strong p-6 text-center text-small text-ink-faint">
+            <div className="rounded-md border border-dashed border-border px-5 py-8 text-center text-caption text-ink-faint">
               Nothing here.
             </div>
           ) : (

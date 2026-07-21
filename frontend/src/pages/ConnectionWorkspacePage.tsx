@@ -11,6 +11,7 @@ import { ScopeNotice, scopeOf } from "../components/ScopeBadge";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { CalendarIcon, DriveIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
 import { ServiceCard } from "../components/ServiceCard";
+import { LoadingBlock } from "../components/ui";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -45,7 +46,7 @@ export function ConnectionWorkspacePage() {
       <BackNav back={{ to: "/", label: "Dashboard" }} crumbs={meta ? [{ label: "Dashboard", to: "/" }, { label: "Connections", to: "/" }, { label: meta.label }] : undefined} />
 
       {!meta ? (
-        <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-body text-ink-faint">
+        <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
           Unknown connection.
         </div>
       ) : (
@@ -60,7 +61,7 @@ export function ConnectionWorkspacePage() {
           <ScopeNotice scope={scopeOf(active)} workspaceName={active?.name} />
 
           {loading ? (
-            <div className="text-ink-dim">Loading&hellip;</div>
+            <LoadingBlock />
           ) : provider === "google" ? (
             <GoogleWorkspace connections={connections} onChanged={load} />
           ) : provider === "github" ? (
@@ -266,14 +267,14 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
             placeholder="org (e.g. northwind)"
             value={org}
             onChange={(e) => setOrg(e.target.value)}
-            className="rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+            className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
           />
           <input
             required
             placeholder="repo (e.g. checkout-service)"
             value={repo}
             onChange={(e) => setRepo(e.target.value)}
-            className="rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+            className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
           />
         </div>
         <input
@@ -282,7 +283,7 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
           placeholder="GitHub personal access token"
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+          className="mb-2.5 w-full rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
         />
         {error && <p className="mb-2 text-small text-crit">{error}</p>}
         <button
@@ -300,7 +301,7 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
 
 function ComingSoonWorkspace({ label }: { label: string }) {
   return (
-    <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-body text-ink-faint">
+    <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
       {label} isn't available yet — check back soon.
     </div>
   );

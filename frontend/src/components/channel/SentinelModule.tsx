@@ -26,7 +26,7 @@ export function SentinelModule({
 
   if (isArchived) {
     return (
-      <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-small text-ink-faint">
+      <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
         Channel AI is disabled while this channel is archived.
       </div>
     );

@@ -6,6 +6,7 @@ import type { Finding } from "../api/types";
 import { severityBand } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { SeverityChip } from "../components/SeverityChip";
+import { LoadingBlock } from "../components/ui";
 
 export function FindingDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,7 +22,7 @@ export function FindingDetailPage() {
   }, [id]);
 
   if (error) return <p className="text-crit">{error}</p>;
-  if (!finding) return <div className="text-ink-dim">Loading&hellip;</div>;
+  if (!finding) return <LoadingBlock />;
 
   const severity = severityBand(finding.severity);
 

@@ -112,7 +112,7 @@ export function CreateTeamModal({ onClose }: { onClose: () => void }) {
         <div className="label-sub mb-1.5">Privacy</div>
         <div className="mb-4 flex flex-col gap-1.5">
           {PRIVACY_OPTIONS.map((opt) => (
-            <label key={opt.value} className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border p-2.5 hover:border-accent">
+            <label key={opt.value} className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-transparent px-4 py-2.5 text-small font-medium text-ink-dim transition-colors duration-200 hover:border-border-strong hover:text-ink disabled:pointer-events-none disabled:opacity-45">
               <input type="radio" name="privacy" checked={privacy === opt.value} onChange={() => setPrivacy(opt.value)} className="mt-0.5" />
               <span>
                 <span className="block text-small font-semibold text-ink">{opt.label}</span>

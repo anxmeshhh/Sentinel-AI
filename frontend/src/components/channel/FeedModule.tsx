@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../api/client";
 import type { ChannelFeed } from "../../api/types";
+import { Button, EmptyState, Icon, LoadingBlock } from "../ui";
 
 /** Normalized updates from the channel's authorized connections.
  *
@@ -27,13 +28,14 @@ export function FeedModule({ teamId }: { teamId: string }) {
     void load();
   }, [load]);
 
-  if (loading) return <div className="text-body text-ink-dim">Loading feed&hellip;</div>;
+  if (loading) return <LoadingBlock label="Loading feed" />;
 
   if (!feed || feed.no_connections) {
     return (
-      <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-small text-ink-faint">
-        No connections are assigned to this channel yet, so there's nothing to show. Assign one in Extensions.
-      </div>
+      <EmptyState
+        title="No connections assigned"
+        description="This channel has no authorized connections yet, so there is nothing to show. An admin assigns them in Extensions."
+      />
     );
   }
 
@@ -43,15 +45,14 @@ export function FeedModule({ teamId }: { teamId: string }) {
         <p className="text-caption text-ink-faint">
           From {feed.connection_labels.length} authorized connection{feed.connection_labels.length === 1 ? "" : "s"}
         </p>
-        <button onClick={load} className="text-caption text-ink-faint underline hover:text-ink">
+        <Button size="sm" variant="ghost" onClick={load}>
+          <Icon name="refresh" size={14} />
           Refresh
-        </button>
+        </Button>
       </div>
 
       {feed.items.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-small text-ink-faint">
-          Nothing has synced into this channel's connections yet.
-        </div>
+        <EmptyState title="Nothing yet" description="No activity has synced into this channel's connections." />
       ) : (
         <div className="rule-rows border-b-0">
           {feed.items.map((item) => (
@@ -71,7 +72,7 @@ export function FeedModule({ teamId }: { teamId: string }) {
                   href={item.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex-none text-micro font-semibold text-accent-text hover:underline"
+                  className="flex-none text-caption text-ink-faint transition-colors hover:text-ink"
                 >
                   Open
                 </a>

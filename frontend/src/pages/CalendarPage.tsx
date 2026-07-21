@@ -6,6 +6,7 @@ import { api, ApiError } from "../api/client";
 import type { CalendarEvent, Connection, Holiday, HolidayCategory } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
+import { LoadingBlock } from "../components/ui";
 
 type View = "month" | "week" | "day" | "agenda";
 type ScheduleTab = "ai" | "manual";
@@ -136,7 +137,7 @@ export function CalendarPage() {
 
   if (connected === false) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border-strong p-10 text-center text-ink-dim">
+      <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
         <BackNav
           back={{ to: "/connections/google", label: "Google Workspace" }}
           crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Calendar" }]}
@@ -231,11 +232,11 @@ export function CalendarPage() {
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <button onClick={() => stepAnchor(-1)} className="rounded-md border border-border px-2.5 py-1 text-small text-ink-dim hover:border-accent">
+            <button onClick={() => stepAnchor(-1)} className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-transparent px-4 py-2.5 text-small font-medium text-ink-dim transition-colors duration-200 hover:border-border-strong hover:text-ink disabled:pointer-events-none disabled:opacity-45">
               &larr;
             </button>
             <span className="min-w-[8rem] text-center text-small text-ink-dim">{anchorLabel(view, anchor)}</span>
-            <button onClick={() => stepAnchor(1)} className="rounded-md border border-border px-2.5 py-1 text-small text-ink-dim hover:border-accent">
+            <button onClick={() => stepAnchor(1)} className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-transparent px-4 py-2.5 text-small font-medium text-ink-dim transition-colors duration-200 hover:border-border-strong hover:text-ink disabled:pointer-events-none disabled:opacity-45">
               &rarr;
             </button>
             <button onClick={() => setAnchor(new Date())} className="ml-1 text-caption text-ink-faint underline underline-offset-2 hover:text-ink">
@@ -265,7 +266,7 @@ export function CalendarPage() {
         <select
           value={holidayState}
           onChange={(e) => setHolidayState(e.target.value)}
-          className="rounded-full border border-border bg-surface px-2.5 py-1 text-caption text-ink-dim outline-none focus:border-accent"
+          className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="">All regional holidays</option>
           {INDIAN_STATES.map((s) => (
@@ -277,7 +278,7 @@ export function CalendarPage() {
       </div>
 
       {loading ? (
-        <div className="text-ink-dim">Loading&hellip;</div>
+        <LoadingBlock />
       ) : view === "month" ? (
         <MonthGrid anchor={anchor} eventsByDay={eventsByDay} holidaysByDay={holidaysByDay} onSelectDay={openDay} />
       ) : (
@@ -355,7 +356,7 @@ function MonthGrid({
 function AgendaList({ events, holidays, emptyLabel }: { events: CalendarEvent[]; holidays: Holiday[]; emptyLabel: string }) {
   if (events.length === 0 && holidays.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-body text-ink-faint">{emptyLabel}</div>
+      <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">{emptyLabel}</div>
     );
   }
   return (
@@ -459,7 +460,7 @@ function NewEventForm({ onCreated }: { onCreated: () => void }) {
         placeholder="Event title"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+        className="mb-2.5 w-full rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
       />
       <div className="mb-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <label className="block">
@@ -469,7 +470,7 @@ function NewEventForm({ onCreated }: { onCreated: () => void }) {
             type="datetime-local"
             value={start}
             onChange={(e) => setStart(e.target.value)}
-            className="w-full rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+            className="w-full rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
           />
         </label>
         <label className="block">
@@ -479,7 +480,7 @@ function NewEventForm({ onCreated }: { onCreated: () => void }) {
             type="datetime-local"
             value={end}
             onChange={(e) => setEnd(e.target.value)}
-            className="w-full rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+            className="w-full rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
           />
         </label>
       </div>
@@ -487,7 +488,7 @@ function NewEventForm({ onCreated }: { onCreated: () => void }) {
         placeholder="Attendee emails, comma-separated (optional)"
         value={attendees}
         onChange={(e) => setAttendees(e.target.value)}
-        className="mb-2.5 w-full rounded-md border border-border bg-ground px-3 py-2 text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+        className="mb-2.5 w-full rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
       />
       <label className="mb-3 flex items-center gap-2 text-small text-ink-dim">
         <input type="checkbox" checked={createMeetLink} onChange={(e) => setCreateMeetLink(e.target.checked)} />

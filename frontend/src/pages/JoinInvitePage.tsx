@@ -6,6 +6,7 @@ import type { InviteAcceptResult, InvitePreview } from "../api/types";
 import { AuthLayout, ErrorText, primaryButtonClass } from "../components/AuthLayout";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { LoadingBlock } from "../components/ui";
 
 export function JoinInvitePage() {
   const { token } = useParams<{ token: string }>();
@@ -58,7 +59,7 @@ export function JoinInvitePage() {
         <p className="text-center text-body text-ink-dim">{preview.reason_invalid}</p>
       )}
 
-      {preview?.valid && authLoading && <p className="text-center text-body text-ink-dim">Loading…</p>}
+      {preview?.valid && authLoading && <LoadingBlock />}
 
       {preview?.valid && !authLoading && !user && (
         <div className="flex flex-col gap-2.5">

@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import type { Connection, DriveAnalytics, DriveFile } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
+import { LoadingBlock } from "../components/ui";
 
 const MIME_FILTERS = [
   { key: "", label: "All" },
@@ -61,7 +62,7 @@ export function DrivePage() {
 
   if (connected === false) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border-strong p-10 text-center text-ink-dim">
+      <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
         <BackNav
           back={{ to: "/connections/google", label: "Google Workspace" }}
           crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Drive" }]}
@@ -149,7 +150,7 @@ export function DrivePage() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && search()}
               placeholder="Search Drive by name or content…"
-              className="flex-1 card px-3.5 py-2.5 text-body outline-none focus:border-accent"
+              className="flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
             />
             <button
               onClick={search}
@@ -188,9 +189,9 @@ export function DrivePage() {
           </div>
 
           {loading ? (
-            <div className="text-ink-dim">Loading&hellip;</div>
+            <LoadingBlock />
           ) : files.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-body text-ink-faint">
+            <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
               {searched ? "No files found." : "Search your Drive above."}
             </div>
           ) : (

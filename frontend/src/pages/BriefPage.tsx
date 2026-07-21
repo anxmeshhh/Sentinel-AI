@@ -8,6 +8,7 @@ import { ChannelCards } from "../components/ChannelCards";
 import { GroupCards } from "../components/GroupCards";
 import { IntegrationCardGrid } from "../components/IntegrationCardGrid";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { LoadingBlock } from "../components/ui";
 
 const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
   session_expired: "That connect link expired — try again.",
@@ -46,7 +47,7 @@ export function BriefPage() {
   const connectedBanner = searchParams.get("connected");
   const googleError = searchParams.get("google_error");
 
-  if (loading) return <div className="text-ink-dim">Loading&hellip;</div>;
+  if (loading) return <LoadingBlock />;
 
   return (
     <div>

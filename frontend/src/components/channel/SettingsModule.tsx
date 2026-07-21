@@ -83,20 +83,20 @@ export function SettingsModule({ team, onChanged }: { team: Team; onChanged: () 
           onChange={(e) => setIcon(e.target.value)}
           placeholder="#"
           aria-label="Channel icon"
-          className="w-12 rounded-md border border-border bg-ground px-3 py-2 text-center text-body outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+          className="w-12 text-center rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
         />
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           aria-label="Channel name"
-          className="flex-1 rounded-md border border-border bg-ground px-3 py-2 text-small outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+          className="flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
         />
       </div>
       <input
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         placeholder="Description"
-        className="rounded-md border border-border bg-ground px-3 py-2 text-small outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+        className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
       />
 
       <div className="label-sub">Privacy</div>
@@ -104,7 +104,7 @@ export function SettingsModule({ team, onChanged }: { team: Team; onChanged: () 
         value={privacy}
         onChange={(e) => setPrivacy(e.target.value as ChannelPrivacy)}
         aria-label="Channel privacy"
-        className="rounded-md border border-border bg-ground px-3 py-2 text-small outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+        className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <option value="public">Public to Group</option>
         <option value="invite_only">Invite Only</option>

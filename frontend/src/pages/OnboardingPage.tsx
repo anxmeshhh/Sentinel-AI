@@ -120,7 +120,7 @@ export function OnboardingPage() {
         ))}
       </div>
 
-      <div className="rounded-lg border border-dashed border-border-strong p-4">
+      <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
         <div className="mb-1 flex items-center gap-2">
           <span className="text-h3">🧭</span>
           <span className="text-lead font-semibold text-ink">Just exploring?</span>

@@ -61,6 +61,6 @@ export function AttentionEmptyState({ context, filter }: { context: AttentionCon
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-body text-ink-faint">{children}</div>
+    <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">{children}</div>
   );
 }

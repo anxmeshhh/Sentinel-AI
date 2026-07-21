@@ -14,6 +14,7 @@ import { MembersModule } from "../components/channel/MembersModule";
 import { NotBuiltModule } from "../components/channel/NotBuiltModule";
 import { SentinelModule } from "../components/channel/SentinelModule";
 import { SettingsModule } from "../components/channel/SettingsModule";
+import { LoadingBlock } from "../components/ui";
 
 const DEFAULT_MODULE: ChannelModuleKey = "sentinel";
 
@@ -60,10 +61,10 @@ export function ChannelWorkspacePage() {
     void loadShell();
   }, [loadShell]);
 
-  if (loading) return <div className="text-ink-dim">Loading&hellip;</div>;
+  if (loading) return <LoadingBlock />;
   if (error || !team) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border-strong p-10 text-center text-ink-dim">
+      <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
         <p className="text-lead text-crit">{error ?? "Channel not found."}</p>
         <Link to="/" className="mt-3 inline-block text-small underline underline-offset-2">
           Back to dashboard

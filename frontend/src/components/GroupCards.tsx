@@ -36,7 +36,7 @@ export function GroupCards({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter groups…"
-            className="w-40 card px-2.5 py-1 text-small outline-none focus:border-accent"
+            className="w-40 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
           />
         )}
       </div>

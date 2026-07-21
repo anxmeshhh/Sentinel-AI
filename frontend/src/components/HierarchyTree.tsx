@@ -5,6 +5,7 @@ import { api, ApiError } from "../api/client";
 import type { TreeClass, TreeGroup } from "../api/types";
 import { useHierarchy } from "../context/HierarchyContext";
 import { InviteModal } from "./InviteModal";
+import { Icon } from "./ui";
 import { useWorkspace } from "../context/WorkspaceContext";
 
 const CLASS_ADMIN_ROLES = ["super_admin", "org_admin"];
@@ -202,7 +203,7 @@ function GroupNode({ group }: { group: TreeGroup }) {
             >
               <span className="text-ink-faint">{channel.icon || "#"}</span>
               <span className="min-w-0 flex-1 truncate">{channel.name}</span>
-              {channel.privacy !== "public" && <span className="text-micro text-ink-faint">🔒</span>}
+              {channel.privacy !== "public" && <Icon name="lock" size={12} className="text-ink-faint" />}
             </NavLink>
           ))}
 
@@ -284,15 +285,11 @@ function PersonalNav() {
 
 function Chevron({ open }: { open: boolean }) {
   return (
-    <svg
-      width="9"
-      height="9"
-      viewBox="0 0 10 10"
-      aria-hidden="true"
-      className={`flex-none transition-transform ${open ? "rotate-90" : ""}`}
-    >
-      <path d="M3 1l5 4-5 4" fill="none" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
+    <Icon
+      name="chevronRight"
+      size={13}
+      className={`transition-transform duration-200 ${open ? "rotate-90" : ""}`}
+    />
   );
 }
 
@@ -334,7 +331,7 @@ function InlineCreate({
         onBlur={() => !value.trim() && onCancel()}
         placeholder={placeholder}
         disabled={busy}
-        className="w-full rounded border border-border bg-ground px-3 py-2 text-caption outline-none focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-50"
+        className="w-full rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
       />
       {error && <p className="mt-0.5 text-caption text-crit">{error}</p>}
     </div>

@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import type { ChannelBriefing } from "../../api/types";
 import { attentionIcon, EvidenceLink } from "../AttentionStrip";
 import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
+import { Button, ButtonLink, EmptyState, Icon, LoadingBlock } from "../ui";
 
 /** What needs this channel's attention, scoped to its authorized connections. */
 export function AttentionModule({ teamId }: { teamId: string }) {
@@ -26,30 +27,33 @@ export function AttentionModule({ teamId }: { teamId: string }) {
     void load();
   }, [load]);
 
-  if (loading) return <div className="text-body text-ink-dim">Loading&hellip;</div>;
-  if (!briefing) return <div className="text-body text-crit">Couldn't load this channel's attention.</div>;
+  if (loading) return <LoadingBlock />;
+  if (!briefing) return <EmptyState title="Couldn't load attention" description="The request failed. Try refreshing." />;
 
   if (briefing.no_connections) {
     return (
-      <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-small text-ink-faint">
-        No connections are assigned to this channel yet, so there's nothing to watch. Assign one in Extensions.
-      </div>
+      <EmptyState
+        title="No connections assigned"
+        description="This channel has no authorized connections yet, so there is nothing to watch. An admin assigns them in Extensions."
+      />
     );
   }
 
   if (briefing.items.length === 0) {
+    // Two very different facts, and only one of them is the reader's to fix.
+    const blocked = briefing.blocking_providers.length > 0;
     return (
-      <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-small text-ink-dim">
-        {briefing.blocking_providers.length > 0 ? (
-          <>
-            Empty <em>for you</em> because you haven't connected{" "}
-            {briefing.blocking_providers.map((p) => PROVIDER_LABEL[p] ?? p).join(", ")} — not because nothing is
-            happening here.
-          </>
-        ) : (
-          "Nothing needs this channel's attention right now."
-        )}
-      </div>
+      <EmptyState
+        title={blocked ? "Empty for you — setup incomplete" : "Nothing needs attention"}
+        description={
+          blocked
+            ? `You haven't connected ${briefing.blocking_providers
+                .map((p) => PROVIDER_LABEL[p] ?? p)
+                .join(", ")} yet, so this is empty for you — not because nothing is happening here.`
+            : "Nothing in this channel's authorized connections needs a decision right now."
+        }
+        action={blocked ? <ButtonLink to={`/channels/${teamId}/extensions`} size="sm">Finish setup</ButtonLink> : undefined}
+      />
     );
   }
 
@@ -59,9 +63,10 @@ export function AttentionModule({ teamId }: { teamId: string }) {
         <span className="label-sub font-bold text-accent-text">
           {briefing.items.length} item{briefing.items.length === 1 ? "" : "s"}
         </span>
-        <button onClick={load} className="text-caption text-ink-faint underline hover:text-ink">
+        <Button size="sm" variant="ghost" onClick={load}>
+          <Icon name="refresh" size={14} />
           Refresh
-        </button>
+        </Button>
       </div>
       {briefing.narrative && <p className="mb-3 text-small leading-relaxed text-ink-dim">{briefing.narrative}</p>}
       <div className="flex flex-col gap-1.5">

@@ -72,7 +72,7 @@ export function AttentionStrip() {
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border-strong p-5 text-center text-small text-ink-faint">
+        <div className="rounded-md border border-dashed border-border px-5 py-8 text-center text-caption text-ink-faint">
           Nothing needs your attention right now. ✨
         </div>
       ) : (

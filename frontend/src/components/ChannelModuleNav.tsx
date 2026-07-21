@@ -1,4 +1,5 @@
-import { NavLink } from "react-router-dom";
+import { Badge, Tabs, Tooltip } from "./ui";
+import type { TabItem } from "./ui";
 
 export type ChannelModuleKey =
   | "sentinel"
@@ -15,9 +16,9 @@ export interface ChannelModuleDef {
   key: ChannelModuleKey;
   label: string;
   /** False when the backend for this module genuinely doesn't exist yet.
-   *  Rendered as "not built" rather than as an empty working module - an
-   *  empty Insights page and an unbuilt Insights page look identical to a
-   *  user, and only one of them is honest. */
+   *  Rendered as "soon" rather than as an empty working module - an empty
+   *  Insights page and an unbuilt Insights page look identical to a user,
+   *  and only one of them is honest. */
   built: boolean;
   adminOnly?: boolean;
 }
@@ -35,7 +36,7 @@ export const CHANNEL_MODULES: ChannelModuleDef[] = [
 ];
 
 /**
- * The channel's module switcher.
+ * The channel's module switcher, built on the shared Tabs primitive.
  *
  * Each entry is a route, not a tab over already-fetched state: only the
  * chosen module mounts, so opening a channel costs one request instead of
@@ -51,32 +52,18 @@ export function ChannelModuleNav({
   isAdmin: boolean;
   blockingCount: number;
 }) {
-  return (
-    <nav className="scroll-x mb-6 flex gap-1 border-b border-rule-strong pb-2.5 sm:flex-wrap">
-      {CHANNEL_MODULES.filter((m) => !m.adminOnly || isAdmin).map((module) => (
-        <NavLink
-          key={module.key}
-          to={`/channels/${teamId}/${module.key}`}
-          className={({ isActive }) =>
-            `flex flex-none items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-small transition-colors ${
-              isActive
-                ? "bg-surface-2 font-semibold text-ink shadow-card"
-                : "text-ink-dim hover:bg-surface hover:text-ink"
-            }`
-          }
-        >
-          {module.label}
-          {module.key === "extensions" && blockingCount > 0 && (
-            <span
-              title={`${blockingCount} required integration${blockingCount === 1 ? "" : "s"} still to connect`}
-              className="rounded-full bg-watch/20 px-1.5 py-px text-micro font-bold text-watch"
-            >
-              {blockingCount}
-            </span>
-          )}
-          {!module.built && <span className="text-micro text-ink-faint">soon</span>}
-        </NavLink>
-      ))}
-    </nav>
-  );
+  const items: TabItem[] = CHANNEL_MODULES.filter((m) => !m.adminOnly || isAdmin).map((module) => ({
+    to: `/channels/${teamId}/${module.key}`,
+    label: module.label,
+    trailing:
+      module.key === "extensions" && blockingCount > 0 ? (
+        <Tooltip label={`${blockingCount} required integration${blockingCount === 1 ? "" : "s"} still to connect`}>
+          <Badge tone="warn">{blockingCount}</Badge>
+        </Tooltip>
+      ) : !module.built ? (
+        <span className="text-micro text-ink-faint">soon</span>
+      ) : undefined,
+  }));
+
+  return <Tabs items={items} />;
 }

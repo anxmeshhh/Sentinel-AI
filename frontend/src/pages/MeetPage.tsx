@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import type { Connection } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
+import { LoadingBlock } from "../components/ui";
 
 interface Meeting {
   id: string;
@@ -65,7 +66,7 @@ export function MeetPage() {
 
   if (connected === false) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border-strong p-10 text-center text-ink-dim">
+      <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
         <BackNav
           back={{ to: "/connections/google", label: "Google Workspace" }}
           crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Meet" }]}
@@ -112,7 +113,7 @@ export function MeetPage() {
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && load()}
             placeholder="Search meetings…"
-            className="card px-3 py-1.5 text-small outline-none focus:border-accent"
+            className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
           />
           <button onClick={load} className="card px-3 py-1.5 text-caption font-semibold text-ink-dim hover:border-accent hover:text-ink">
             Search
@@ -121,9 +122,9 @@ export function MeetPage() {
       </div>
 
       {loading ? (
-        <div className="text-ink-dim">Loading&hellip;</div>
+        <LoadingBlock />
       ) : meetings.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border-strong p-8 text-center text-body text-ink-faint">
+        <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
           No {range} meetings.
         </div>
       ) : (

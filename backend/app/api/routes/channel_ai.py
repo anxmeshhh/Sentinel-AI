@@ -22,6 +22,7 @@ from app.schemas.attention import ChannelBriefingOut
 from app.schemas.channel_ai import ChannelAIHistoryOut
 from app.schemas.orchestrator import CommandRequest, CommandResponse, ExecuteActionRequest, ExecuteActionResponse
 from app.services.channel_briefing import build_channel_briefing
+from app.services.channel_readiness import blocking_providers
 from app.services.orchestrator import execute_planned_action, run_command, run_command_stream
 
 router = APIRouter(tags=["channel-ai"])
@@ -109,6 +110,10 @@ def channel_briefing(
         narrative=result["narrative"],
         connection_labels=result["connection_labels"],
         no_connections=result["no_connections"],
+        # Computed for the caller specifically - two members of the same
+        # channel can legitimately get different answers here, because the
+        # requirement is satisfied per-person.
+        blocking_providers=[p.value for p in blocking_providers(session, team_id, team.workspace_id, user.id)],
     )
 
 

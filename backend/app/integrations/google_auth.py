@@ -49,7 +49,13 @@ def get_valid_access_token(session: Session, connection: Connection) -> str:
     )
     if response.status_code != 200:
         # A revoked/expired refresh_token ends up here - the connection needs
-        # to be reconnected by the user, not silently retried forever.
+        # to be reconnected by the user, not silently retried forever. Record
+        # that fact on the row: it is the only observable evidence that this
+        # connection is dead, and channel readiness reports `expired` from it
+        # rather than guessing (see models/connection.py:revoked_at).
+        connection.revoked_at = datetime.now(timezone.utc)
+        session.add(connection)
+        session.commit()
         logger.warning("google_token_refresh_failed", connection_id=str(connection.id), status=response.status_code)
         raise GoogleAuthError(f"Google token refresh failed: {response.status_code}")
 

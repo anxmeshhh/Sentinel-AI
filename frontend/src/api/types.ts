@@ -307,6 +307,44 @@ export interface ChannelBriefing {
   narrative: string | null;
   connection_labels: string[];
   no_connections: boolean;
+  /** Required integrations *you* haven't connected. Distinguishes "nothing
+   *  needs attention" from "you're not set up yet". */
+  blocking_providers: string[];
+}
+
+export type ReadinessState = "not_connected" | "syncing" | "ready" | "expired";
+
+/** What an admin declared this channel needs - a provider, never an account. */
+export interface ChannelRequirement {
+  id: string;
+  provider: string;
+  is_required: boolean;
+  reason: string | null;
+}
+
+export interface RequirementStatus {
+  provider: string;
+  is_required: boolean;
+  reason: string | null;
+  state: ReadinessState;
+  /** The account the *viewer* connected. Never another member's. */
+  account_label: string | null;
+}
+
+export interface ChannelReadiness {
+  team_id: string;
+  is_ready: boolean;
+  blocking_providers: string[];
+  requirements: RequirementStatus[];
+}
+
+export interface MemberReadiness {
+  user_id: string;
+  name: string | null;
+  email: string;
+  role: string;
+  is_ready: boolean;
+  requirements: { provider: string; is_required: boolean; state: ReadinessState; account_label: string | null }[];
 }
 
 export interface AttentionContext {

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.slugs import unique_slug
 from app.models.channel_ai_history import ChannelAIHistoryEntry
 from app.models.channel_connection import ChannelConnection
+from app.models.channel_required_connection import ChannelRequiredConnection
 from app.models.connection import Connection
 from app.models.invite import WorkspaceInvite
 from app.models.team import ChannelPrivacy, ChannelRole, Team, TeamMembership
@@ -149,6 +150,7 @@ def delete_channel(session: Session, team: Team) -> None:
     session.query(ChannelAIHistoryEntry).filter(ChannelAIHistoryEntry.team_id == team.id).delete()
     for channel_connection in session.query(ChannelConnection).filter(ChannelConnection.team_id == team.id).all():
         session.delete(channel_connection)  # ORM-cascades to its allow-listed resources
+    session.query(ChannelRequiredConnection).filter(ChannelRequiredConnection.team_id == team.id).delete()
     session.query(TeamMembership).filter(TeamMembership.team_id == team.id).delete()
     session.query(WorkspaceInvite).filter(WorkspaceInvite.team_id == team.id).delete()
 

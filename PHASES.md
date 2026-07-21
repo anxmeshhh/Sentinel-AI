@@ -2126,6 +2126,116 @@ repository, the route layer, and the tool-execution layer. **Confirmed against M
 
 ---
 
+### Phase 2x-B — Admins declare what a channel needs; members connect their own accounts ✅ Built and verified against MySQL
+
+**Objective:** the user's refinement of the Discord-style model — *"Admins must be able to define
+which external applications/integrations are required... each member must connect and authorize
+THEIR OWN account."* Phase A made per-member accounts possible; this phase makes them
+**configurable and legible**.
+
+**The distinction the whole phase rests on.** Two tables that sound alike answer different
+questions and must never merge:
+
+| | Points at | Set by | Answers |
+|---|---|---|---|
+| `ChannelConnection` (2l) | a connection row — someone's token | admin | "this account is assigned to this channel" |
+| `ChannelRequiredConnection` (2x-B) | a **provider** | admin | "this channel needs Gmail" |
+
+`ChannelRequiredConnection` has **no `connection_id` column and no route that would create one**.
+That absence is the security property: an admin who could declare the requirement *and* supply the
+account would be handing their own mailbox to every member of the channel — precisely the leak
+Phase A closed.
+
+| Step | Deliverable | Status |
+|---|---|---|
+| B.1 | `ChannelRequiredConnection` (team + provider + required/optional + reason) | ✅ |
+| B.2 | `Connection.revoked_at` — the only honest evidence of expiry | ✅ |
+| B.3 | `services/channel_readiness.py` — per-member state machine | ✅ |
+| B.4 | Requirements CRUD (admin) + readiness (self) + roster (admin) routes | ✅ |
+| B.5 | Capability gate: briefings report `blocking_providers` per caller | ✅ |
+| B.6 | Setup checklist UI + admin Setup tab | ✅ |
+
+### The state machine, and the state that was deliberately not built
+
+    not_connected → syncing → ready
+                       ↘ expired → (reconnect) → syncing
+
+Every state is read off a fact already in the database — no connection row, `revoked_at` set,
+`last_synced_at` NULL, or neither.
+
+- **There is no `connecting` state.** The OAuth round-trip happens on Google's servers; between the
+  redirect out and the callback back this database holds no row and no evidence. A `connecting`
+  state would be a frontend spinner promoted to a server-side fact, and it would stick permanently
+  the moment a user abandoned the consent screen. The frontend may show whatever transient
+  affordance it likes; the API reports only what it can prove.
+- **`expired` keys off `revoked_at`, not off the stored token's `expires_at`.** This was the
+  tempting shortcut and it is wrong: Google access tokens live ~1h and are refreshed silently, so an
+  expiry check against them would report **every healthy connection as expired within the hour**.
+  The only honest signal is a refresh that actually failed, so `google_auth.py` now records that on
+  the row, and a successful reconnect clears it. A test pins this
+  (`test_a_healthy_connection_is_never_reported_expired`).
+- **`syncing` blocks.** Connected-but-empty is real and temporary; calling it `ready` would make the
+  first minute after OAuth look broken.
+- **Optional requirements never block.** A channel that marks everything required to be thorough
+  trains members to ignore the checklist, so the distinction had to be real rather than cosmetic.
+
+### What actually got built (technical notes)
+
+- **The capability gate exists to stop a lie of omission.** An empty channel briefing had two
+  causes — "nothing needs your attention" and "you never connected Gmail" — and rendered as the
+  same blank panel. Only one of them is the reader's problem to fix, and only if they're told.
+  `ChannelBriefingOut.blocking_providers` is computed **for the caller**, so two members of the same
+  channel legitimately get different answers from the same endpoint at the same moment.
+- **The admin roster returns states, not credentials.** An admin genuinely needs to know who is
+  behind on setup — that is the operational point of declaring requirements. What they get is
+  `{provider, is_required, state, account_label}` per member and nothing else: no token, no
+  connection id. A test asserts the exact key set rather than merely spot-checking for the word
+  "token", so a future field addition fails loudly instead of leaking quietly.
+- **`my_channel_readiness` takes no `user_id` parameter at all**, so "is Bob set up?" is
+  unaskable through the member endpoint by construction rather than by check. A test asserts the
+  signature.
+- **`delete_channel` was extended in the same commit.** A new child table with no `relationship()`
+  is exactly the shape of the earlier `IntegrityError` that passed on SQLite and failed on MySQL —
+  so the cascade was written immediately and then proved on MySQL, not on SQLite.
+- **The admin's *reason* is a first-class field.** "Connect Gmail" is a demand; "Connect Gmail so
+  client replies show up here" is a reason. Members are being asked for mailbox access; they're
+  owed the second one, and it renders above the state hint on their checklist.
+
+### Verified against real MySQL
+
+| Probe | Result |
+|---|---|
+| Admin connected, member not — same channel, same moment | admin `blocking=[]`, member `blocking=[gmail]` |
+| Member states | `ready` / `not_connected` derived correctly |
+| After `revoked_at` is set | `expired` |
+| Roster contents | ready flags correct; no token, no connection id |
+| Duplicate requirement `(team, provider)` | rejected by MySQL `IntegrityError` |
+| `delete_channel` with a requirement attached | succeeds, 0 rows left (the FK-order case SQLite cannot prove) |
+
+Suite: **200 passed** (19 new). Frontend `tsc -b && vite build` clean. Routes confirmed live in
+`/openapi.json`.
+
+### Known gaps (deliberately deferred, not oversights)
+
+- **`syncing` doesn't auto-refresh in the UI.** The state is correct on load, but a member watching
+  the checklist won't see it flip to `ready` without a reload. Polling is trivial to add and worth
+  doing on evidence that people actually sit on that screen.
+- **`revoked_at` is only written on the Google refresh path.** GitHub is still a PAT, which fails
+  differently and doesn't route through `google_auth.py` — so an expired GitHub token reports
+  `ready` until Phase C replaces it with OAuth.
+- **Requirements are per-channel with no inheritance.** A Group with twelve channels that all need
+  Gmail is configured twelve times. Group-level defaults are the obvious next step; not built,
+  because the shape of real usage isn't known yet.
+- **No notification when an admin adds a requirement.** A member finds out on their next visit to
+  the channel. Emailing "your admin needs your mailbox" deserves more thought than a passing
+  default.
+
+**Exit criteria:** an admin can state what a channel needs without ever touching a member's
+account, each member sees their own honest checklist, and an empty result explains itself.
+**Confirmed against MySQL.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

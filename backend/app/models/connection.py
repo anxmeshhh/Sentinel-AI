@@ -62,6 +62,15 @@ class Connection(Base, UUIDPk, TimestampMixin):
 
     last_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
+    # Set when Google refuses to mint a new access token (revoked consent,
+    # expired refresh_token, password change). Phase 2x-B needs this because
+    # expiry is otherwise *unobservable*: the stored `expires_at` only
+    # describes the short-lived access token, which is refreshed silently, so
+    # reading it would report every healthy connection as expired within the
+    # hour. The only honest signal is a refresh that actually failed - so
+    # that's what gets recorded. Cleared on a successful reconnect.
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
     signals: Mapped[list["Signal"]] = relationship(back_populates="connection", cascade="all, delete-orphan")
 
     @property

@@ -219,6 +219,10 @@ def upsert_google_connections(
                 existing.org = google_email
                 existing.last_synced_at = None
             existing.encrypted_token = encrypted_token
+            # A fresh consent is exactly the evidence that the connection is
+            # alive again - otherwise it would stay flagged `expired` in the
+            # readiness checklist forever after one revocation.
+            existing.revoked_at = None
         else:
             session.add(
                 Connection(

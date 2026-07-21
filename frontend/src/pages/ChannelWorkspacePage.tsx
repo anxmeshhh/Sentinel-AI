@@ -2,15 +2,27 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
-import type { ChannelAIHistoryItem, ChannelBriefing, ChannelConnection, ChannelPrivacy, Connection, Team, TeamMember } from "../api/types";
+import type {
+  ChannelAIHistoryItem,
+  ChannelBriefing,
+  ChannelConnection,
+  ChannelPrivacy,
+  ChannelReadiness,
+  ChannelRequirement,
+  Connection,
+  MemberReadiness,
+  Team,
+  TeamMember,
+} from "../api/types";
 import { attentionIcon, EvidenceLink } from "../components/AttentionStrip";
 import { BackNav } from "../components/BackNav";
+import { ChannelSetupChecklist, PROVIDER_LABEL } from "../components/ChannelSetupChecklist";
 import { GoogleAICommand } from "../components/GoogleAICommand";
 import { useTeams } from "../context/TeamContext";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
-type PanelTab = "connections" | "members" | "activity" | "settings";
+type PanelTab = "connections" | "setup" | "members" | "activity" | "settings";
 
 export function ChannelWorkspacePage() {
   const { teamId = "" } = useParams<{ teamId: string }>();
@@ -19,6 +31,7 @@ export function ChannelWorkspacePage() {
   const [connections, setConnections] = useState<ChannelConnection[]>([]);
   const [history, setHistory] = useState<ChannelAIHistoryItem[]>([]);
   const [briefing, setBriefing] = useState<ChannelBriefing | null>(null);
+  const [readiness, setReadiness] = useState<ChannelReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -30,14 +43,16 @@ export function ChannelWorkspacePage() {
     setLoading(true);
     setError(null);
     try {
-      const [t, m, c] = await Promise.all([
+      const [t, m, c, r] = await Promise.all([
         api.get<Team>(`/teams/${teamId}`),
         api.get<TeamMember[]>(`/teams/${teamId}/members`),
         api.get<ChannelConnection[]>(`/teams/${teamId}/connections`),
+        api.get<ChannelReadiness>(`/teams/${teamId}/readiness`),
       ]);
       setTeam(t);
       setMembers(m);
       setConnections(c);
+      setReadiness(r);
       // Deliberately NOT switching the global active workspace here - an
       // earlier version did, and silently flipping it made the user's
       // Mail/Calendar/Drive pages (scoped to their Personal workspace) go
@@ -134,6 +149,11 @@ export function ChannelWorkspacePage() {
 
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="min-w-0 flex-1">
+          {/* Setup comes before everything else: a member who hasn't
+              connected their own account can't use anything below it, and
+              an empty channel with no explanation reads as broken. */}
+          {readiness && <ChannelSetupChecklist readiness={readiness} teamId={teamId} workspaceId={team.workspace_id} compact />}
+
           {connections.length === 0 ? (
             <div className="mb-4 rounded-md border border-dashed border-border p-6 text-center text-[13px] text-ink-faint">
               No Connections are assigned to this channel yet.
@@ -165,6 +185,16 @@ export function ChannelWorkspacePage() {
               <p className="mt-2.5 text-[11px] leading-relaxed text-ink-faint">
                 Sentinel can only use the connections and resources authorized for this channel — nothing else from the workspace.
               </p>
+            </div>
+          )}
+
+          {/* An empty briefing has two causes and they are not the same
+              news. Saying which one applies is the whole point. */}
+          {briefing && briefing.items.length === 0 && briefing.blocking_providers.length > 0 && (
+            <div className="mb-4 rounded-md border border-dashed border-border p-4 text-[12.5px] text-ink-dim">
+              This channel's briefing is empty for you because you haven't connected{" "}
+              {briefing.blocking_providers.map((p) => PROVIDER_LABEL[p] ?? p).join(", ")} yet — not because there's
+              nothing happening. Connect above and it will fill in after the first sync.
             </div>
           )}
 
@@ -233,7 +263,7 @@ export function ChannelWorkspacePage() {
           <div className="w-full flex-none lg:w-[340px]">
             <div className="rounded-md border border-border bg-surface">
               <div className="flex border-b border-border">
-                {(["connections", "members", "activity", ...(isAdmin ? (["settings"] as PanelTab[]) : [])] as PanelTab[]).map((tab) => (
+                {(["connections", "setup", "members", "activity", ...(isAdmin ? (["settings"] as PanelTab[]) : [])] as PanelTab[]).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setPanelTab(tab)}
@@ -250,6 +280,7 @@ export function ChannelWorkspacePage() {
                 {panelTab === "connections" && (
                   <ConnectionsTab teamId={teamId} workspaceId={team.workspace_id} isAdmin={isAdmin} connections={connections} onChanged={loadAll} />
                 )}
+                {panelTab === "setup" && <SetupTab teamId={teamId} isAdmin={isAdmin} onChanged={loadAll} />}
                 {panelTab === "members" && <MembersTab teamId={teamId} isAdmin={isAdmin} members={members} onChanged={loadAll} />}
                 {panelTab === "activity" && <ActivityTab history={history} />}
                 {panelTab === "settings" && isAdmin && <SettingsTab team={team} onChanged={loadAll} />}
@@ -468,6 +499,170 @@ function ConnectionsTab({
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+const REQUIREABLE_PROVIDERS = ["gmail", "google_calendar", "google_drive", "github"];
+
+/**
+ * Admin: declare which integrations this channel needs, and see who is
+ * behind on setup.
+ *
+ * Note what this tab deliberately cannot do: there is no control here that
+ * connects an account on a member's behalf, because that would mean the
+ * admin's own token backing everyone's access. The admin states the
+ * requirement; each member satisfies it themselves.
+ */
+function SetupTab({ teamId, isAdmin, onChanged }: { teamId: string; isAdmin: boolean; onChanged: () => void }) {
+  const [requirements, setRequirements] = useState<ChannelRequirement[]>([]);
+  const [roster, setRoster] = useState<MemberReadiness[]>([]);
+  const [provider, setProvider] = useState(REQUIREABLE_PROVIDERS[0]);
+  const [reason, setReason] = useState("");
+  const [required, setRequired] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    try {
+      setRequirements(await api.get<ChannelRequirement[]>(`/teams/${teamId}/requirements`));
+    } catch {
+      setRequirements([]);
+    }
+    if (!isAdmin) return;
+    try {
+      setRoster(await api.get<MemberReadiness[]>(`/teams/${teamId}/readiness/roster`));
+    } catch {
+      setRoster([]);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId, isAdmin]);
+
+  async function add() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`/teams/${teamId}/requirements`, {
+        provider,
+        is_required: required,
+        reason: reason.trim() || null,
+      });
+      setReason("");
+      await load();
+      onChanged();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to add");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: string) {
+    setBusy(true);
+    try {
+      await api.delete(`/teams/${teamId}/requirements/${id}`);
+      await load();
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const notReady = roster.filter((r) => !r.is_ready);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="font-mono text-[10px] uppercase tracking-wide text-ink-faint">Required integrations</div>
+      {requirements.length === 0 ? (
+        <p className="text-[11.5px] text-ink-faint">
+          None yet.{isAdmin ? " Add one below and every member will be prompted to connect their own account." : ""}
+        </p>
+      ) : (
+        requirements.map((r) => (
+          <div key={r.id} className="rounded-md border border-border p-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[12.5px] font-semibold text-ink">{PROVIDER_LABEL[r.provider] ?? r.provider}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[9.5px] uppercase text-ink-faint">{r.is_required ? "required" : "optional"}</span>
+                {isAdmin && (
+                  <button onClick={() => remove(r.id)} disabled={busy} className="text-[10.5px] text-ink-faint underline hover:text-crit">
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+            {r.reason && <p className="mt-1 text-[11px] text-ink-dim">{r.reason}</p>}
+          </div>
+        ))
+      )}
+
+      {isAdmin && (
+        <div className="rounded-md border border-dashed border-border p-2.5">
+          <select
+            value={provider}
+            onChange={(e) => setProvider(e.target.value)}
+            aria-label="Integration"
+            className="mb-1.5 w-full rounded-md border border-border bg-ground px-2 py-1 text-[11.5px] outline-none focus:border-accent"
+          >
+            {REQUIREABLE_PROVIDERS.map((p) => (
+              <option key={p} value={p}>
+                {PROVIDER_LABEL[p]}
+              </option>
+            ))}
+          </select>
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Why this channel needs it (shown to members)"
+            className="mb-1.5 w-full rounded-md border border-border bg-ground px-2 py-1 text-[11px] outline-none focus:border-accent"
+          />
+          <label className="mb-1.5 flex items-center gap-1.5 text-[11px] text-ink-dim">
+            <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} />
+            Required (unchecked = suggested only, never blocks)
+          </label>
+          <button
+            onClick={add}
+            disabled={busy}
+            className="w-full rounded-md bg-accent px-2.5 py-1 font-mono text-[10.5px] font-bold text-ground disabled:opacity-50"
+          >
+            Add requirement
+          </button>
+          {error && <p className="mt-1 text-[10.5px] text-crit">{error}</p>}
+          <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-faint">
+            Members connect their own accounts. You'll see who still needs to, but never their credentials.
+          </p>
+        </div>
+      )}
+
+      {isAdmin && requirements.length > 0 && (
+        <>
+          <div className="font-mono text-[10px] uppercase tracking-wide text-ink-faint">Member setup</div>
+          {notReady.length === 0 ? (
+            <p className="text-[11.5px] text-good">Everyone in this channel is set up.</p>
+          ) : (
+            roster.map((m) => (
+              <div key={m.user_id} className="flex items-start justify-between gap-2 text-[11.5px]">
+                <div className="min-w-0">
+                  <div className="truncate text-ink">{m.name ?? m.email}</div>
+                  <div className="truncate text-[10.5px] text-ink-faint">
+                    {m.requirements
+                      .filter((r) => r.state !== "ready")
+                      .map((r) => `${PROVIDER_LABEL[r.provider] ?? r.provider}: ${r.state.replace("_", " ")}`)
+                      .join(" · ") || "all connected"}
+                  </div>
+                </div>
+                <span className={`flex-none font-mono text-[10px] ${m.is_ready ? "text-good" : "text-watch"}`}>
+                  {m.is_ready ? "ready" : "pending"}
+                </span>
+              </div>
+            ))
+          )}
+        </>
       )}
     </div>
   );

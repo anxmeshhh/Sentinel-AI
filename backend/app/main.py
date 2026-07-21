@@ -14,6 +14,7 @@ from app.api.routes import (
     calendar,
     channel_ai,
     channel_connections,
+    channel_readiness,
     connections,
     connections_ai,
     drive,
@@ -95,6 +96,7 @@ app.include_router(admin.router)
 app.include_router(workspaces.router)
 app.include_router(teams.router)
 app.include_router(channel_connections.router)
+app.include_router(channel_readiness.router)
 app.include_router(channel_ai.router)
 app.include_router(invites.router)
 app.include_router(integrations.router)

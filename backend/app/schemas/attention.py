@@ -33,6 +33,13 @@ class ChannelBriefingOut(BaseModel):
     connection_labels: list[str]
     no_connections: bool
 
+    # Phase 2x-B: required integrations the *caller* hasn't connected yet.
+    # An empty briefing has two very different causes - "nothing needs your
+    # attention" and "you never connected Gmail" - and only one of them is
+    # the user's problem to fix. Reporting the second as the first is the
+    # bug this field exists to prevent.
+    blocking_providers: list[str] = []
+
 
 class CalendarPlanOut(BaseModel):
     """A *proposal*, not a booking. The client shows this for confirmation

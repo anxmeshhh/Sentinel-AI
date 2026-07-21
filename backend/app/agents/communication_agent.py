@@ -22,6 +22,7 @@ from app.agents.llm import LLMClient, LLMError
 from app.core.config import get_settings
 from app.models.finding import Finding
 from app.models.signal import Signal, SignalType
+from app.services.mail_signals import noise_reason, sender_counts
 
 logger = structlog.get_logger("sentinel.agents.communication")
 
@@ -103,10 +104,21 @@ class CommunicationAgent(SpecialistAgent):
 
     def _detect_stale_flagged_mail(self, emails: list[Signal]) -> dict | None:
         now = datetime.now(timezone.utc)
+        # Same noise filter the attention engine uses (Phase 2v). Without
+        # it this agent produced findings like "12 important emails need
+        # attention" listing Pinterest recommendations and a Welcome
+        # email - and because high-severity findings are themselves
+        # promoted into the attention feed, that noise re-entered through
+        # the back door after being filtered out of the front.
+        counts = sender_counts([e.payload for e in emails])
         stale = []
         for e in emails:
             labels = set(e.payload.get("label_ids", []))
             if "UNREAD" not in labels or not ({"IMPORTANT", "STARRED"} & labels):
+                continue
+            # Starring is an explicit human judgment and always survives;
+            # everything else must clear the bulk/automated check.
+            if "STARRED" not in labels and noise_reason(e.payload, counts) is not None:
                 continue
             age_hours = (now - e.occurred_at).total_seconds() / 3600
             if age_hours >= STALE_FLAGGED_HOURS:

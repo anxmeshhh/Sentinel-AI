@@ -60,6 +60,20 @@ def create_google_connect_ticket(
     return ConnectTicketOut(ticket=ticket)
 
 
+def _safe_return_path(raw: str | None) -> str:
+    """Only ever return to a path inside this app.
+
+    This value ends up in a redirect after OAuth, so accepting it verbatim
+    would be an open redirect - an attacker could send a crafted connect
+    link that bounces the user to an external site wearing Sentinel's
+    trust. Anything that isn't a single-slash-prefixed relative path is
+    discarded in favour of the dashboard.
+    """
+    if not raw or not raw.startswith("/") or raw.startswith("//"):
+        return "/"
+    return raw
+
+
 @router.get("/google/connect")
 async def google_connect(request: Request, ticket: str):
     if not GOOGLE_CONFIGURED:
@@ -73,6 +87,11 @@ async def google_connect(request: Request, ticket: str):
     # see main.py's SessionMiddleware) - read back in the callback below.
     request.session["google_connect_user_id"] = str(user_id)
     request.session["google_connect_workspace_id"] = str(workspace_id)
+    # Where to land after the OAuth round trip. An admin who started this
+    # from inside a channel's Extensions tab should come back to that
+    # channel with their configuration intact, not be dumped on the
+    # dashboard to navigate back and start over.
+    request.session["google_connect_return_to"] = _safe_return_path(request.query_params.get("return_to"))
 
     redirect_uri = f"{get_settings().backend_base_url}/integrations/google/callback"
     # access_type=offline is what makes Google issue a refresh_token at all -
@@ -89,6 +108,7 @@ async def google_connect_callback(request: Request, session: Session = Depends(g
 
     workspace_id_str = request.session.pop("google_connect_workspace_id", None)
     request.session.pop("google_connect_user_id", None)
+    return_to = _safe_return_path(request.session.pop("google_connect_return_to", None))
     if not workspace_id_str:
         return RedirectResponse(f"{get_settings().frontend_base_url}/?google_error=session_expired")
 
@@ -116,7 +136,8 @@ async def google_connect_callback(request: Request, session: Session = Depends(g
     upsert_google_connections(session, workspace_id=workspace_id, google_email=google_email, encrypted_token=encrypted)
     _queue_first_sync(session, workspace_id)
 
-    return RedirectResponse(f"{get_settings().frontend_base_url}/?connected=google")
+    separator = "&" if "?" in return_to else "?"
+    return RedirectResponse(f"{get_settings().frontend_base_url}{return_to}{separator}connected=google")
 
 
 def _queue_first_sync(session: Session, workspace_id: uuid.UUID) -> None:

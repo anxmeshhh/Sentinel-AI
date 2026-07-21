@@ -81,8 +81,8 @@ async function postStream(path: string, body: unknown, onEvent: (data: unknown) 
 
 export const api = {
   get: <T>(path: string, opts?: { workspaceId?: string }) => request<T>(path, undefined, opts?.workspaceId),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  post: <T>(path: string, body?: unknown, opts?: { workspaceId?: string }) =>
+    request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }, opts?.workspaceId),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   postStream,

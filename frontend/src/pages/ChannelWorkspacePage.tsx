@@ -8,6 +8,8 @@ import { BackNav } from "../components/BackNav";
 import { GoogleAICommand } from "../components/GoogleAICommand";
 import { useTeams } from "../context/TeamContext";
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
 type PanelTab = "connections" | "members" | "activity" | "settings";
 
 export function ChannelWorkspacePage() {
@@ -311,6 +313,23 @@ function ConnectionsTab({
     }
   }
 
+  async function connectGoogleHere() {
+    setBusy(true);
+    try {
+      // Same ticket flow the Connections page uses - only the landing spot
+      // differs, so there is no second connect implementation to keep in
+      // sync. The workspace is taken from this channel, which is what makes
+      // the resulting connection assignable here.
+      const { ticket } = await api.post<{ ticket: string }>("/integrations/google/connect-ticket", undefined, {
+        workspaceId,
+      });
+      const returnTo = encodeURIComponent(`/channels/${teamId}`);
+      window.location.href = `${API_BASE}/integrations/google/connect?ticket=${encodeURIComponent(ticket)}&return_to=${returnTo}`;
+    } catch {
+      setBusy(false);
+    }
+  }
+
   async function addResource(channelConnectionId: string) {
     const form = resourceForm[channelConnectionId];
     if (!form?.key.trim() || !form?.label.trim()) return;
@@ -408,7 +427,9 @@ function ConnectionsTab({
                 allow-list specific resources below.
               </p>
               {assignable.length === 0 ? (
-                <p className="text-[11px] text-ink-faint">No more workspace connections available to assign.</p>
+                <p className="mb-2 text-[11px] text-ink-faint">
+                  Everything connected to this workspace is already assigned here.
+                </p>
               ) : (
                 assignable.map((c) => (
                   <button
@@ -422,6 +443,25 @@ function ConnectionsTab({
                   </button>
                 ))
               )}
+              {/* Connect something new without leaving the channel. The
+                  OAuth round trip returns here, so the admin doesn't have
+                  to navigate back and rebuild their configuration. */}
+              <div className="mt-2 border-t border-border pt-2">
+                <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-ink-faint">Not connected yet</div>
+                <button
+                  onClick={connectGoogleHere}
+                  disabled={busy}
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-[11.5px] text-ink-dim hover:bg-surface-2 hover:text-ink disabled:opacity-50"
+                >
+                  + Connect Google (Gmail, Calendar, Drive)
+                </button>
+                <Link
+                  to="/connections/github"
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-[11.5px] text-ink-dim hover:bg-surface-2 hover:text-ink"
+                >
+                  + Connect GitHub
+                </Link>
+              </div>
               <button onClick={() => setShowPicker(false)} className="mt-1 font-mono text-[10.5px] text-ink-faint underline hover:text-ink">
                 Cancel
               </button>

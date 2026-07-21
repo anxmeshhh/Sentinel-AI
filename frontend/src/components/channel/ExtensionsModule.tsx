@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, ApiError } from "../../api/client";
-import type { ChannelConnection, ChannelReadiness, ChannelRequirement, Connection } from "../../api/types";
+import type { ChannelConnection, ChannelReadiness, ChannelRequirement, Connection, AuthorizedConnection } from "../../api/types";
 import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
 import { LoadingBlock } from "../ui";
 
@@ -263,7 +263,9 @@ function AssignedConnectionsSection({
         else from the workspace.
       </p>
 
-      {connections.length === 0 && <p className="text-small text-ink-faint">Nothing assigned yet.</p>}
+      <InheritedConnections teamId={teamId} />
+
+      {connections.length === 0 && <p className="text-small text-ink-faint">Nothing assigned directly to this channel.</p>}
 
       <div className="flex flex-col gap-2">
         {connections.map((c) => (
@@ -456,5 +458,47 @@ function RosterSection({ teamId, hasRequirements }: { teamId: string; hasRequire
         ))}
       </div>
     </section>
+  );
+}
+
+
+/** Connections this channel inherits from its Group or Class - shared
+ *  context an admin set once, one or two tiers up. Read-only here: a
+ *  channel admin manages channel-level assignments, but inherited ones are
+ *  changed at the Group/Class they came from. Shows members the full
+ *  authorized picture, not just channel rows. */
+function InheritedConnections({ teamId }: { teamId: string }) {
+  const [inherited, setInherited] = useState<AuthorizedConnection[]>([]);
+
+  useEffect(() => {
+    api
+      .get<AuthorizedConnection[]>(`/teams/${teamId}/authorized-connections`)
+      .then((all) => setInherited(all.filter((c) => c.source !== "channel")))
+      .catch(() => setInherited([]));
+  }, [teamId]);
+
+  if (inherited.length === 0) return null;
+
+  return (
+    <div className="mb-4 rounded-md border border-brand/25 bg-brand/[0.04] p-3.5">
+      <div className="label-sub mb-2 text-brand">Inherited shared context</div>
+      <div className="flex flex-col gap-1.5">
+        {inherited.map((c) => (
+          <div key={c.connection_id} className="flex items-center justify-between gap-3 text-caption">
+            <span className="min-w-0 truncate text-ink-dim">
+              {PROVIDER_LABEL[c.provider] ?? c.provider} · {c.label}
+              {c.resources.length > 0 && <span className="text-ink-faint"> · {c.resources.length} resource{c.resources.length === 1 ? "" : "s"}</span>}
+            </span>
+            <span className="flex-none rounded-full border border-brand/30 px-2 py-px text-micro text-brand">
+              from {c.source}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-micro leading-relaxed text-ink-faint">
+        Shared by an admin at the {inherited.some((c) => c.source === "class") ? "Class" : "Group"} level. Managed there,
+        not here.
+      </p>
+    </div>
   );
 }

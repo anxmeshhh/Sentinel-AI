@@ -36,22 +36,14 @@ def list_channel_connections(session: Session, team_id: uuid.UUID) -> list[tuple
 
 
 def is_resource_allowed(session: Session, team_id: uuid.UUID, connection_id: uuid.UUID, resource_key: str) -> bool:
-    """Fail-closed: a resource is only usable by this Channel if a Connection
-    assignment exists AND that exact resource_key has been explicitly
-    allow-listed under it. No assignment, or an assignment with no matching
-    allow-listed resource, both mean "not accessible" - never assume access
-    from the Connection's mere presence.
-    """
-    channel_connection = session.execute(
-        select(ChannelConnection).where(ChannelConnection.team_id == team_id, ChannelConnection.connection_id == connection_id)
-    ).scalar_one_or_none()
-    if channel_connection is None:
-        return False
+    """Fail-closed: a resource is only usable by this Channel if the
+    Connection is authorized AND that exact resource_key is allow-listed.
 
-    match = session.execute(
-        select(ChannelConnectionResource).where(
-            ChannelConnectionResource.channel_connection_id == channel_connection.id,
-            ChannelConnectionResource.resource_key == resource_key,
-        )
-    ).scalar_one_or_none()
-    return match is not None
+    Phase 2z: delegates to channel_authorization so a resource allow-listed
+    at the Channel's Group or Class counts too - the check is the union
+    across tiers, not the channel row alone. Still fail-closed: no
+    authorization, or authorization with no matching resource, both mean no.
+    """
+    from app.services.channel_authorization import resource_authorized_for_channel
+
+    return resource_authorized_for_channel(session, team_id, connection_id, resource_key)

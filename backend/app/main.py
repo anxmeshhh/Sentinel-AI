@@ -16,6 +16,7 @@ from app.api.routes import (
     channel_connections,
     channel_readiness,
     hierarchy,
+    shared_connections,
     connections,
     connections_ai,
     drive,
@@ -96,6 +97,7 @@ app.include_router(findings.router)
 app.include_router(admin.router)
 app.include_router(workspaces.router)
 app.include_router(hierarchy.router)
+app.include_router(shared_connections.router)
 app.include_router(teams.router)
 app.include_router(channel_connections.router)
 app.include_router(channel_readiness.router)

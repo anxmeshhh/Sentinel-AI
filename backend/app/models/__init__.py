@@ -3,6 +3,7 @@ from app.models.base import Base
 from app.models.brief import Brief
 from app.models.channel_required_connection import ChannelRequiredConnection
 from app.models.connection import Connection
+from app.models.shared_connection import SharedConnection, SharedConnectionResource
 from app.models.hierarchy import Group, WorkspaceClass
 from app.models.email_summary import EmailSummary
 from app.models.finding import Finding
@@ -25,6 +26,8 @@ __all__ = [
     "WorkspaceClass",
     "Group",
     "Connection",
+    "SharedConnection",
+    "SharedConnectionResource",
     "ChannelRequiredConnection",
     "Signal",
     "AgentRun",

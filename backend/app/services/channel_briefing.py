@@ -46,6 +46,7 @@ from app.models.channel_connection import ChannelConnection, ChannelConnectionRe
 from app.models.connection import Connection, Provider
 from app.models.finding import Finding
 from app.services.attention_engine import list_attention
+from app.services.channel_authorization import resolve_channel_scope
 
 logger = structlog.get_logger("sentinel.channel_briefing")
 
@@ -83,38 +84,15 @@ def build_channel_briefing(session: Session, team_id: uuid.UUID, workspace_id: u
 
 
 def _channel_scope(session: Session, team_id: uuid.UUID) -> dict:
-    """Everything this Channel is authorized for, resolved once per request."""
-    rows = session.execute(
-        select(ChannelConnection, Connection)
-        .join(Connection, Connection.id == ChannelConnection.connection_id)
-        .where(ChannelConnection.team_id == team_id)
-    ).all()
+    """Everything this Channel is authorized for, resolved once per request.
 
-    providers: set[Provider] = set()
-    connection_ids: set[uuid.UUID] = set()
-    labels: list[str] = []
-    allowed_resources: dict[uuid.UUID, set[str]] = {}
-
-    for channel_connection, connection in rows:
-        providers.add(connection.provider)
-        connection_ids.add(connection.id)
-        labels.append(f"{connection.provider.value}:{connection.full_name}")
-        keys = set(
-            session.execute(
-                select(ChannelConnectionResource.resource_key).where(
-                    ChannelConnectionResource.channel_connection_id == channel_connection.id
-                )
-            ).scalars()
-        )
-        if keys:
-            allowed_resources[connection.id] = keys
-
-    return {
-        "connections": connection_ids,
-        "providers": providers,
-        "labels": labels,
-        "allowed_resources": allowed_resources,
-    }
+    Phase 2z: delegates to channel_authorization so the scope is the union
+    across the Channel's own connections plus those shared at its Group and
+    Class. Feed, Briefing, Insights and Knowledge all read through here, so
+    inheritance reaches every one of them without a change at their call
+    sites.
+    """
+    return resolve_channel_scope(session, team_id)
 
 
 def _is_visible_in_channel(session: Session, item: AttentionItem, scope: dict) -> bool:

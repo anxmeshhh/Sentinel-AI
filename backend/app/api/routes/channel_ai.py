@@ -230,3 +230,29 @@ def channel_prepare_meeting(
         raise HTTPException(status_code=404, detail="Meeting not found in this channel")
     brief = prepare_meeting(session, team.workspace_id, event, team_id=team_id, refresh=refresh)
     return MeetingBriefOut.model_validate(brief)
+
+
+@router.get("/teams/{team_id}/authorized-connections")
+def channel_authorized_connections(
+    team_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    """Everything this channel can actually use, across all three tiers -
+    its own assignments plus what it inherits from its Group and Class. The
+    Extensions UI shows inherited ones read-only ('from Class') so a member
+    sees the full authorized picture, not just channel-level rows."""
+    require_channel_role(session, user, team_id, allowed=_ANY_MEMBER)
+    _get_team_or_404(session, team_id)
+    from app.services.channel_authorization import authorized_connections
+
+    return [
+        {
+            "connection_id": str(cid),
+            "provider": auth.connection.provider.value,
+            "label": auth.connection.full_name,
+            "source": auth.source,  # channel | group | class
+            "resources": sorted(auth.resources),
+        }
+        for cid, auth in authorized_connections(session, team_id).items()
+    ]

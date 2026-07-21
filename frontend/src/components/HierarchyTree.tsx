@@ -5,6 +5,7 @@ import { api, ApiError } from "../api/client";
 import type { TreeClass, TreeGroup } from "../api/types";
 import { useHierarchy } from "../context/HierarchyContext";
 import { InviteModal } from "./InviteModal";
+import { SharedConnectionsModal } from "./SharedConnectionsModal";
 import { Icon } from "./ui";
 import { useWorkspace } from "../context/WorkspaceContext";
 
@@ -103,22 +104,44 @@ function ClassNode({ klass }: { klass: TreeClass }) {
   const { refresh } = useHierarchy();
   const [open, setOpen] = useState(true);
   const [creatingGroup, setCreatingGroup] = useState(false);
+  const [managingConnections, setManagingConnections] = useState(false);
 
   const canManageGroups = active != null && GROUP_ADMIN_ROLES.includes(active.role);
+  const canManageClass = active != null && CLASS_ADMIN_ROLES.includes(active.role);
 
   return (
-    <div className="mb-1">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-1 px-2 py-1 text-left text-caption font-semibold text-ink-faint hover:text-ink-dim"
-      >
-        <Chevron open={open} />
-        <span className="truncate">
-          {klass.icon ? `${klass.icon} ` : ""}
-          {klass.name}
-        </span>
-      </button>
+    <div className="group/class mb-1">
+      <div className="flex items-center">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-1 px-2 py-1 text-left text-caption font-semibold text-ink-faint hover:text-ink-dim"
+        >
+          <Chevron open={open} />
+          <span className="truncate">
+            {klass.icon ? `${klass.icon} ` : ""}
+            {klass.name}
+          </span>
+        </button>
+        {canManageClass && (
+          <button
+            onClick={() => setManagingConnections(true)}
+            title="Shared connections for this class"
+            className="mr-1 hidden flex-none px-1.5 text-micro text-ink-faint hover:text-brand group-hover/class:block"
+          >
+            connections
+          </button>
+        )}
+      </div>
+      {managingConnections && active && (
+        <SharedConnectionsModal
+          scope="class"
+          workspaceId={active.id}
+          classId={klass.id}
+          label={klass.name}
+          onClose={() => setManagingConnections(false)}
+        />
+      )}
 
       {open && (
         <div className="ml-2 border-l border-border pl-1.5">
@@ -126,7 +149,7 @@ function ClassNode({ klass }: { klass: TreeClass }) {
             <div className="px-2 py-1 text-caption text-ink-faint">No groups yet</div>
           )}
           {klass.groups.map((group) => (
-            <GroupNode key={group.id} group={group} />
+            <GroupNode key={group.id} group={group} classId={klass.id} />
           ))}
 
           {canManageGroups &&
@@ -156,8 +179,9 @@ function ClassNode({ klass }: { klass: TreeClass }) {
   );
 }
 
-function GroupNode({ group }: { group: TreeGroup }) {
+function GroupNode({ group, classId }: { group: TreeGroup; classId: string }) {
   const { active } = useWorkspace();
+  const [managingConnections, setManagingConnections] = useState(false);
   const { refresh } = useHierarchy();
   const { teamId } = useParams<{ teamId: string }>();
   const navigate = useNavigate();
@@ -174,18 +198,39 @@ function GroupNode({ group }: { group: TreeGroup }) {
   const canCreateChannel = active != null && GROUP_ADMIN_ROLES.includes(active.role);
 
   return (
-    <div className="mb-0.5">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-small font-medium text-ink-dim transition-colors hover:text-ink"
-      >
-        <Chevron open={open} />
-        <span className="truncate">
-          {group.icon ? `${group.icon} ` : ""}
-          {group.name}
-        </span>
-      </button>
+    <div className="group/grp mb-0.5">
+      <div className="flex items-center">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-small font-medium text-ink-dim transition-colors hover:text-ink"
+        >
+          <Chevron open={open} />
+          <span className="truncate">
+            {group.icon ? `${group.icon} ` : ""}
+            {group.name}
+          </span>
+        </button>
+        {canCreateChannel && (
+          <button
+            onClick={() => setManagingConnections(true)}
+            title="Shared connections for this group"
+            className="mr-1 hidden flex-none px-1.5 text-micro text-ink-faint hover:text-brand group-hover/grp:block"
+          >
+            connections
+          </button>
+        )}
+      </div>
+      {managingConnections && active && (
+        <SharedConnectionsModal
+          scope="group"
+          workspaceId={active.id}
+          classId={classId}
+          groupId={group.id}
+          label={group.name}
+          onClose={() => setManagingConnections(false)}
+        />
+      )}
 
       {open && (
         <div className="ml-3">

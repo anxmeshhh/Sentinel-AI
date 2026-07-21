@@ -493,3 +493,30 @@ export interface ChannelPrepare {
   no_connections: boolean;
   meetings: UpcomingMeeting[];
 }
+
+// --- Phase 2z: shared connections at Class / Group ------------------------
+
+export interface SharedConnectionResource {
+  id: string;
+  resource_key: string;
+  resource_label: string;
+}
+
+export interface SharedConnection {
+  id: string;
+  scope_type: "class" | "group";
+  scope_id: string;
+  connection_id: string;
+  provider: string;
+  label: string;
+  resources: SharedConnectionResource[];
+}
+
+/** What a channel can actually use, across all three tiers. */
+export interface AuthorizedConnection {
+  connection_id: string;
+  provider: string;
+  label: string;
+  source: "channel" | "group" | "class";
+  resources: string[];
+}

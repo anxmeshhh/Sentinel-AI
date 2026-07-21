@@ -610,10 +610,12 @@ def _get_connection(
     if connection is None:
         return None
     if team_id is not None:
-        assigned = session.execute(
-            select(ChannelConnection).where(ChannelConnection.team_id == team_id, ChannelConnection.connection_id == connection.id)
-        ).scalar_one_or_none()
-        if assigned is None:
+        # Phase 2z: authorized if assigned at the Channel OR inherited from
+        # its Group or Class. The union lives in channel_authorization, so
+        # the AI's gate and the feed/briefing scope can never disagree.
+        from app.services.channel_authorization import connection_authorized_for_channel
+
+        if not connection_authorized_for_channel(session, team_id, connection.id):
             return None
     return connection
 

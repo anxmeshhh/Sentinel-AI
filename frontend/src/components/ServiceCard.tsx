@@ -20,8 +20,8 @@ interface ServiceCardProps {
 // router; `onClick` handles in-page state (used nowhere left after the
 // workspace-page split, kept for flexibility).
 export function ServiceCard({ icon, name, status, desc, connected, active, disabled, to, onClick, onRemove }: ServiceCardProps) {
-  const className = `relative rounded-lg border p-5 text-left transition-colors ${
-    active ? "border-accent bg-accent/5" : "border-border bg-surface hover:border-accent/50"
+  const className = `relative flex h-full flex-col rounded-md border p-5 text-left transition-colors ${
+    active ? "border-ink-faint bg-surface/60" : "border-border hover:border-border-strong hover:bg-surface/40"
   } ${disabled ? "opacity-70" : ""}`;
 
   const content = (
@@ -40,7 +40,7 @@ export function ServiceCard({ icon, name, status, desc, connected, active, disab
         </button>
       )}
       <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-md bg-surface-2">{icon}</div>
-      <div className="mb-1 truncate pr-4 text-lead font-semibold text-ink">{name}</div>
+      <div className="mb-1 pr-4 text-lead font-semibold leading-tight text-ink">{name}</div>
       <div className={`mb-2 text-small font-semibold ${connected ? "text-good" : "text-ink-faint"}`}>{status}</div>
       <div className="text-caption leading-relaxed text-ink-faint">{desc}</div>
     </>

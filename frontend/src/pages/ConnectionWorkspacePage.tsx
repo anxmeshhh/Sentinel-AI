@@ -162,7 +162,7 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
 
   return (
     <div>
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <ServiceCard
           icon={<MailIcon />}
           name="Gmail"
@@ -185,7 +185,7 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
           icon={<MeetIcon />}
           name="Google Meet"
           status={googleCalendar ? "Available" : "Not connected"}
-          desc="Meeting history — rides on Calendar, no separate connection needed"
+          desc="Rides on Calendar — no separate connection"
           connected={Boolean(googleCalendar)}
           to={googleCalendar ? "/meet" : undefined}
           disabled={!googleCalendar}

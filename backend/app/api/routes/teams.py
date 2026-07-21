@@ -13,7 +13,7 @@ from app.api.deps import get_current_user, get_db, require_channel_role, require
 from app.models.team import ChannelPrivacy, ChannelRole, Team, TeamMembership
 from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
-from app.schemas.team import MyTeamOut, TeamCreate, TeamMemberOut, TeamMemberRoleUpdate, TeamOut, TeamUpdate
+from app.schemas.team import MyTeamOut, TeamCreate, TeamMemberAdd, TeamMemberOut, TeamMemberRoleUpdate, TeamOut, TeamUpdate
 from app.services.channel_management import (
     ChannelConfigError,
     create_channel,
@@ -295,6 +295,45 @@ def _reject_if_last_admin(session: Session, team_id: uuid.UUID, membership: Team
     ).scalar_one()
     if other_members > 0:
         raise HTTPException(status_code=400, detail="You're the only Channel Admin - promote someone else first")
+
+
+@router.post("/teams/{team_id}/members", response_model=TeamMemberOut, status_code=201)
+def add_team_member(
+    team_id: uuid.UUID,
+    payload: TeamMemberAdd,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> TeamMemberOut:
+    """Channel admin adds an existing workspace member to this channel.
+
+    The workspace boundary is the hard check: a channel must never be a way
+    to smuggle someone into a Group they don't belong to - same rule
+    create_channel enforces on its initial member list.
+    """
+    require_channel_role(session, user, team_id, allowed=[ChannelRole.CHANNEL_ADMIN])
+    team = session.get(Team, team_id)
+    if team.is_archived:
+        raise HTTPException(status_code=400, detail="This channel is archived")
+
+    target_membership = session.execute(
+        select(Membership).where(Membership.workspace_id == team.workspace_id, Membership.user_id == payload.user_id)
+    ).scalar_one_or_none()
+    if target_membership is None:
+        # 404, not 403: don't confirm whether that user id exists at all.
+        raise HTTPException(status_code=404, detail="That person isn't a member of this workspace")
+
+    existing = session.execute(
+        select(TeamMembership).where(TeamMembership.team_id == team_id, TeamMembership.user_id == payload.user_id)
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Already a member of this channel")
+
+    membership = TeamMembership(team_id=team_id, user_id=payload.user_id)
+    session.add(membership)
+    session.commit()
+
+    target = session.get(User, payload.user_id)
+    return TeamMemberOut(user_id=target.id, name=target.name, email=target.email, channel_role=membership.role.value)
 
 
 @router.get("/teams/{team_id}/members", response_model=list[TeamMemberOut])

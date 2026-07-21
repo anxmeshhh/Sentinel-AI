@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, ApiError } from "../../api/client";
-import type { MemberReadiness, TeamMember } from "../../api/types";
+import type { MemberReadiness, TeamMember, WorkspaceMember } from "../../api/types";
 import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
 import { InviteModal } from "../InviteModal";
 import { LoadingBlock } from "../ui";
@@ -11,7 +11,7 @@ import { LoadingBlock } from "../ui";
  * Readiness here is a state per provider. It is never a credential, and
  * there is no control that would let an admin act on someone else's
  * connection. */
-export function MembersModule({ teamId, isAdmin, channelName }: { teamId: string; isAdmin: boolean; channelName: string }) {
+export function MembersModule({ teamId, isAdmin, channelName, workspaceId }: { teamId: string; isAdmin: boolean; channelName: string; workspaceId: string }) {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [roster, setRoster] = useState<MemberReadiness[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,12 +48,15 @@ export function MembersModule({ teamId, isAdmin, channelName }: { teamId: string
         <span className="text-caption text-ink-faint">
           {members.length} member{members.length === 1 ? "" : "s"}
         </span>
-        <button
-          onClick={() => setInviting(true)}
-          className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-        >
-          Invite to this channel
-        </button>
+        <div className="flex items-center gap-3">
+          {isAdmin && <AddMemberPicker teamId={teamId} workspaceId={workspaceId} members={members} onAdded={load} />}
+          <button
+            onClick={() => setInviting(true)}
+            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
+          >
+            Invite to this channel
+          </button>
+        </div>
       </div>
       {inviting && (
         <InviteModal scope={{ type: "team", id: teamId }} label={`#${channelName}`} onClose={() => setInviting(false)} />
@@ -129,6 +132,80 @@ export function MembersModule({ teamId, isAdmin, channelName }: { teamId: string
           </div>
         );
       })}
+    </div>
+  );
+}
+
+
+/** Admin adds an existing workspace member directly - the fast path when
+ *  the person is already in the Group. People outside the workspace still
+ *  come in through invite links, where account reuse lives. */
+function AddMemberPicker({
+  teamId,
+  workspaceId,
+  members,
+  onAdded,
+}: {
+  teamId: string;
+  workspaceId: string;
+  members: TeamMember[];
+  onAdded: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [candidates, setCandidates] = useState<WorkspaceMember[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    api.get<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`).then(setCandidates).catch(() => setCandidates([]));
+  }, [open, workspaceId]);
+
+  const inChannel = new Set(members.map((m) => m.user_id));
+  const addable = candidates.filter((c) => !inChannel.has(c.user_id));
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink">
+        Add member
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(false)} className="text-caption text-ink-dim underline underline-offset-2 hover:text-ink">
+        Close
+      </button>
+      <div className="absolute right-0 top-7 z-20 w-72 rounded-md border border-border bg-surface-2 p-2 shadow-overlay">
+        {addable.length === 0 ? (
+          <p className="px-2 py-1.5 text-caption text-ink-faint">
+            Everyone in this workspace is already in the channel — use an invite link for new people.
+          </p>
+        ) : (
+          addable.map((c) => (
+            <button
+              key={c.user_id}
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await api.post(`/teams/${teamId}/members`, { user_id: c.user_id });
+                  await onAdded();
+                  setOpen(false);
+                } catch (e) {
+                  alert(e instanceof ApiError ? e.message : "Failed to add");
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              className="block w-full rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-surface-3 disabled:opacity-50"
+            >
+              <span className="block truncate text-caption text-ink">{c.name}</span>
+              <span className="block truncate text-micro text-ink-faint">{c.email}</span>
+            </button>
+          ))
+        )}
+      </div>
     </div>
   );
 }

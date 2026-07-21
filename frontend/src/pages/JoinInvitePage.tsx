@@ -35,7 +35,22 @@ export function JoinInvitePage() {
       const result = await api.post<InviteAcceptResult>(`/invites/${token}/accept`);
       await refresh();
       setActiveId(result.workspace_id);
-      navigate("/");
+
+      // Land where the invite actually points. A channel invite used to dump
+      // the new member on the dashboard - they never saw the channel they
+      // were invited to, let alone its setup checklist. Now: blocked setup
+      // goes straight to Extensions (the gateway that fixes it), ready goes
+      // to the channel itself, and only workspace-level invites land home.
+      if (result.team_id) {
+        try {
+          const readiness = await api.get<{ is_ready: boolean }>(`/teams/${result.team_id}/readiness`);
+          navigate(readiness.is_ready ? `/channels/${result.team_id}` : `/channels/${result.team_id}/extensions`);
+        } catch {
+          navigate(`/channels/${result.team_id}`);
+        }
+      } else {
+        navigate("/");
+      }
     } catch (e) {
       setJoinError(e instanceof ApiError ? e.message : "Couldn't join — try again");
     } finally {

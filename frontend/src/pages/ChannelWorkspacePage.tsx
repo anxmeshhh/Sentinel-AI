@@ -61,6 +61,20 @@ export function ChannelWorkspacePage() {
     void loadShell();
   }, [loadShell]);
 
+  // Live readiness: `syncing` is a temporary state that resolves server-side
+  // when the first ingestion lands, but nothing used to tell the page - the
+  // checklist sat on "Syncing" until a manual reload (a known Phase 2x-B
+  // gap). Poll the one cheap endpoint only while something is actually
+  // syncing; the moment nothing is, the interval stops existing.
+  const anySyncing = readiness?.requirements.some((r) => r.state === "syncing") ?? false;
+  useEffect(() => {
+    if (!anySyncing) return;
+    const interval = setInterval(() => {
+      api.get<ChannelReadiness>(`/teams/${teamId}/readiness`).then(setReadiness).catch(() => undefined);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [anySyncing, teamId]);
+
   if (loading) return <LoadingBlock />;
   if (error || !team) {
     return (
@@ -142,7 +156,7 @@ export function ChannelWorkspacePage() {
               onChanged={loadShell}
             />
           )}
-          {activeModule === "members" && <MembersModule teamId={teamId} isAdmin={isAdmin} channelName={team.name} />}
+          {activeModule === "members" && <MembersModule teamId={teamId} isAdmin={isAdmin} channelName={team.name} workspaceId={team.workspace_id} />}
           {activeModule === "settings" && isAdmin && <SettingsModule team={team} onChanged={loadShell} />}
         </>
       )}

@@ -191,3 +191,33 @@ session, workspace_id=workspace.id, group_id=make_group(session, workspace.id).i
     # The workspace Connection itself must survive - it belongs to the
     # Group, the Channel only referenced it.
     assert session.execute(select(Connection).where(Connection.id == connection.id)).scalar_one_or_none() is not None
+
+
+def test_admin_adds_existing_workspace_member_directly(session):
+    """The entry path join_team's comment always promised for non-public
+    channels ("an admin adding you") - now real. The workspace boundary is
+    the hard check: a channel must never smuggle someone into a Group."""
+    from app.api.routes.teams import add_team_member
+    from app.schemas.team import TeamMemberAdd
+
+    workspace, owner, employee = _setup(session)
+    team = create_channel(
+        session, workspace_id=workspace.id, group_id=make_group(session, workspace.id).id,
+        creator=owner, name="private-ops", privacy=ChannelPrivacy.PRIVATE,
+    )
+
+    added = add_team_member(team_id=team.id, payload=TeamMemberAdd(user_id=employee.id), session=session, user=owner)
+    assert added.channel_role == "channel_member"
+
+    # An outsider isn't in the workspace: 404, not 403 - don't confirm the id.
+    outsider = User(email="stranger@other.test", name="Stranger")
+    session.add(outsider)
+    session.commit()
+    with pytest.raises(HTTPException) as exc_info:
+        add_team_member(team_id=team.id, payload=TeamMemberAdd(user_id=outsider.id), session=session, user=owner)
+    assert exc_info.value.status_code == 404
+
+    # A plain channel member can't add people - admin capability only.
+    with pytest.raises(HTTPException) as exc_info:
+        add_team_member(team_id=team.id, payload=TeamMemberAdd(user_id=outsider.id), session=session, user=employee)
+    assert exc_info.value.status_code == 403

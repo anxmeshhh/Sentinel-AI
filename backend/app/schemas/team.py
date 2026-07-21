@@ -74,3 +74,13 @@ class TeamMemberOut(BaseModel):
 
 class TeamMemberRoleUpdate(BaseModel):
     channel_role: str
+
+
+class TeamMemberAdd(BaseModel):
+    """Admin adds an existing *workspace* member directly - the comment in
+    join_team always promised "an admin adding you" as an entry path for
+    non-public channels; this is that path. People outside the workspace
+    still come in through invites, which is where account reuse and role
+    assignment already live."""
+
+    user_id: uuid.UUID

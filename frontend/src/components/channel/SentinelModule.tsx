@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { api } from "../../api/client";
 import type { ChannelAIHistoryItem } from "../../api/types";
-import { GoogleAICommand } from "../GoogleAICommand";
+import { SentinelPanel } from "../SentinelPanel";
 
 /** Channel-contextual Sentinel: the orchestrator, scoped to this channel's
  *  authorized connections and resources. */
@@ -34,16 +34,15 @@ export function SentinelModule({
 
   return (
     <div>
-      <div className="card">
-        <GoogleAICommand
+      <div className="card overflow-hidden p-0 sm:p-0" style={{ height: 520 }}>
+        <SentinelPanel
           endpointBase={`/teams/${teamId}/ai`}
+          contextLabel={`#${channelName}`}
           placeholder={`Ask Sentinel about #${channelName}…`}
-          helpText={
-            <>
-              Sentinel only uses Connections and resources authorized for <strong>#{channelName}</strong> — never the rest
-              of the Workspace. Actions that change anything are shown as a plan you confirm first.
-            </>
-          }
+          suggestions={[
+            "What needs this channel's attention right now?",
+            "Summarize the latest activity here",
+          ]}
         />
       </div>
 

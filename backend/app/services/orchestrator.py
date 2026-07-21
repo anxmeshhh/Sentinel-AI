@@ -152,6 +152,48 @@ class OrchestrationResult:
     plan: dict | None = None
     pending_action: dict | None = None
     steps: list[dict] = field(default_factory=list)
+    sources: list[dict] = field(default_factory=list)
+
+
+# Which url-ish key a tool result may carry, in preference order. Meetings
+# expose two; the calendar page beats the transient meet link as a "source".
+_URL_KEYS = ("url", "calendar_url", "meet_url")
+_TITLE_KEYS = ("subject", "title", "name")
+_META_KEYS = ("from", "start", "owner", "modified_at")
+
+_SOURCE_KIND = {
+    "search_emails": "email",
+    "list_calendar_events": "event",
+    "list_meeting_history": "meeting",
+    "search_drive": "file",
+    "read_drive_file": "file",
+}
+
+
+def _extract_sources(tool_name: str, result: dict | list) -> list[dict]:
+    """Compact, navigable citations pulled from a read tool's result.
+
+    The tool results already contain real urls (the system prompt depends on
+    them), but until now they were fed to the model and thrown away - the UI
+    could only show whatever prose the model chose to write. This surfaces
+    them structurally so "Sources" is data, not something parsed back out of
+    markdown. Unknown shapes yield nothing rather than guessing.
+    """
+    kind = _SOURCE_KIND.get(tool_name)
+    if kind is None:
+        return []
+    items = result if isinstance(result, list) else [result]
+    sources = []
+    for item in items[:6]:  # a citation list, not a second result dump
+        if not isinstance(item, dict) or "error" in item:
+            continue
+        url = next((item[k] for k in _URL_KEYS if item.get(k)), None)
+        title = next((item[k] for k in _TITLE_KEYS if item.get(k)), None)
+        if not url or not title:
+            continue
+        meta = next((item[k] for k in _META_KEYS if item.get(k)), None)
+        sources.append({"kind": kind, "title": str(title), "meta": str(meta) if meta else None, "url": str(url)})
+    return sources
 
 
 def _tool_schemas(allowed_providers: set[Provider] | None = None) -> list[dict]:
@@ -369,6 +411,7 @@ def run_command(
         plan=final.get("plan"),
         pending_action=final.get("pending_action"),
         steps=final.get("steps", []),
+        sources=final.get("sources", []),
     )
 
 
@@ -391,6 +434,8 @@ def run_command_stream(
     llm = LLMClient()
     messages: list[dict] = [{"role": "user", "content": user_command}]
     steps: list[dict] = []
+    sources: list[dict] = []
+    seen_source_urls: set[str] = set()
 
     allowed_providers: set[Provider] | None = None
     if team_id is not None:
@@ -398,7 +443,7 @@ def run_command_stream(
         if not allowed_providers:
             reply = "This channel doesn't have any Connections assigned yet - ask a Channel Admin to add one before asking Sentinel here."
             _maybe_log_channel_history(session, team_id, user_id, user_command, reply)
-            yield {"type": "result", "status": "done", "reply": reply, "steps": steps}
+            yield {"type": "result", "status": "done", "reply": reply, "steps": steps, "sources": sources}
             return
 
     yield {"type": "status", "message": "Analyzing your request…"}
@@ -426,7 +471,7 @@ def run_command_stream(
                 "I wasn't able to put together a clear answer for that - try rephrasing or narrowing the request."
             )
             _maybe_log_channel_history(session, team_id, user_id, user_command, reply)
-            yield {"type": "result", "status": "done", "reply": reply, "steps": steps}
+            yield {"type": "result", "status": "done", "reply": reply, "steps": steps, "sources": sources}
             return
 
         messages.append(
@@ -454,6 +499,7 @@ def run_command_stream(
                     "plan": _describe_plan(name, args),
                     "pending_action": {"name": name, "arguments": args},
                     "steps": steps,
+                    "sources": sources,
                 }
                 return
 
@@ -472,6 +518,10 @@ def run_command_stream(
                 logger.warning("orchestrator_tool_failed", tool=name, error=str(exc))
                 result = {"error": f"the {name} tool failed: {exc}"}
             steps.append({"tool": name, "arguments": args})
+            for source in _extract_sources(name, result):
+                if source["url"] not in seen_source_urls:
+                    seen_source_urls.add(source["url"])
+                    sources.append(source)
             messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, default=str)})
 
     reply = "I wasn't able to finish within the step limit - try a more specific request."
@@ -481,6 +531,7 @@ def run_command_stream(
         "status": "done",
         "reply": reply,
         "steps": steps,
+        "sources": sources,
     }
 
 

@@ -6,12 +6,12 @@ import { api } from "../api/client";
 import type { Connection } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { ConnectScopeDialog } from "../components/ConnectScopeDialog";
-import { GoogleAICommand } from "../components/GoogleAICommand";
+import { SentinelPanel } from "../components/SentinelPanel";
 import { ScopeNotice, scopeOf } from "../components/ScopeBadge";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { CalendarIcon, DriveIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
 import { ServiceCard } from "../components/ServiceCard";
-import { LoadingBlock } from "../components/ui";
+import { Icon, LoadingBlock } from "../components/ui";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -41,37 +41,90 @@ export function ConnectionWorkspacePage() {
 
   const meta = PROVIDER_META[provider];
 
+  // The AI panel only exists where the orchestrator actually has tools -
+  // Google today. Showing it on GitHub/coming-soon pages would promise an
+  // intelligence that isn't wired up yet.
+  const showPanel = meta != null && provider === "google" && !loading && connections.length > 0;
+
   return (
-    <div className="max-w-3xl">
-      <BackNav back={{ to: "/", label: "Dashboard" }} crumbs={meta ? [{ label: "Dashboard", to: "/" }, { label: "Connections", to: "/" }, { label: meta.label }] : undefined} />
+    <div className="flex flex-col gap-6 xl:flex-row">
+      <div className="min-w-0 max-w-3xl flex-1">
+        <BackNav back={{ to: "/", label: "Dashboard" }} crumbs={meta ? [{ label: "Dashboard", to: "/" }, { label: "Connections", to: "/" }, { label: meta.label }] : undefined} />
 
-      {!meta ? (
-        <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
-          Unknown connection.
-        </div>
-      ) : (
-        <>
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-surface-2">{meta.icon}</div>
-            <h1 className="text-h2 font-medium text-balance">{meta.label}</h1>
+        {!meta ? (
+          <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
+            Unknown connection.
           </div>
+        ) : (
+          <>
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-md bg-surface-2">{meta.icon}</div>
+              <h1 className="text-h2 font-medium text-balance">{meta.label}</h1>
+            </div>
 
-          {/* Who can use anything connected here - stated up front, not
-              hidden behind settings or a tooltip. */}
-          <ScopeNotice scope={scopeOf(active)} workspaceName={active?.name} />
+            {/* Who can use anything connected here - stated up front, not
+                hidden behind settings or a tooltip. */}
+            <ScopeNotice scope={scopeOf(active)} workspaceName={active?.name} />
 
-          {loading ? (
-            <LoadingBlock />
-          ) : provider === "google" ? (
-            <GoogleWorkspace connections={connections} onChanged={load} />
-          ) : provider === "github" ? (
-            <GitHubWorkspace connections={connections} onChanged={load} />
-          ) : (
-            <ComingSoonWorkspace label={meta.label} />
-          )}
-        </>
-      )}
+            {loading ? (
+              <LoadingBlock />
+            ) : provider === "google" ? (
+              <GoogleWorkspace connections={connections} onChanged={load} />
+            ) : provider === "github" ? (
+              <GitHubWorkspace connections={connections} onChanged={load} />
+            ) : (
+              <ComingSoonWorkspace label={meta.label} />
+            )}
+          </>
+        )}
+      </div>
+
+      {showPanel && <AISidebar />}
     </div>
+  );
+}
+
+/** The persistent Sentinel panel: main area is where you work manually,
+ *  this is where you ask for help with whatever you're looking at.
+ *  Collapsible so the main workspace can take the full width. */
+function AISidebar() {
+  const [open, setOpen] = useState(true);
+
+  if (!open) {
+    return (
+      <div className="flex-none xl:w-10">
+        <button
+          onClick={() => setOpen(true)}
+          title="Open Sentinel"
+          className="xl:sticky xl:top-6 flex items-center gap-2 rounded-md border border-border px-3 py-2 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
+        >
+          <span className="relative h-[14px] w-[14px] flex-none rounded-full border border-ink" aria-hidden="true">
+            <span className="absolute inset-[4px] rounded-full bg-brand" />
+          </span>
+          <span className="xl:hidden">Sentinel</span>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <aside className="w-full flex-none xl:w-[380px]">
+      <div className="card overflow-hidden p-0 sm:p-0 xl:sticky xl:top-6 xl:h-[calc(100vh-6rem)]" style={{ minHeight: 420 }}>
+        <SentinelPanel
+          contextLabel="Google Workspace"
+          suggestions={[
+            "What are my most important unread emails?",
+            "What's on my calendar this week?",
+            "Find my most recently edited Drive files",
+          ]}
+          header={
+            <button onClick={() => setOpen(false)} aria-label="Collapse Sentinel" className="rounded-md p-1 text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink">
+              <Icon name="close" size={14} />
+            </button>
+          }
+        />
+      </div>
+    </aside>
   );
 }
 
@@ -182,12 +235,6 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
         <p className="mb-4 text-small text-watch">
           Drive needs the newer Google connection scope — click "Reconnect Google" above to add it.
         </p>
-      )}
-
-      {connectedCount > 0 && (
-        <div className="card">
-          <GoogleAICommand />
-        </div>
       )}
 
       {showScopeDialog && (

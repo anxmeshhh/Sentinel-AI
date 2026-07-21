@@ -6,7 +6,7 @@ import type { AttentionContext, AttentionItem, CalendarPlan } from "../api/types
 import { AttentionEmptyState } from "../components/AttentionEmptyState";
 import { attentionIcon, EvidenceLink } from "../components/AttentionStrip";
 import { BackNav } from "../components/BackNav";
-import { GoogleAICommand } from "../components/GoogleAICommand";
+import { SentinelPanel } from "../components/SentinelPanel";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
 import { LoadingBlock } from "../components/ui";
 
@@ -340,10 +340,11 @@ export function AttentionPage() {
                   &times;
                 </button>
               </div>
-              <GoogleAICommand
+              <SentinelPanel
+                contextLabel="This attention item"
                 contextPrefix={`Regarding this attention item: "${askItem.title}" (${askItem.why}).`}
                 placeholder="Why does this matter? What should I do?"
-                helpText={<>Sentinel will investigate this item across your connected services and can help you act on it.</>}
+                suggestions={["Why does this matter?", "What should I do about it?"]}
               />
             </div>
           </div>

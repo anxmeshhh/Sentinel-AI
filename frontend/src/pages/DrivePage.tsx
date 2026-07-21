@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { Connection, DriveAnalytics, DriveFile } from "../api/types";
 import { BackNav } from "../components/BackNav";
-import { GoogleAICommand } from "../components/GoogleAICommand";
+import { SentinelPanel } from "../components/SentinelPanel";
 import { LoadingBlock } from "../components/ui";
 
 const MIME_FILTERS = [
@@ -265,9 +265,11 @@ export function DrivePage() {
                 </a>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto">
-                <GoogleAICommand
+                <SentinelPanel
+                  contextLabel={`Drive · ${selectedFile.name}`}
                   contextPrefix={`Regarding the Drive file "${selectedFile.name}" (Drive file id: ${selectedFile.id}):`}
                   placeholder="Summarize, extract deadlines, ask anything…"
+                  suggestions={["Summarize this document", "Extract any deadlines or action items"]}
                 />
               </div>
             </div>

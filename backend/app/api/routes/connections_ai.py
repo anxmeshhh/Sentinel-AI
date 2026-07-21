@@ -12,7 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_workspace_id
+from app.api.deps import get_current_user, get_db, get_workspace_id
+from app.models.user import User
 from app.schemas.orchestrator import CommandRequest, CommandResponse, ExecuteActionRequest, ExecuteActionResponse
 from app.services.orchestrator import execute_planned_action, run_command, run_command_stream
 
@@ -24,9 +25,10 @@ def google_command(
     payload: CommandRequest,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> CommandResponse:
-    result = run_command(session, workspace_id, payload.command)
-    return CommandResponse(status=result.status, reply=result.reply, plan=result.plan, pending_action=result.pending_action)
+    result = run_command(session, workspace_id, payload.command, user_id=user.id)
+    return CommandResponse(status=result.status, reply=result.reply, plan=result.plan, pending_action=result.pending_action, sources=result.sources)
 
 
 @router.post("/command/stream")
@@ -34,6 +36,7 @@ def google_command_stream(
     payload: CommandRequest,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """Same loop as /command, but streams each real step as it happens (SSE
     framing) instead of returning only the final answer - what the AI
@@ -45,7 +48,7 @@ def google_command_stream(
     """
 
     def event_source():
-        for event in run_command_stream(session, workspace_id, payload.command):
+        for event in run_command_stream(session, workspace_id, payload.command, user_id=user.id):
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(event_source(), media_type="text/event-stream")
@@ -56,6 +59,7 @@ def google_command_execute(
     payload: ExecuteActionRequest,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> ExecuteActionResponse:
     """Only reachable when the user clicks "Confirm & Execute" on a plan the
     /command endpoint returned - the frontend re-submits that exact
@@ -64,7 +68,7 @@ def google_command_execute(
     another workspace's calendar even with a tampered request.
     """
     try:
-        result = execute_planned_action(session, workspace_id, payload.name, payload.arguments)
+        result = execute_planned_action(session, workspace_id, payload.name, payload.arguments, user_id=user.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

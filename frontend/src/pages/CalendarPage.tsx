@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { CalendarEvent, Connection, Holiday, HolidayCategory } from "../api/types";
 import { BackNav } from "../components/BackNav";
-import { GoogleAICommand } from "../components/GoogleAICommand";
+import { SentinelPanel } from "../components/SentinelPanel";
 import { LoadingBlock } from "../components/ui";
 
 type View = "month" | "week" | "day" | "agenda";
@@ -197,7 +197,12 @@ export function CalendarPage() {
               }}
             />
           ) : (
-            <GoogleAICommand />
+            <div style={{ height: 440 }}>
+              <SentinelPanel
+                contextLabel="Calendar"
+                suggestions={["What's on my calendar this week?", "Find a free 30-minute slot tomorrow"]}
+              />
+            </div>
           )}
         </div>
       )}

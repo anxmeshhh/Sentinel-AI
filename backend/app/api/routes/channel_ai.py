@@ -52,7 +52,7 @@ def channel_ai_command(
     require_channel_role(session, user, team_id, allowed=_ANY_MEMBER)
     team = _get_team_or_404(session, team_id)
     result = run_command(session, team.workspace_id, payload.command, team_id=team_id, user_id=user.id)
-    return CommandResponse(status=result.status, reply=result.reply, plan=result.plan, pending_action=result.pending_action)
+    return CommandResponse(status=result.status, reply=result.reply, plan=result.plan, pending_action=result.pending_action, sources=result.sources)
 
 
 @router.post("/teams/{team_id}/ai/command/stream")
@@ -82,7 +82,7 @@ def channel_ai_command_execute(
     require_channel_role(session, user, team_id, allowed=_ANY_MEMBER)
     team = _get_team_or_404(session, team_id)
     try:
-        result = execute_planned_action(session, team.workspace_id, payload.name, payload.arguments)
+        result = execute_planned_action(session, team.workspace_id, payload.name, payload.arguments, user_id=user.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

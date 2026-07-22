@@ -14,6 +14,7 @@ from app.integrations.google_auth import get_valid_access_token
 from app.integrations.google_calendar_client import GoogleCalendarClient
 from app.models.connection import Connection, Provider
 from app.models.signal import SignalType
+from app.providers import spec_for
 from app.repositories.connections import ConnectionRepository
 from app.repositories.signals import SignalRepository
 
@@ -28,6 +29,12 @@ def ingest_connection(session: Session, connection: Connection) -> int:
     since = connection.last_synced_at or (datetime.now(timezone.utc) - INITIAL_BACKFILL)
     signal_repo = SignalRepository(session, connection.workspace_id)
 
+    spec = spec_for(connection.provider)
+    if not spec.ingests:
+        # Live-query providers have no ingestion by design. Saying so beats
+        # "no handler found", which reads like an omission someone should fix.
+        raise ValueError(f"{spec.label} is queried live and is never ingested")
+
     if connection.provider == Provider.GITHUB:
         count = _ingest_github(connection, since, signal_repo)
     elif connection.provider == Provider.GOOGLE_CALENDAR:
@@ -35,7 +42,8 @@ def ingest_connection(session: Session, connection: Connection) -> int:
     elif connection.provider == Provider.GMAIL:
         count = _ingest_gmail(session, connection, since, signal_repo)
     else:
-        raise ValueError(f"No ingestion handler for provider {connection.provider}")
+        # The registry says this provider ingests, but nothing here does it.
+        raise ValueError(f"{spec.label} declares ingestion but has no handler")
 
     ConnectionRepository(session, connection.workspace_id).mark_synced(connection, datetime.now(timezone.utc))
     session.commit()

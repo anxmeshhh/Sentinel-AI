@@ -54,6 +54,7 @@ from app.models.channel_required_connection import ChannelRequiredConnection
 from app.models.connection import Connection, Provider
 from app.models.team import Team, TeamMembership
 from app.models.user import User
+from app.providers import spec_for
 from app.services.channel_authorization import authorized_connections
 
 # Same ordering the resolver uses to attribute a connection to a tier.
@@ -104,20 +105,16 @@ class RequirementStatus:
         return self.is_required and self.state != ReadinessState.READY
 
 
-# Providers whose data is fetched live on every request rather than ingested
-# into Signals (see integrations.INGESTABLE_PROVIDERS). They have no first
-# sync to wait for, so `last_synced_at` stays NULL forever - reading it as
-# "still syncing" left Google Drive permanently stuck on Syncing and
-# permanently blocking channel setup, since 3/3 could never be reached.
-_LIVE_QUERY_PROVIDERS = {Provider.GOOGLE_DRIVE}
-
-
 def _state_for(connection: Connection | None) -> ReadinessState:
     if connection is None:
         return ReadinessState.NOT_CONNECTED
     if connection.revoked_at is not None:
         return ReadinessState.EXPIRED
-    if connection.provider in _LIVE_QUERY_PROVIDERS:
+    # A live-query provider has no first sync to wait for, so `last_synced_at`
+    # stays NULL forever - reading that as "still syncing" is what left Google
+    # Drive permanently stuck and permanently blocking channel setup. The
+    # registry is now the single source of that fact (app/providers).
+    if spec_for(connection.provider).live_query:
         # Nothing to ingest: authorized means usable, immediately.
         return ReadinessState.READY
     if connection.last_synced_at is None:

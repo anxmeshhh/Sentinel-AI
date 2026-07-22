@@ -45,22 +45,19 @@ from sqlalchemy.orm import Session
 
 from app.agents.llm import LLMClient, LLMError
 from app.models.attention_item import AttentionItem, AttentionType
-from app.models.connection import Provider
+from app.providers.registry import PROVIDER_BY_NAME, RESOURCE_SCOPED_PROVIDERS
 from app.services.attention_engine import list_attention
 from app.services.channel_authorization import resolve_channel_scope
 
 logger = structlog.get_logger("sentinel.channel_briefing")
 
-# Items carry their own `source_provider`, so visibility keys off that
-# rather than off the item type - a DEADLINE can come from Gmail *or* from
-# a document, and each must be gated by its own connection.
-PROVIDER_BY_NAME: dict[str, Provider] = {p.value: p for p in Provider}
-
-# The one provider whose items are additionally resource-gated: a Drive
-# Connection covers many documents, so an admin's allow-list is the only
-# thing that says *which* documents this channel may see. Every other
-# provider here is 1:1 with its scope - see rule 3 in the module docstring.
-RESOURCE_SCOPED_PROVIDERS = {Provider.GOOGLE_DRIVE}
+# Items carry their own `source_provider`, so the resource-gating decision
+# keys off that rather than off the item type - a DEADLINE can come from
+# Gmail *or* from a document, and each is gated as its own provider requires.
+#
+# Both tables come from the provider registry (app/providers): which
+# providers are resource-scoped is a fact about the provider, not about this
+# module, and it used to be restated here where nothing kept it in sync.
 
 
 def build_channel_briefing(session: Session, team_id: uuid.UUID, workspace_id: uuid.UUID) -> dict:

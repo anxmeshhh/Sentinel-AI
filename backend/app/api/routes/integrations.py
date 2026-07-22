@@ -35,9 +35,11 @@ from app.schemas.integration import ConnectTicketOut
 
 logger = structlog.get_logger("sentinel.integrations")
 
-# Providers that ingest into Signals. Drive is absent on purpose - it is
-# searched live, never cached, so it has no ingestion handler at all.
-INGESTABLE_PROVIDERS = {Provider.GMAIL, Provider.GOOGLE_CALENDAR, Provider.GITHUB}
+# Re-exported for the existing call sites. Which providers ingest is a fact
+# about each provider, declared once in app/providers - Drive is absent
+# because it is searched live, and the registry is what keeps that answer the
+# same here and in channel_readiness, which have to agree.
+from app.providers.registry import INGESTABLE_PROVIDERS  # noqa: E402
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 

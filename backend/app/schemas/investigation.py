@@ -23,6 +23,7 @@ class InvestigationOut(BaseModel):
     # attention item or a proactive situation.
     attention_item_id: uuid.UUID | None = None
     situation_id: uuid.UUID | None = None
+    commitment_id: uuid.UUID | None = None
     title: str
 
     # AI inference over the evidence below - labelled as such in the UI.

@@ -2793,17 +2793,64 @@ retried against a limit that cannot refill mid-loop. The full suite now passes
 with the LLM entirely unreachable — and runs in 19s instead of 135s, which is
 the fallbacks proving themselves.
 
+#### Enhancement pass — closing the gaps
+
+**1. Extraction from conversation, ephemerally.** `commitment_extraction.py`
+fetches a body live, reads it, and discards it; only structured fields
+survive. This preserves the standing invariant (bodies are never persisted in
+any form) while still answering "what did we say we'd do?".
+
+Three gates stand before anything is asserted, and the middle one does the
+heavy lifting:
+
+| Gate | Effect on real data |
+|---|---|
+| Subject-level pre-filter (bulk excluded, capped at 10/scope/run) | **190 emails → 3 bodies opened** |
+| Body must contain promise language | **3 → 0 reached the model** |
+| Confidence ≥ 0.8 tracks; below that it *asks* | — |
+
+**Real-data result: 0 commitments, 0 LLM calls.** The pipeline is genuinely
+quiet on a mailbox that contains nothing to find — which is what a feature
+that reads private mail has to be.
+
+The gates exist because of measurement: promise language appeared in **2 of
+40 real bodies, and both were false positives** (a job advert, and a webinar
+mail saying *"we will send you the recording"*). A model asked "is there a
+commitment here?" over mail like that has ample opportunity to say yes about
+nothing, so the prompt states that finding nothing is the expected answer,
+and uncertainty becomes a **SUGGESTED** commitment that asks rather than
+asserts. A suggestion deliberately **never ages** — an unanswered question
+turning itself OVERDUE would be Sentinel asserting exactly what it was unsure
+enough to ask about.
+
+**2. Owner identity resolution.** Only an exact email match against a
+workspace member resolves, or a *full* name that exactly one member answers
+to. A first name never resolves, and an ambiguous full name never resolves:
+attaching a promise to the wrong colleague is worse than attaching it to
+nobody — they would never see it, and someone else would be chased for it.
+
+**3. Commitment → Investigate This.** A commitment is now a third anchor
+alongside attention items and situations, and the most useful one: *"we said
+this would happen and it hasn't"* is exactly the question worth expanding
+evidence around. Scope comes from the commitment's own `scope_key`, so a
+private commitment is investigated privately. The correlation walk is now
+genuinely shared by all three anchors rather than duplicated.
+
+**4. Lifecycle** was already evidence-driven; unchanged.
+
 #### Known limitations
 
-- **No automatic detection from conversation.** The largest gap, and a data
-  limitation rather than a design one — see above.
-- **Tracked detection has never run on real data.** Zero issue/PR signals.
-- **Owners are labels, not identities.** `owner_label` holds an external
-  account name; resolving it to a Sentinel user would be a guess.
-- **No commitment→Investigate link yet.** Investigations anchor on attention
-  items and situations; commitments would need a third anchor.
-- **Manual commitments never enter AT_RISK**, by design — there is nothing to
-  observe.
+- **Extraction has never found a real commitment**, because none exists in
+  the connected mailbox to find. The pipeline is exercised end to end against
+  controlled scenarios — **functionally tested, awaiting real-data
+  validation**. Precision on real prose is unmeasured and not claimed.
+- **Tracked (GitHub) detection has likewise never run on real data.** Zero
+  issue/PR signals.
+- **Extraction reads received mail only.** The mailbox holds no sent mail, so
+  "what did *I* promise" remains unanswerable here.
+- **Owner resolution is conservative by design** and will usually return
+  nobody, leaving a label.
+- **Manual commitments never enter AT_RISK** — there is nothing to observe.
 
 **Exit criteria:** commitments can be stated or derived, age deterministically,
 resolve on evidence, and stay strictly separated between private and shared

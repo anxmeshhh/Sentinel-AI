@@ -27,7 +27,9 @@ from app.models.commitment import Commitment
 from app.models.team import ChannelRole, Team
 from app.models.user import User
 from app.schemas.commitment import CommitmentCreate, CommitmentOut, CommitmentResolve
+from app.schemas.investigation import InvestigationOut
 from app.services.commitments import (
+    confirm_commitment,
     create_manual_commitment,
     dismiss_commitment,
     list_commitments,
@@ -35,7 +37,12 @@ from app.services.commitments import (
     reopen_commitment,
     resolve_commitment,
 )
-from app.services.investigation import channel_scope, personal_scope
+from app.services.investigation import (
+    NotAuthorized,
+    channel_scope,
+    investigate_commitment,
+    personal_scope,
+)
 
 router = APIRouter(tags=["commitments"])
 
@@ -173,3 +180,45 @@ def mark_reopened(
     user: User = Depends(get_current_user),
 ) -> CommitmentOut:
     return reopen_commitment(session, _authorized(session, commitment_id, user))
+
+
+@router.post("/commitments/{commitment_id}/confirm", response_model=CommitmentOut)
+def mark_confirmed(
+    commitment_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CommitmentOut:
+    """Answer "yes, track this" to a suggested commitment.
+
+    Confirmation is what turns the model's suspicion into a fact, so a
+    confirmed commitment carries the same standing as one a person wrote
+    themselves.
+    """
+    return confirm_commitment(session, _authorized(session, commitment_id, user))
+
+
+@router.post("/commitments/{commitment_id}/investigate", response_model=InvestigationOut)
+def investigate(
+    commitment_id: uuid.UUID,
+    refresh: bool = False,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> InvestigationOut:
+    """Why is this commitment late, blocked, or still open?
+
+    The scope comes from the commitment's own scope_key, so a private
+    commitment is investigated privately and a channel one as the channel -
+    the caller's identity decides whether they may act, never what may be
+    read.
+    """
+    commitment = _authorized(session, commitment_id, user)
+    kind, _, owner_id = commitment.scope_key.partition(":")
+    scope = (
+        personal_scope(session, commitment.workspace_id, uuid.UUID(owner_id))
+        if kind == "personal"
+        else channel_scope(session, uuid.UUID(owner_id))
+    )
+    try:
+        return investigate_commitment(session, commitment=commitment, scope=scope, refresh=refresh)
+    except NotAuthorized as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc

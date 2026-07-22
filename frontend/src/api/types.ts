@@ -308,8 +308,8 @@ export interface CommitmentEvidence {
  *  dates and source state rather than by ticking a box. */
 export interface Commitment {
   id: string;
-  source: "manual" | "tracked";
-  status: "pending" | "due_soon" | "at_risk" | "overdue" | "resolved" | "dismissed";
+  source: "manual" | "tracked" | "extracted";
+  status: "suggested" | "pending" | "due_soon" | "at_risk" | "overdue" | "resolved" | "dismissed";
   what: string;
   owner_label: string | null;
   due_at: string | null;

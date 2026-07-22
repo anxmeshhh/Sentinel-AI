@@ -43,9 +43,21 @@ from app.models.base import Base, TimestampMixin, UTCDateTime, UUIDPk
 class CommitmentSource(str, enum.Enum):
     MANUAL = "manual"  # a person stated it
     TRACKED = "tracked"  # derived from a structured signal with an owner
+    EXTRACTED = "extracted"  # read out of message prose, ephemerally
 
 
 class CommitmentStatus(str, enum.Enum):
+    # Read out of a message but not confident enough to assert. Shown as
+    # "Sentinel noticed a possible commitment - track this?" and counted
+    # nowhere until a person says yes.
+    #
+    # This state carries the weight of the extraction feature. Measured on
+    # the real mailbox, the only two bodies containing promise language were
+    # a job advert and a webinar mail promising to send a recording - so a
+    # model asked "is there a commitment here?" has real opportunities to say
+    # yes about nothing. Uncertain extractions therefore ask instead of
+    # asserting.
+    SUGGESTED = "suggested"
     PENDING = "pending"  # live, not close to its date (or has no date)
     DUE_SOON = "due_soon"  # inside the horizon
     AT_RISK = "at_risk"  # due soon AND no progress evidence for a while
@@ -79,6 +91,10 @@ class Commitment(Base, UUIDPk, TimestampMixin):
     # Sentinel user would be a guess. `owner_user_id` is set only when the
     # commitment is genuinely about a known Sentinel user.
     owner_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Set only on an exact, unambiguous email match against a workspace
+    # member. A name match is never enough: two people called "Priya" in one
+    # workspace would make every such guess a coin flip, and attributing a
+    # promise to the wrong colleague is worse than attributing it to nobody.
     owner_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
     # WHEN. Nullable: "someone should look at this eventually" is still worth
     # tracking, it just never becomes DUE_SOON or OVERDUE.

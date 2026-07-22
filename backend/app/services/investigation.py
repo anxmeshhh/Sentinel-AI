@@ -249,6 +249,176 @@ def investigate_situation(session: Session, *, situation, scope: Scope, refresh:
     return investigation
 
 
+def investigate_commitment(session: Session, *, commitment, scope: Scope, refresh: bool = False) -> Investigation:
+    """Why is this commitment late, blocked, or still open?
+
+    A commitment is a third legitimate anchor alongside attention items and
+    situations, and the most useful one to investigate: "we said this would
+    happen and it hasn't" is exactly the question worth expanding evidence
+    around.
+
+    The scope is checked against the commitment's own `scope_key`, so a
+    private commitment can only ever be investigated privately.
+    """
+    if commitment.scope_key != scope.key:
+        raise NotAuthorized("This commitment belongs to a different context")
+
+    if not refresh:
+        cached = session.execute(
+            select(Investigation).where(
+                Investigation.commitment_id == commitment.id, Investigation.scope_key == scope.key
+            )
+        ).scalar_one_or_none()
+        if cached is not None:
+            return cached
+
+    anchor = _commitment_anchor(session, commitment, scope)
+    evidence = _gather_around_anchor(session, commitment.what, anchor, scope, seed=commitment.evidence)
+
+    if evidence:
+        narrative, llm_calls = _synthesize_commitment(commitment, anchor, evidence)
+    else:
+        narrative, llm_calls = _no_commitment_evidence(commitment), 0
+
+    investigation = session.execute(
+        select(Investigation).where(
+            Investigation.commitment_id == commitment.id, Investigation.scope_key == scope.key
+        )
+    ).scalar_one_or_none()
+    if investigation is None:
+        investigation = Investigation(
+            workspace_id=commitment.workspace_id, commitment_id=commitment.id, scope_key=scope.key
+        )
+        session.add(investigation)
+
+    investigation.title = commitment.what
+    investigation.what_happened = narrative["what_happened"]
+    investigation.why_it_matters = narrative["why_it_matters"]
+    investigation.contributing_factors = narrative["contributing_factors"]
+    investigation.next_steps = narrative["next_steps"]
+    investigation.confidence = narrative["confidence"]
+    investigation.evidence = evidence
+    investigation.llm_calls = llm_calls
+    session.commit()
+    session.refresh(investigation)
+
+    logger.info(
+        "commitment_investigation_complete",
+        commitment_id=str(commitment.id), scope=scope.key, evidence=len(evidence), llm_calls=llm_calls,
+    )
+    return investigation
+
+
+def _commitment_anchor(session: Session, commitment, scope: Scope) -> Signal | None:
+    """The signal a commitment came from, re-checked against the scope.
+
+    A manual commitment has none, and that is fine - correlation then works
+    from its wording alone.
+    """
+    if commitment.source_signal_id is None:
+        return None
+    signal = session.get(Signal, commitment.source_signal_id)
+    if signal is None or signal.connection_id not in scope.connection_ids:
+        return None
+    return signal
+
+
+def _gather_around_anchor(
+    session: Session, subject: str, anchor: Signal | None, scope: Scope, *, seed: list[dict] | None = None
+) -> list[dict]:
+    """Shared correlation walk, used by both the situation and commitment
+    anchors so there is one implementation rather than several that drift."""
+    if not scope.connection_ids:
+        return []
+
+    found: dict[uuid.UUID, dict] = {}
+    for entry in seed or []:
+        signal = session.get(Signal, uuid.UUID(entry["signal_id"]))
+        if signal is not None and signal.connection_id in scope.connection_ids:
+            found[signal.id] = _as_evidence(signal, "same_thread")
+
+    def add(signal: Signal, relation: str) -> None:
+        if signal.id not in found:
+            found[signal.id] = _as_evidence(signal, relation)
+
+    if anchor is not None:
+        for signal in _same_thread(session, anchor, scope):
+            add(signal, "same_thread")
+        for signal in _same_correspondent(session, anchor, scope):
+            add(signal, "same_correspondent")
+
+    for signal in _shared_subject(session, subject, scope, exclude=anchor):
+        add(signal, "shared_subject")
+
+    when = _aware_dt(anchor.occurred_at) if anchor is not None else None
+    if when is not None:
+        for signal in _around(session, when, scope):
+            add(signal, "around_the_same_time")
+
+    ranked = sorted(found.values(), key=lambda e: (_RELATION_RANK[e["_rank_relation"]], -_recency_key(e)))
+    for entry in ranked:
+        entry.pop("_rank_relation", None)
+    return ranked[:MAX_EVIDENCE]
+
+
+def _no_commitment_evidence(commitment) -> dict:
+    return {
+        "what_happened": f"Nothing in this context references \"{commitment.what}\".",
+        "why_it_matters": "Sentinel found no authorized activity related to this commitment, so it "
+                          "cannot say whether it has progressed.",
+        "contributing_factors": [],
+        "next_steps": ["Check with the owner directly."],
+        "confidence": 0.2,
+    }
+
+
+def _synthesize_commitment(commitment, anchor: Signal | None, evidence: list[dict]) -> tuple[dict, int]:
+    facts = {
+        "commitment": commitment.what,
+        "owner": commitment.owner_label,
+        "due": commitment.due_at.isoformat() if commitment.due_at else None,
+        "status": commitment.status.value,
+        "related_activity": [
+            {k: e[k] for k in ("kind", "title", "actor", "occurred_at", "relation")} for e in evidence
+        ],
+    }
+    try:
+        result = LLMClient().complete_json(
+            system=(
+                "You are Sentinel, investigating why a commitment is still open. You are given the "
+                "commitment and the related activity retrieved around it. "
+                "STRICT RULES: reason ONLY from the supplied data - never invent events or causes. "
+                "Do NOT claim the commitment is complete unless the evidence plainly says so; if the "
+                "evidence is silent, say that it is silent and lower your confidence. Plain text. "
+                "what_happened: 2-3 sentences on what the activity shows about this commitment. "
+                "why_it_matters: 1-2 sentences on the consequence of it staying open. "
+                "contributing_factors: up to 3 short strings grounded in the activity, or empty. "
+                "next_steps: up to 3 short concrete actions. confidence: 0-1. "
+                'Return JSON: {"what_happened": "...", "why_it_matters": "...", '
+                '"contributing_factors": ["..."], "next_steps": ["..."], "confidence": 0.0}'
+            ),
+            user=f"Investigation data: {facts}",
+        )
+        return {
+            "what_happened": (result.get("what_happened") or "").strip() or commitment.what,
+            "why_it_matters": (result.get("why_it_matters") or "").strip() or "",
+            "contributing_factors": [str(f) for f in (result.get("contributing_factors") or [])][:3],
+            "next_steps": [str(s) for s in (result.get("next_steps") or [])][:3],
+            "confidence": _clamp(result.get("confidence")),
+        }, 1
+    except LLMError:
+        logger.warning("commitment_investigation_llm_unavailable")
+        kinds = sorted({e["kind"] for e in evidence})
+        return {
+            "what_happened": f"{commitment.what}. Sentinel found {len(evidence)} related items "
+                             f"({', '.join(kinds)}) but could not reach the language model.",
+            "why_it_matters": "",
+            "contributing_factors": [],
+            "next_steps": ["Review the evidence below directly."],
+            "confidence": 0.3,
+        }, 0
+
+
 def _situation_anchor(session: Session, situation, scope: Scope) -> Signal | None:
     """The most recent signal behind the situation, re-checked against scope.
 
@@ -268,38 +438,10 @@ def _situation_anchor(session: Session, situation, scope: Scope) -> Signal | Non
 def _gather_evidence_for_situation(session: Session, situation, anchor: Signal | None, scope: Scope) -> list[dict]:
     """The situation's own signals, plus whatever correlates with the anchor.
 
-    Reuses the same relationship walk as an item investigation, so there is
-    one correlation implementation rather than two that can drift.
+    Delegates to the shared correlation walk so item, situation and commitment
+    investigations cannot drift into three different notions of "related".
     """
-    if not scope.connection_ids:
-        return []
-
-    found: dict[uuid.UUID, dict] = {}
-
-    # The situation's own evidence is already established fact about it.
-    for entry in situation.evidence:
-        signal = session.get(Signal, uuid.UUID(entry["signal_id"]))
-        if signal is None or signal.connection_id not in scope.connection_ids:
-            continue
-        found[signal.id] = _as_evidence(signal, "same_thread")
-
-    def add(signal: Signal, relation: str) -> None:
-        if signal.id in found:
-            return
-        found[signal.id] = _as_evidence(signal, relation)
-
-    if anchor is not None:
-        for signal in _same_correspondent(session, anchor, scope):
-            add(signal, "same_correspondent")
-        for signal in _shared_subject(session, situation.title, scope, exclude=anchor):
-            add(signal, "shared_subject")
-        for signal in _around(session, _aware_dt(anchor.occurred_at), scope):
-            add(signal, "around_the_same_time")
-
-    ranked = sorted(found.values(), key=lambda e: (_RELATION_RANK[e["_rank_relation"]], -_recency_key(e)))
-    for entry in ranked:
-        entry.pop("_rank_relation", None)
-    return ranked[:MAX_EVIDENCE]
+    return _gather_around_anchor(session, situation.title, anchor, scope, seed=situation.evidence)
 
 
 def _no_evidence_narrative_for(situation) -> dict:

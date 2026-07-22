@@ -26,6 +26,7 @@ class Investigation(Base, UUIDPk, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("attention_item_id", "scope_key", name="uq_investigation_item_scope"),
         UniqueConstraint("situation_id", "scope_key", name="uq_investigation_situation_scope"),
+        UniqueConstraint("commitment_id", "scope_key", name="uq_investigation_commitment_scope"),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
@@ -41,6 +42,11 @@ class Investigation(Base, UUIDPk, TimestampMixin):
     )
     situation_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("situations.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    # "We said this would happen and it hasn't" is the most useful thing to
+    # expand evidence around, so a commitment anchors an investigation too.
+    commitment_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("commitments.id", ondelete="CASCADE"), nullable=True, index=True
     )
     # Which authorization scope produced it - see the module docstring.
     scope_key: Mapped[str] = mapped_column(String(100), nullable=False)

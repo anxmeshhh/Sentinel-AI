@@ -2,8 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../api/client";
 import type { Commitment } from "../api/types";
+import { InvestigationPanel, useInvestigation } from "./InvestigationPanel";
 
 const STATUS_COPY: Record<string, { label: string; tone: string; border: string }> = {
+  // A suggestion is a question, so it is styled as one - quiet, not alarming.
+  suggested: { label: "Possible commitment", tone: "text-ink-faint", border: "border-dashed border-border bg-surface" },
   overdue: { label: "Overdue", tone: "text-crit", border: "border-crit/40 bg-crit/5" },
   at_risk: { label: "At risk", tone: "text-crit", border: "border-crit/30 bg-crit/[0.04]" },
   due_soon: { label: "Due soon", tone: "text-watch", border: "border-watch/40 bg-watch/5" },
@@ -35,6 +38,8 @@ export function CommitmentStrip({ scope, teamId }: { scope: "personal" | "channe
   const [commitments, setCommitments] = useState<Commitment[]>([]);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [investigatingId, setInvestigatingId] = useState<string | null>(null);
+  const investigation = useInvestigation();
   const [what, setWhat] = useState("");
   const [due, setDue] = useState("");
 
@@ -55,7 +60,7 @@ export function CommitmentStrip({ scope, teamId }: { scope: "personal" | "channe
     void load(true);
   }, [load]);
 
-  async function act(id: string, action: "resolve" | "dismiss") {
+  async function act(id: string, action: "resolve" | "dismiss" | "confirm") {
     setBusy(true);
     try {
       await api.post(`/commitments/${id}/${action}`, action === "resolve" ? { reason: "Marked done" } : undefined);
@@ -63,6 +68,19 @@ export function CommitmentStrip({ scope, teamId }: { scope: "personal" | "channe
     } finally {
       setBusy(false);
     }
+  }
+
+  /** A commitment is its own investigation anchor - "we said this would
+   *  happen and it hasn't" is the most useful thing to expand evidence
+   *  around. The endpoint derives scope from the commitment itself. */
+  function investigateFor(id: string) {
+    if (investigatingId === id) {
+      setInvestigatingId(null);
+      investigation.clear();
+      return;
+    }
+    setInvestigatingId(id);
+    void investigation.load(`/commitments/${id}/investigate`);
   }
 
   async function add() {
@@ -134,26 +152,88 @@ export function CommitmentStrip({ scope, teamId }: { scope: "personal" | "channe
                       {c.owner_label && <span>· {c.owner_label}</span>}
                       <span>· {whenCopy(c.due_at)}</span>
                       {/* Why Sentinel is tracking it, stated rather than implied. */}
-                      <span>· {c.source === "manual" ? "you tracked this" : "from a tracked issue"}</span>
+                      <span>
+                        ·{" "}
+                        {c.source === "manual"
+                          ? "you tracked this"
+                          : c.source === "extracted"
+                            ? "read from a message"
+                            : "from a tracked issue"}
+                      </span>
                     </div>
                   </div>
                   <div className="flex flex-none items-center gap-2.5 text-caption">
-                    <button
-                      onClick={() => act(c.id, "resolve")}
-                      disabled={busy}
-                      className="text-ink-faint underline underline-offset-2 hover:text-good disabled:opacity-50"
-                    >
-                      Done
-                    </button>
-                    <button
-                      onClick={() => act(c.id, "dismiss")}
-                      disabled={busy}
-                      className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
-                    >
-                      Dismiss
-                    </button>
+                    {c.status === "suggested" ? (
+                      <>
+                        <button
+                          onClick={() => act(c.id, "confirm")}
+                          disabled={busy}
+                          className="text-ink-faint underline underline-offset-2 hover:text-good disabled:opacity-50"
+                        >
+                          Track this
+                        </button>
+                        <button
+                          onClick={() => act(c.id, "dismiss")}
+                          disabled={busy}
+                          className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
+                        >
+                          No thanks
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => investigateFor(c.id)}
+                          disabled={busy || (investigation.loading && investigatingId === c.id)}
+                          className={`underline underline-offset-2 disabled:opacity-50 ${
+                            investigatingId === c.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
+                          }`}
+                        >
+                          {investigation.loading && investigatingId === c.id ? "Investigating…" : "Investigate ✨"}
+                        </button>
+                        <button
+                          onClick={() => act(c.id, "resolve")}
+                          disabled={busy}
+                          className="text-ink-faint underline underline-offset-2 hover:text-good disabled:opacity-50"
+                        >
+                          Done
+                        </button>
+                        <button
+                          onClick={() => act(c.id, "dismiss")}
+                          disabled={busy}
+                          className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
+                        >
+                          Dismiss
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
+
+                {/* Sentinel asking, rather than asserting. */}
+                {c.status === "suggested" && (
+                  <p className="mt-1.5 text-caption leading-relaxed text-ink-faint">
+                    Sentinel noticed a possible commitment in a message — track this?
+                  </p>
+                )}
+
+                {investigatingId === c.id && (investigation.investigation || investigation.error) && (
+                  <div className="mt-2">
+                    {investigation.error ? (
+                      <p className="text-caption text-crit">{investigation.error}</p>
+                    ) : (
+                      <InvestigationPanel
+                        investigation={investigation.investigation!}
+                        refreshing={investigation.refreshing}
+                        onRefresh={() => investigation.load(`/commitments/${c.id}/investigate`, { refresh: true })}
+                        onClose={() => {
+                          setInvestigatingId(null);
+                          investigation.clear();
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
 
                 {c.evidence.length > 0 && (
                   <div className="mt-1.5 flex flex-col gap-1 border-t border-border pt-1.5">

@@ -3,33 +3,33 @@
 ## What is and isn't built, and why
 
 The module was scoped by measurement rather than by ambition
-(`scripts/audit_commitments.py`, run against the real corpus):
+(`scripts/audit_commitments.py` and `audit_commitment_bodies.py`, run against
+the real corpus):
 
-| Source | Finding | Built |
+| Source | Finding | Status |
 |---|---|---|
-| Manual statements | always available | yes |
-| GitHub issues/PRs | owner + subject + observable closure | yes, 0 real signals yet |
-| Email prose | **0 promise subjects in 190**; **0 sent mail**; bodies never stored | **no** |
+| Manual statements | always available | real-data verified |
+| GitHub issues/PRs | owner + subject + observable closure | functionally tested, 0 real signals |
+| Message prose | 0 promise subjects in 190; **2 of 40 bodies matched, both false positives** | functionally tested, gated hard |
 
-The email row is the important one. A commitment is a promise made in a
-conversation, conversations live in message bodies, and this codebase
-deliberately never stores bodies. The stored corpus is subjects only, and
-measurement found no promise language in any of them - nor a single message
-the account owner had sent, which is where "what did *I* commit to" would
-have to come from. An LLM extractor over that corpus would produce confident
-output from nothing, so it is not here. What would unblock it is recorded in
-PHASES.md.
+Prose extraction lives in `commitment_extraction.py`, deliberately separate:
+it is the only part of Sentinel that reads message content, and keeping it at
+arm's length makes that boundary visible. Bodies are fetched live and
+discarded; only structured fields survive. Because the measured false-positive
+rate on real prose was 2/2, anything the model is not highly confident about
+becomes a SUGGESTED commitment that *asks* rather than asserts.
 
-What *is* here is the part that works: a real lifecycle over commitments that
-either a person stated or a structured signal can prove.
+## Deterministic wherever it can be
 
-## Deterministic throughout - no LLM at all
+Every lifecycle transition here - due soon, at risk, overdue, resolved - is
+derived from a date, a source's own state field, or a person's explicit
+action. No model is consulted about whether a commitment is late, and none is
+consulted to summarise one. The single exception is prose extraction, which
+is bounded (at most 10 pre-filtered bodies per scope per run), gated by
+confidence, and cannot assert anything on its own.
 
-Every transition below is derived from a date, a state field, or a person's
-explicit action. There is no synthesis step and no model call anywhere in
-this module, so it costs zero tokens no matter how often it runs. That is not
-a cost optimisation; it is what makes "Sentinel says you promised this"
-defensible.
+That split is the point: what Sentinel *claims* is deterministic, and what it
+*suspects* is clearly marked as a question.
 
 ## Resolution is evidence, never similarity
 
@@ -49,6 +49,7 @@ from sqlalchemy.orm import Session
 
 from app.models.commitment import Commitment, CommitmentSource, CommitmentStatus
 from app.models.signal import Signal, SignalType
+from app.services.commitment_extraction import extract_commitments
 from app.services.investigation import Scope
 
 logger = structlog.get_logger("sentinel.commitments")
@@ -59,7 +60,15 @@ DUE_SOON_HORIZON = timedelta(hours=72)
 STALE_AFTER = timedelta(days=3)
 LOOKBACK = timedelta(days=90)
 
-_LIVE = (CommitmentStatus.PENDING, CommitmentStatus.DUE_SOON, CommitmentStatus.AT_RISK, CommitmentStatus.OVERDUE)
+# SUGGESTED is included: a question nobody sees is a question nobody answers.
+# It sorts last, and the UI renders it as a prompt rather than as a fact.
+_LIVE = (
+    CommitmentStatus.PENDING,
+    CommitmentStatus.DUE_SOON,
+    CommitmentStatus.AT_RISK,
+    CommitmentStatus.OVERDUE,
+    CommitmentStatus.SUGGESTED,
+)
 
 
 class CommitmentError(Exception):
@@ -96,6 +105,7 @@ def list_commitments(session: Session, scope: Scope, *, include_closed: bool = F
         CommitmentStatus.AT_RISK: 1,
         CommitmentStatus.DUE_SOON: 2,
         CommitmentStatus.PENDING: 3,
+        CommitmentStatus.SUGGESTED: 4,  # a question, not an obligation
     }
     far_future = datetime.max.replace(tzinfo=timezone.utc)
     return sorted(rows, key=lambda c: (order.get(c.status, 9), _aware(c.due_at) or far_future))
@@ -160,6 +170,20 @@ def dismiss_commitment(session: Session, commitment: Commitment, *, reason: str 
     return commitment
 
 
+def confirm_commitment(session: Session, commitment: Commitment) -> Commitment:
+    """A person answered "yes, track this" to a suggested commitment.
+
+    Confidence goes to 1.0 because it is no longer the model's opinion - a
+    human confirmed it, which is the same standing a manual commitment has.
+    """
+    if commitment.status == CommitmentStatus.SUGGESTED:
+        commitment.confidence = 1.0
+        commitment.status = _status_for(commitment, datetime.now(timezone.utc))
+        session.commit()
+        session.refresh(commitment)
+    return commitment
+
+
 def reopen_commitment(session: Session, commitment: Commitment) -> Commitment:
     commitment.resolved_at = None
     commitment.resolution_reason = None
@@ -183,11 +207,24 @@ def refresh_commitments(session: Session, workspace_id: uuid.UUID, scope: Scope)
     if scope.connection_ids:
         for candidate in _detect_tracked(session, scope, now):
             _upsert_tracked(session, workspace_id, scope, candidate, now)
+        # Prose extraction, gated hard and bounded - see
+        # commitment_extraction.py. Never lets a provider or model failure
+        # take down the deterministic half of this refresh.
+        try:
+            extract_commitments(session, workspace_id, scope)
+        except Exception:
+            session.rollback()
+            logger.exception("commitment_extraction_failed", scope=scope.key)
 
     for commitment in session.execute(
         select(Commitment).where(Commitment.scope_key == scope.key)
     ).scalars():
-        if commitment.status in (CommitmentStatus.RESOLVED, CommitmentStatus.DISMISSED):
+        if commitment.status in (
+            CommitmentStatus.RESOLVED, CommitmentStatus.DISMISSED, CommitmentStatus.SUGGESTED
+        ):
+            # A suggestion is not yet an obligation, so it does not age. An
+            # unanswered question turning itself into "OVERDUE" would be
+            # Sentinel asserting exactly what it was unsure enough to ask.
             continue
         commitment.status = _status_for(commitment, now)
 

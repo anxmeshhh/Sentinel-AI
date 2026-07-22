@@ -28,3 +28,19 @@ class SharedConnectionOut(BaseModel):
 
 class SharedConnectionCreate(BaseModel):
     connection_id: uuid.UUID
+
+
+class ChannelExclusionCreate(BaseModel):
+    connection_id: uuid.UUID
+    reason: str | None = Field(default=None, max_length=300)
+
+
+class ChannelExclusionOut(BaseModel):
+    """A connection this channel has opted out of. Carries no token and no
+    resources - an exclusion grants nothing, it only subtracts."""
+
+    id: uuid.UUID
+    connection_id: uuid.UUID
+    provider: str
+    label: str
+    reason: str | None

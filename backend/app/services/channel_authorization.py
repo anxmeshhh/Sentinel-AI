@@ -1,22 +1,34 @@
-"""Phase 2z: the one place a Channel's authorized connections are resolved.
+"""The one place a Channel's authorized connections are resolved.
 
-A Channel can see a connection assigned at three tiers, and its effective
-authorization is the UNION up its own branch of the tree:
+A Channel's effective authorization is the UNION up its own branch of the
+tree, then NARROWED by anything explicitly excluded for that channel:
 
-    the Channel's own ChannelConnection      (channel tier, Phase 2l)
-  ∪ its Group's SharedConnection             (group tier, Phase 2z)
-  ∪ its Class's SharedConnection             (class tier, Phase 2z)
+      its Workspace's SharedConnection       (workspace tier, Phase 3a)
+    ∪ its Class's SharedConnection           (class tier, Phase 2z)
+    ∪ its Group's SharedConnection           (group tier, Phase 2z)
+    ∪ the Channel's own ChannelConnection    (channel tier, Phase 2l)
+    − the Channel's ChannelConnectionExclusion   (narrowing, Phase 3a)
 
 Every consumer that used to read `ChannelConnection where team_id` directly -
 `_channel_scope`, `is_resource_allowed`, the orchestrator's `_get_connection`
-- now goes through here instead, so inheritance is enforced in exactly one
-place. A connection assigned to a sibling class, or a group in another
-class, simply never appears in the union.
+- goes through here instead, so inheritance and exclusion are enforced in
+exactly one place. A connection shared to a sibling class, another
+workspace, or a group in another class simply never appears in the union.
+
+## Why this stays fail-closed even with inheritance
+
+Sharing is always an explicit admin act. Connecting a service grants
+nothing anywhere by itself; someone must deliberately share it at a tier.
+So a newly created Channel inherits only what an admin already chose to
+make shared context - never "everything in the workspace" by default.
 
 Resource allow-lists merge across tiers: if the Class allows folder A and
 the Channel allows file B on the same Drive connection, the channel may see
 both. Fail-closed is preserved - a connection present at any tier with *no*
 allow-listed resources anywhere authorizes no resource-gated file.
+
+Exclusion is unconditional and applied last: deny beats allow, including
+over the channel's own explicit assignment.
 """
 
 import uuid
@@ -28,7 +40,12 @@ from sqlalchemy.orm import Session
 from app.models.channel_connection import ChannelConnection, ChannelConnectionResource
 from app.models.connection import Connection, Provider
 from app.models.hierarchy import Group, WorkspaceClass
-from app.models.shared_connection import SharedConnection, SharedConnectionResource, SharedScope
+from app.models.shared_connection import (
+    ChannelConnectionExclusion,
+    SharedConnection,
+    SharedConnectionResource,
+    SharedScope,
+)
 from app.models.team import Team
 
 
@@ -39,28 +56,42 @@ class AuthorizedConnection:
     # Where this authorization comes from, for the UI ("inherited from Class").
     # If a connection is authorized at several tiers, the most specific wins
     # for display; resources still merge across all of them.
-    source: str = "channel"  # "channel" | "group" | "class"
+    source: str = "channel"  # "workspace" | "class" | "group" | "channel"
 
 
-_SOURCE_RANK = {"class": 0, "group": 1, "channel": 2}
+_SOURCE_RANK = {"workspace": 0, "class": 1, "group": 2, "channel": 3}
 
 
-def _channel_lineage(session: Session, team_id: uuid.UUID) -> tuple[uuid.UUID | None, uuid.UUID | None]:
-    """(group_id, class_id) for a channel, or (None, None) if the chain is
-    broken. One query - the tree is shallow."""
+def _channel_lineage(session: Session, team_id: uuid.UUID) -> tuple[uuid.UUID | None, uuid.UUID | None, uuid.UUID | None]:
+    """(group_id, class_id, workspace_id) for a channel, or all None if the
+    chain is broken. One query - the tree is shallow.
+
+    The workspace comes from the Class rather than `Team.workspace_id` so the
+    lineage is derived entirely through the hierarchy: a shared connection is
+    matched against the workspace that actually owns this channel's class,
+    never against a denormalized column that could disagree with the path.
+    """
     row = session.execute(
-        select(Team.group_id, Group.class_id)
+        select(Team.group_id, Group.class_id, WorkspaceClass.workspace_id)
         .join(Group, Group.id == Team.group_id)
+        .join(WorkspaceClass, WorkspaceClass.id == Group.class_id)
         .where(Team.id == team_id)
     ).first()
     if row is None:
-        return None, None
-    return row[0], row[1]
+        return None, None, None
+    return row[0], row[1], row[2]
+
+
+def _excluded_connection_ids(session: Session, team_id: uuid.UUID) -> set[uuid.UUID]:
+    return set(session.execute(
+        select(ChannelConnectionExclusion.connection_id).where(ChannelConnectionExclusion.team_id == team_id)
+    ).scalars())
 
 
 def authorized_connections(session: Session, team_id: uuid.UUID) -> dict[uuid.UUID, AuthorizedConnection]:
-    """connection_id -> AuthorizedConnection, unioned across all three tiers."""
-    group_id, class_id = _channel_lineage(session, team_id)
+    """connection_id -> AuthorizedConnection, unioned across all four tiers,
+    then narrowed by any channel exclusions."""
+    group_id, class_id, workspace_id = _channel_lineage(session, team_id)
     result: dict[uuid.UUID, AuthorizedConnection] = {}
 
     def merge(connection: Connection, resource_keys: set[str], source: str) -> None:
@@ -73,17 +104,27 @@ def authorized_connections(session: Session, team_id: uuid.UUID) -> dict[uuid.UU
             if _SOURCE_RANK[source] > _SOURCE_RANK[existing.source]:
                 existing.source = source
 
-    # Class tier.
+    # Broadest tier first, most specific last, so `source` ends up naming the
+    # closest place the authorization came from.
+    if workspace_id is not None:
+        for sc, connection in _shared_rows(session, SharedScope.WORKSPACE, workspace_id):
+            merge(connection, _shared_resource_keys(session, sc.id), "workspace")
     if class_id is not None:
         for sc, connection in _shared_rows(session, SharedScope.CLASS, class_id):
             merge(connection, _shared_resource_keys(session, sc.id), "class")
-    # Group tier.
     if group_id is not None:
         for sc, connection in _shared_rows(session, SharedScope.GROUP, group_id):
             merge(connection, _shared_resource_keys(session, sc.id), "group")
-    # Channel tier.
     for cc, connection in _channel_rows(session, team_id):
         merge(connection, _channel_resource_keys(session, cc.id), "channel")
+
+    # Narrowing pass, last and unconditional: deny beats allow. An excluded
+    # connection leaves the authorized set no matter which tier granted it -
+    # including this channel's own explicit assignment - so an admin can lock
+    # one channel down without unsharing from everyone else, and two opposite
+    # intentions always resolve to the safe reading.
+    for connection_id in _excluded_connection_ids(session, team_id):
+        result.pop(connection_id, None)
 
     return result
 

@@ -32,6 +32,11 @@ from app.models.base import Base, TimestampMixin, UUIDPk
 
 
 class SharedScope(str, enum.Enum):
+    # WORKSPACE is the broadest tier (Phase 3a): an admin shares a connection
+    # once for the whole workspace and every class/group/channel under it
+    # inherits. Still an explicit act - connecting a service never shares it
+    # anywhere by itself, which is what keeps the model fail-closed.
+    WORKSPACE = "workspace"
     CLASS = "class"
     GROUP = "group"
 
@@ -69,3 +74,33 @@ class SharedConnectionResource(Base, UUIDPk, TimestampMixin):
     )
     resource_key: Mapped[str] = mapped_column(String(500), nullable=False)
     resource_label: Mapped[str] = mapped_column(String(300), nullable=False)
+
+
+class ChannelConnectionExclusion(Base, UUIDPk, TimestampMixin):
+    """Phase 3a: a Channel opting OUT of a connection it would inherit.
+
+    The narrowing half of the model. Sharing at Workspace/Class/Group is what
+    grants; this is the only thing that takes away, and it takes away for one
+    channel only - "#announcements should not see GitHub" without unsharing
+    GitHub from everyone else.
+
+    Deny beats allow, unconditionally. An exclusion removes the connection
+    from the channel's authorized set even if that same channel also has its
+    own explicit ChannelConnection row. Two admins expressing opposite
+    intentions is exactly the case where the safe reading has to win, and it
+    keeps "is this channel authorized?" answerable without tracking which
+    row was written last.
+
+    This is deliberately NOT a second connection system: it stores no token,
+    no resources, and grants nothing. It is a single subtractive fact.
+    """
+
+    __tablename__ = "channel_connection_exclusions"
+    __table_args__ = (
+        UniqueConstraint("team_id", "connection_id", name="uq_channel_connection_exclusion"),
+    )
+
+    team_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("teams.id"), nullable=False, index=True)
+    connection_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("connections.id"), nullable=False, index=True)
+    excluded_by_user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)

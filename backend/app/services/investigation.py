@@ -309,6 +309,129 @@ def investigate_commitment(session: Session, *, commitment, scope: Scope, refres
     return investigation
 
 
+def investigate_goal(session: Session, *, goal, scope: Scope, refresh: bool = False) -> Investigation:
+    """Why is this goal at risk or blocked?
+
+    The fourth anchor, and the widest: a goal's evidence is the union of its
+    linked commitments' signals, so correlation expands outward from all of
+    them rather than from one message. The computed health and its reasons
+    are handed to the model as established fact - this explains a state that
+    was already decided deterministically, it does not re-decide it.
+    """
+    if goal.scope_key != scope.key:
+        raise NotAuthorized("This goal belongs to a different context")
+
+    if not refresh:
+        cached = session.execute(
+            select(Investigation).where(
+                Investigation.goal_id == goal.id, Investigation.scope_key == scope.key
+            )
+        ).scalar_one_or_none()
+        if cached is not None:
+            return cached
+
+    from app.services.goals import goal_evidence, linked_commitments
+
+    seed: list[dict] = []
+    anchor: Signal | None = None
+    for commitment in linked_commitments(session, goal):
+        for entry in commitment.evidence or []:
+            seed.append(entry)
+        if commitment.source_signal_id and anchor is None:
+            candidate = session.get(Signal, commitment.source_signal_id)
+            if candidate is not None and candidate.connection_id in scope.connection_ids:
+                anchor = candidate
+
+    evidence = _gather_around_anchor(session, goal.title, anchor, scope, seed=seed)
+    detail = goal_evidence(session, goal)
+
+    narrative, llm_calls = _synthesize_goal(goal, detail, evidence)
+
+    investigation = session.execute(
+        select(Investigation).where(
+            Investigation.goal_id == goal.id, Investigation.scope_key == scope.key
+        )
+    ).scalar_one_or_none()
+    if investigation is None:
+        investigation = Investigation(workspace_id=goal.workspace_id, goal_id=goal.id, scope_key=scope.key)
+        session.add(investigation)
+
+    investigation.title = goal.title
+    investigation.what_happened = narrative["what_happened"]
+    investigation.why_it_matters = narrative["why_it_matters"]
+    investigation.contributing_factors = narrative["contributing_factors"]
+    investigation.next_steps = narrative["next_steps"]
+    investigation.confidence = narrative["confidence"]
+    investigation.evidence = evidence
+    investigation.llm_calls = llm_calls
+    session.commit()
+    session.refresh(investigation)
+
+    logger.info(
+        "goal_investigation_complete",
+        goal_id=str(goal.id), scope=scope.key, evidence=len(evidence), llm_calls=llm_calls,
+    )
+    return investigation
+
+
+def _synthesize_goal(goal, detail: dict, evidence: list[dict]) -> tuple[dict, int]:
+    """The blockers are already known; this explains how they connect.
+
+    Unlike the other anchors, there is always something to say here even with
+    no correlated signals - the goal's own computed blockers and risks are
+    substance. So this does not short-circuit to a no-evidence answer the way
+    an item investigation does.
+    """
+    facts = {
+        "goal": goal.title,
+        "desired_outcome": goal.outcome,
+        "computed_health": goal.health.value,
+        "why_that_health": goal.health_reasons,
+        "blockers": [f"{b['title']} ({b['detail']})" for b in detail["blockers"]],
+        "risks": [f"{r['title']} ({r['detail']})" for r in detail["risks"]],
+        "linked_commitments": [f"{c['what']} [{c['status']}]" for c in detail["commitments"]],
+        "related_activity": [
+            {k: e[k] for k in ("kind", "title", "actor", "occurred_at", "relation")} for e in evidence
+        ],
+    }
+    try:
+        result = LLMClient().complete_json(
+            system=(
+                "You are Sentinel, investigating why a goal is at risk or blocked. The health has "
+                "ALREADY been computed from evidence and is given to you - explain it, never "
+                "dispute or recompute it, and never invent a completion percentage. "
+                "STRICT RULES: reason only from the supplied data; never invent blockers, people or "
+                "dates. If the evidence does not explain the state, say so plainly. Plain text. "
+                "what_happened: 2-3 sentences on where this goal stands and what the evidence shows. "
+                "why_it_matters: 1-2 sentences on the consequence if nothing changes. "
+                "contributing_factors: up to 3 short strings, each grounded in a supplied blocker, "
+                "risk or activity item. next_steps: up to 3 short concrete actions. confidence: 0-1. "
+                'Return JSON: {"what_happened": "...", "why_it_matters": "...", '
+                '"contributing_factors": ["..."], "next_steps": ["..."], "confidence": 0.0}'
+            ),
+            user=f"Investigation data: {facts}",
+        )
+        return {
+            "what_happened": (result.get("what_happened") or "").strip() or goal.title,
+            "why_it_matters": (result.get("why_it_matters") or "").strip() or "",
+            "contributing_factors": [str(f) for f in (result.get("contributing_factors") or [])][:3],
+            "next_steps": [str(s) for s in (result.get("next_steps") or [])][:3],
+            "confidence": _clamp(result.get("confidence")),
+        }, 1
+    except LLMError:
+        logger.warning("goal_investigation_llm_unavailable")
+        # The computed health, its reasons and the blockers are all still
+        # correct and still shown - only the prose is missing.
+        return {
+            "what_happened": f"{goal.title} is {goal.health.value.replace('_', ' ')}. "
+                             + " ".join(goal.health_reasons or []),
+            "why_it_matters": "",
+            "contributing_factors": [f"{b['title']} ({b['detail']})" for b in detail["blockers"]][:3],
+            "next_steps": ["Review the blockers below directly."],
+            "confidence": 0.4,
+        }, 0
+
+
 def _commitment_anchor(session: Session, commitment, scope: Scope) -> Signal | None:
     """The signal a commitment came from, re-checked against the scope.
 

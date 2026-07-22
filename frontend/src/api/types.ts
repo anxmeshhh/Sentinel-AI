@@ -293,6 +293,39 @@ export interface Investigation {
   created_at: string;
 }
 
+/** A desired outcome, plus whether the evidence says it will happen.
+ *  `health` and `progress` are computed from linked evidence - the model
+ *  explains them, it never decides them. `progress` is null when nothing is
+ *  linked, which is a real answer rather than a confident 0%. */
+export interface Goal {
+  id: string;
+  title: string;
+  outcome: string | null;
+  due_at: string | null;
+  health: "unknown" | "on_track" | "at_risk" | "blocked" | "achieved" | "abandoned";
+  progress: number | null;
+  /** Why the health is what it is - deterministic, checkable. */
+  health_reasons: string[];
+  assessment: string | null;
+  next_step: string | null;
+  llm_calls: number;
+  closed_at: string | null;
+  created_at: string;
+}
+
+export interface GoalEvidenceItem {
+  kind: string;
+  id: string;
+  title: string;
+  detail: string;
+}
+
+export interface GoalDetail extends Goal {
+  commitments: { id: string; what: string; status: string; owner_label: string | null; due_at: string | null }[];
+  blockers: GoalEvidenceItem[];
+  risks: GoalEvidenceItem[];
+}
+
 export interface CommitmentEvidence {
   signal_id: string;
   kind: string;

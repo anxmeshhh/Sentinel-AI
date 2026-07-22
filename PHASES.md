@@ -2858,6 +2858,97 @@ scopes. **Confirmed against MySQL.**
 
 ---
 
+### Goal-Based AI ✅ Built and verified against MySQL
+
+**Objective:** *"What are we trying to accomplish, are we making progress,
+what is blocking us, and what should happen next?"* An intelligence layer
+**above** the existing modules — it detects nothing and stores no signals of
+its own.
+
+#### Health is arithmetic, not opinion
+
+Every health state is a count or a date comparison, and each rule writes a
+plain-language reason a person can check:
+
+| Condition | Health |
+|---|---|
+| A linked commitment is overdue | **BLOCKED** |
+| Deadline passed with work open | **BLOCKED** |
+| A commitment at risk, an active situation in scope, or deadline near with work open | **AT RISK** |
+| Linked, none of the above | **ON TRACK** |
+| Nothing linked | **UNKNOWN** — *"progress cannot be determined"* |
+
+**Progress is NULL when nothing is linked.** A confident 0% would imply
+Sentinel had looked and found nothing done; NULL says it cannot yet judge.
+
+The model is asked **only to explain** a state that is already decided, and
+the prompt says so — *"the health has ALREADY been computed… do not dispute,
+recompute or second-guess it, and never state a percentage that is not the
+supplied progress."* Two tests guard that: one asserts health is identical
+with the model unreachable, the other reads the prompt itself and fails if it
+ever starts asking the model to judge.
+
+#### Links are explicit; risks are contextual
+
+Commitments are linked by a person. Inferring them from wording would put a
+team's launch health on a foundation of string overlap, where one wrong match
+silently turns it BLOCKED. Active situations in the same scope are reported
+as **"risks in this context"** — an honest description that stops short of
+claiming they caused anything.
+
+#### Real-data verification — the modules composed on their own
+
+`verify_goals.py`, through the real route functions on MySQL: **16/16**,
+cleanup verified.
+
+The most interesting result was a **failing assertion that turned out to be
+right**. A channel goal with one healthy commitment came back `at_risk`
+rather than `on_track`, because Proactive Intelligence had a live situation in
+that very channel — the real Supabase project pause. Goal Intelligence read
+it through the shared scope and said so:
+
+> `['0 of 1 linked commitments resolved.', '1 active situation in this context.']`
+
+That is Commitment Intelligence, Proactive Intelligence and Goal Intelligence
+composing on real data with no code written to join them — the scope key did
+it. The test expectation was wrong before the code was.
+
+Then the brief's own scenario, verbatim: the backend commitment goes overdue →
+**BLOCKED**, blocker named, reason stated. A second commitment resolves →
+progress **0.5**, still blocked. **LLM calls across the entire scenario: 0.**
+
+#### Goal → Investigate This
+
+A fourth anchor alongside attention items, situations and commitments — and
+the widest, since a goal's evidence is the union of its linked commitments'
+signals. Unlike the others it always has something to say, because the
+computed blockers are themselves substance.
+
+#### RBAC
+
+Any channel member may set a goal or link a commitment. **Closing one is
+admin-only**: declaring a team objective achieved or abandoned is a statement
+about everyone's work, not just the clicker's.
+
+#### Known limitations
+
+- **Progress counts commitments, not effort.** Five linked commitments where
+  one is the real work still reads as 20% when that one resolves.
+- **Links are manual.** No suggestion of which commitments belong to a goal —
+  deliberately, until there is evidence a suggestion could be trusted.
+- **Situations are scope-wide context, not causal.** An unrelated situation in
+  a busy channel will mark goals at risk. Honest, but blunt.
+- **No sub-goals, dependencies or milestones**, by design.
+- **Health cannot see work Sentinel has no connection for.** A goal whose real
+  blocker lives in Jira is only as informed as the connections allow — Phase 2
+  of the strategy (connect the senses) is what strengthens this.
+
+**Exit criteria:** an individual and a team can state an outcome, Sentinel
+determines its health from defensible evidence, names what is blocking it, and
+keeps private and shared goals strictly apart. **Confirmed against MySQL.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

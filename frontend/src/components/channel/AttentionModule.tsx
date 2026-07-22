@@ -8,6 +8,7 @@ import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
 import { InvestigationPanel, useInvestigation } from "../InvestigationPanel";
 import { ProactiveStrip } from "../ProactiveStrip";
 import { CommitmentStrip } from "../CommitmentStrip";
+import { GoalPanel } from "../GoalPanel";
 import { Button, ButtonLink, EmptyState, Icon, LoadingBlock } from "../ui";
 
 /**
@@ -24,6 +25,7 @@ export function AttentionModule({ teamId }: { teamId: string }) {
   return (
     <>
       <ProactiveStrip scope="channel" teamId={teamId} />
+      <GoalPanel scope="channel" teamId={teamId} />
       <CommitmentStrip scope="channel" teamId={teamId} />
       <ChannelBriefingPanel teamId={teamId} />
     </>

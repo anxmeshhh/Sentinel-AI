@@ -18,6 +18,7 @@ from app.models.connection import Connection
 from app.services import agent_orchestration, ingestion
 from app.services.attention_engine import refresh_attention
 from app.services.commitments import refresh_commitments_for_workspace
+from app.services.goals import reassess_goals_for_workspace
 from app.services.proactive import refresh_proactive_for_workspace
 
 logger = structlog.get_logger("sentinel.workers")
@@ -82,6 +83,14 @@ def ingest_connection(self, connection_id: str, triggered_by: str = TriggeredBy.
             refresh_commitments_for_workspace(session, connection.workspace_id)
         except Exception:
             logger.exception("commitment_refresh_failed", workspace_id=str(connection.workspace_id))
+        # Goals sit above the others, so they are reassessed last - by now
+        # attention, situations and commitments all reflect this sync.
+        # Deterministic; the model is only reached when a goal's computed
+        # state actually moved.
+        try:
+            reassess_goals_for_workspace(session, connection.workspace_id)
+        except Exception:
+            logger.exception("goal_reassess_failed", workspace_id=str(connection.workspace_id))
         run_agents_for_connection.delay(str(connection.id), triggered_by)
     finally:
         session.close()

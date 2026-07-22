@@ -13,6 +13,7 @@ import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPa
 import { InvestigationPanel, useInvestigation } from "../components/InvestigationPanel";
 import { ProactiveStrip } from "../components/ProactiveStrip";
 import { CommitmentStrip } from "../components/CommitmentStrip";
+import { GoalPanel } from "../components/GoalPanel";
 import { LoadingBlock } from "../components/ui";
 
 const STATE_FILTERS = [
@@ -244,6 +245,8 @@ export function AttentionPage() {
           <ProactiveStrip scope="personal" />
 
           {/* What was promised, beneath what Sentinel noticed. */}
+          <GoalPanel scope="personal" />
+
           <CommitmentStrip scope="personal" />
 
           {loading ? (

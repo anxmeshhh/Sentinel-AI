@@ -27,6 +27,7 @@ class Investigation(Base, UUIDPk, TimestampMixin):
         UniqueConstraint("attention_item_id", "scope_key", name="uq_investigation_item_scope"),
         UniqueConstraint("situation_id", "scope_key", name="uq_investigation_situation_scope"),
         UniqueConstraint("commitment_id", "scope_key", name="uq_investigation_commitment_scope"),
+        UniqueConstraint("goal_id", "scope_key", name="uq_investigation_goal_scope"),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
@@ -47,6 +48,11 @@ class Investigation(Base, UUIDPk, TimestampMixin):
     # expand evidence around, so a commitment anchors an investigation too.
     commitment_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("commitments.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    # The widest anchor: a goal's evidence is the union of its linked
+    # commitments' signals, so correlation expands from all of them.
+    goal_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("goals.id", ondelete="CASCADE"), nullable=True, index=True
     )
     # Which authorization scope produced it - see the module docstring.
     scope_key: Mapped[str] = mapped_column(String(100), nullable=False)

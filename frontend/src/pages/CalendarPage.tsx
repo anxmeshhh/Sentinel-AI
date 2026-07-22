@@ -6,6 +6,8 @@ import { api, ApiError } from "../api/client";
 import type { CalendarEvent, Connection, Holiday, HolidayCategory } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { SentinelPanel } from "../components/SentinelPanel";
+import { workspaceContext } from "../components/context";
+import { useWorkspace } from "../context/WorkspaceContext";
 import { LoadingBlock } from "../components/ui";
 
 type View = "month" | "week" | "day" | "agenda";
@@ -26,6 +28,7 @@ const CATEGORY_META: Record<HolidayCategory, { label: string; dot: string; text:
 };
 
 export function CalendarPage() {
+  const { active } = useWorkspace();
   const [connected, setConnected] = useState<boolean | null>(null);
   const [view, setView] = useState<View>("agenda");
   const [anchor, setAnchor] = useState(() => new Date());
@@ -200,6 +203,7 @@ export function CalendarPage() {
             <div style={{ height: 440 }}>
               <SentinelPanel
                 contextLabel="Calendar"
+                identity={workspaceContext(active)}
                 suggestions={["What's on my calendar this week?", "Find a free 30-minute slot tomorrow"]}
               />
             </div>

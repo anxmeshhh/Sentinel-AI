@@ -157,7 +157,7 @@ export function ChannelWorkspacePage() {
         <NotBuiltModule label={definition.label} />
       ) : (
         <>
-          {activeModule === "sentinel" && <SentinelModule teamId={teamId} channelName={team.name} isArchived={team.is_archived} />}
+          {activeModule === "sentinel" && <SentinelModule teamId={teamId} channelName={team.name} isArchived={team.is_archived} className={path?.class_name} workspaceName={path?.workspace_name} />}
           {activeModule === "attention" && <AttentionModule teamId={teamId} />}
           {activeModule === "feed" && <FeedModule teamId={teamId} />}
           {activeModule === "prepare" && <PrepareModule teamId={teamId} />}

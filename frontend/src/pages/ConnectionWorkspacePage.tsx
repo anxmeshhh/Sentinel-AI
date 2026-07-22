@@ -7,6 +7,7 @@ import type { Connection } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { ConnectScopeDialog } from "../components/ConnectScopeDialog";
 import { SentinelPanel } from "../components/SentinelPanel";
+import { workspaceContext } from "../components/context";
 import { ScopeNotice, scopeOf } from "../components/ScopeBadge";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { CalendarIcon, DriveIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
@@ -88,6 +89,7 @@ export function ConnectionWorkspacePage() {
  *  this is where you ask for help with whatever you're looking at.
  *  Collapsible so the main workspace can take the full width. */
 function AISidebar() {
+  const { active } = useWorkspace();
   const [open, setOpen] = useState(true);
 
   if (!open) {
@@ -112,6 +114,7 @@ function AISidebar() {
       <div className="card overflow-hidden p-0 sm:p-0 xl:sticky xl:top-6 xl:h-[calc(100vh-6rem)]" style={{ minHeight: 420 }}>
         <SentinelPanel
           contextLabel="Google Workspace"
+          identity={workspaceContext(active)}
           suggestions={[
             "What are my most important unread emails?",
             "What's on my calendar this week?",

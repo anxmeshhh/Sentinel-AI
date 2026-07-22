@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { Markdown } from "./Markdown";
 import { Icon, Spinner, cn } from "./ui";
+import { ContextBar } from "./ContextBar";
+import type { ContextIdentity } from "./context";
 
 /**
  * The one Sentinel AI surface.
@@ -72,6 +74,7 @@ const SOURCE_KIND_LABEL: Record<string, string> = {
 
 export function SentinelPanel({
   contextLabel,
+  identity,
   endpointBase = "/connections/google",
   contextPrefix,
   placeholder,
@@ -80,6 +83,10 @@ export function SentinelPanel({
 }: {
   /** Shown as "Using: …" - the user must never wonder what Sentinel can see. */
   contextLabel: string;
+  /** The full context identity. When supplied the panel renders the
+   *  persistent context bar (icon + world + PRIVATE/SHARED + what Sentinel
+   *  may use) above the input, so the answer is visible before sending. */
+  identity?: ContextIdentity;
   endpointBase?: string;
   /** Hidden context prepended to the request (e.g. which Drive file this is about). */
   contextPrefix?: string;
@@ -168,9 +175,11 @@ export function SentinelPanel({
           </span>
           <div className="min-w-0">
             <div className="text-small font-semibold text-ink">Sentinel</div>
-            <div className="truncate text-micro text-ink-faint">
-              Using: <span className="text-ink-dim">{contextLabel}</span>
-            </div>
+            {!identity && (
+              <div className="truncate text-micro text-ink-faint">
+                Using: <span className="text-ink-dim">{contextLabel}</span>
+              </div>
+            )}
           </div>
         </div>
         {header}
@@ -187,6 +196,8 @@ export function SentinelPanel({
           </div>
         )}
       </div>
+
+      {identity && <ContextBar identity={identity} className="flex-none border-t" />}
 
       <div className="flex flex-none gap-2 border-t border-border p-3">
         <input

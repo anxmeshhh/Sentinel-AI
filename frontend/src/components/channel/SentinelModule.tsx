@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { ChannelAIHistoryItem } from "../../api/types";
 import { SentinelPanel } from "../SentinelPanel";
+import { channelContext } from "../context";
 
 /** Channel-contextual Sentinel: the orchestrator, scoped to this channel's
  *  authorized connections and resources. */
@@ -10,10 +11,16 @@ export function SentinelModule({
   teamId,
   channelName,
   isArchived,
+  className,
+  workspaceName,
 }: {
   teamId: string;
   channelName: string;
   isArchived: boolean;
+  /** The parent Class - a channel inherits its Class's context identity,
+   *  because that is the shared boundary its connections belong to. */
+  className?: string;
+  workspaceName?: string;
 }) {
   const [history, setHistory] = useState<ChannelAIHistoryItem[]>([]);
 
@@ -38,6 +45,7 @@ export function SentinelModule({
         <SentinelPanel
           endpointBase={`/teams/${teamId}/ai`}
           contextLabel={`#${channelName}`}
+          identity={channelContext(className ?? "Channel", channelName, workspaceName)}
           placeholder={`Ask Sentinel about #${channelName}…`}
           suggestions={[
             "What needs this channel's attention right now?",

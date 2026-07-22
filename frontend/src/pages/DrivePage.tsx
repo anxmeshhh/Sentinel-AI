@@ -5,6 +5,8 @@ import { api } from "../api/client";
 import type { Connection, DriveAnalytics, DriveFile } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { SentinelPanel } from "../components/SentinelPanel";
+import { workspaceContext } from "../components/context";
+import { useWorkspace } from "../context/WorkspaceContext";
 import { LoadingBlock } from "../components/ui";
 
 const MIME_FILTERS = [
@@ -17,6 +19,7 @@ const MIME_FILTERS = [
 ];
 
 export function DrivePage() {
+  const { active } = useWorkspace();
   const [connected, setConnected] = useState<boolean | null>(null);
   const [query, setQuery] = useState("");
   const [mimeType, setMimeType] = useState("");
@@ -267,6 +270,7 @@ export function DrivePage() {
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <SentinelPanel
                   contextLabel={`Drive · ${selectedFile.name}`}
+                  identity={workspaceContext(active)}
                   contextPrefix={`Regarding the Drive file "${selectedFile.name}" (Drive file id: ${selectedFile.id}):`}
                   placeholder="Summarize, extract deadlines, ask anything…"
                   suggestions={["Summarize this document", "Extract any deadlines or action items"]}

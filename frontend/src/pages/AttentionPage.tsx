@@ -7,6 +7,8 @@ import { AttentionEmptyState } from "../components/AttentionEmptyState";
 import { attentionIcon, EvidenceLink } from "../components/AttentionStrip";
 import { BackNav } from "../components/BackNav";
 import { SentinelPanel } from "../components/SentinelPanel";
+import { workspaceContext } from "../components/context";
+import { useWorkspace } from "../context/WorkspaceContext";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
 import { LoadingBlock } from "../components/ui";
 
@@ -24,6 +26,7 @@ const SNOOZE_OPTIONS = [
 ];
 
 export function AttentionPage() {
+  const { active } = useWorkspace();
   const [stateFilter, setStateFilter] = useState("new");
   const [items, setItems] = useState<AttentionItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -342,6 +345,7 @@ export function AttentionPage() {
               </div>
               <SentinelPanel
                 contextLabel="This attention item"
+                identity={workspaceContext(active)}
                 contextPrefix={`Regarding this attention item: "${askItem.title}" (${askItem.why}).`}
                 placeholder="Why does this matter? What should I do?"
                 suggestions={["Why does this matter?", "What should I do about it?"]}

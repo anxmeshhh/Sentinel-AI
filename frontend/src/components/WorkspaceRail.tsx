@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { Icon } from "./ui";
+import { contextClasses, workspaceContext } from "./context";
 
 /**
  * The context switcher: the narrow icon column on the far left.
@@ -43,6 +44,7 @@ export function WorkspaceRail({ onOpenCreate }: { onOpenCreate: () => void }) {
           label="Personal"
           glyph={<Icon name="user" size={17} />}
           isActive={w.id === active?.id}
+          markerClass={contextClasses(workspaceContext(w)).solid}
           onClick={() => {
             setActiveId(w.id);
             navigate("/");
@@ -58,6 +60,7 @@ export function WorkspaceRail({ onOpenCreate }: { onOpenCreate: () => void }) {
           label={w.name}
           glyph={w.name.trim().slice(0, 2).toUpperCase()}
           isActive={w.id === active?.id}
+          markerClass={contextClasses(workspaceContext(w)).solid}
           onClick={() => {
             setActiveId(w.id);
             navigate("/");
@@ -87,11 +90,15 @@ function RailButton({
   glyph,
   isActive,
   onClick,
+  markerClass = "bg-accent",
 }: {
   label: string;
   glyph: ReactNode;
   isActive: boolean;
   onClick: () => void;
+  /** The active marker inherits the workspace's context tone, so the rail
+   *  answers "which world am I in" from peripheral vision alone. */
+  markerClass?: string;
 }) {
   return (
     <button
@@ -105,7 +112,7 @@ function RailButton({
     >
       {/* Active marker on the rail edge, so the current context is readable
           without relying on fill colour alone. */}
-      {isActive && <span className="absolute -left-4 h-6 w-[3px] rounded-r-full bg-brand" />}
+      {isActive && <span className={`absolute -left-4 h-6 w-[3px] rounded-r-full ${markerClass}`} />}
       {glyph}
     </button>
   );

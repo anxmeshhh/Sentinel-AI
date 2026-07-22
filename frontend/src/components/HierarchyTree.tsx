@@ -7,6 +7,8 @@ import { useHierarchy } from "../context/HierarchyContext";
 import { InviteModal } from "./InviteModal";
 import { SharedConnectionsModal } from "./SharedConnectionsModal";
 import { Icon } from "./ui";
+import { ContextBadge } from "./ContextBar";
+import { workspaceContext } from "./context";
 import { useWorkspace } from "../context/WorkspaceContext";
 
 const CLASS_ADMIN_ROLES = ["super_admin", "org_admin"];
@@ -43,11 +45,14 @@ export function HierarchyTree() {
         <div className="truncate text-lead font-semibold text-ink" title={active.name}>
           {active.name.trim()}
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-caption text-ink-faint">{active.kind}</span>
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          {/* Replaces the raw workspace `kind` ("organization") with the
+              context identity - icon, name and PRIVATE/SHARED - so the
+              answer to "which world am I in" is stated, not inferred. */}
+          <ContextBadge identity={workspaceContext(active)} />
           <button
             onClick={() => setInviting(true)}
-            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
+            className="flex-none text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
           >
             Invite
           </button>

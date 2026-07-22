@@ -54,6 +54,19 @@ export default {
         brand: "#C9A06B",
         "brand-bright": "#DDB584",
 
+        // Context identity: which "world" the user is currently in. Three
+        // tones only, used at low opacity for glows/borders/badges - never
+        // as a page fill, so Sentinel stays one product rather than three
+        // themes. Always paired with an icon and a word (see
+        // components/context.ts): colour alone must never carry the meaning.
+        // ctx-personal is deliberately cyan-leaning rather than the obvious
+        // periwinkle: that would have been the exact hex as `watch`, the
+        // "Syncing" status colour, making "private context" and "still
+        // syncing" indistinguishable wherever they appeared together.
+        "ctx-personal": "#6FC3E8", // cool cyan-blue - private to you
+        "ctx-org": "#9A8FE6", // indigo         - shared workspace
+        "ctx-class": "#C9A06B", // warm amber     - shared class
+
         // Hairline rules used to draw the editorial grid. Deliberately
         // dimmer than `border`: these are structure, not edges, and at
         // `border` strength a full-page grid reads as a table.

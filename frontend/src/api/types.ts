@@ -293,6 +293,34 @@ export interface Investigation {
   created_at: string;
 }
 
+export interface CommitmentEvidence {
+  signal_id: string;
+  kind: string;
+  title: string;
+  actor: string | null;
+  occurred_at: string;
+  url: string | null;
+  relation: string;
+}
+
+/** Something someone said would happen, tracked until it does. Not a task:
+ *  it carries the evidence it came from, and its lifecycle is driven by
+ *  dates and source state rather than by ticking a box. */
+export interface Commitment {
+  id: string;
+  source: "manual" | "tracked";
+  status: "pending" | "due_soon" | "at_risk" | "overdue" | "resolved" | "dismissed";
+  what: string;
+  owner_label: string | null;
+  due_at: string | null;
+  evidence: CommitmentEvidence[];
+  last_progress_at: string | null;
+  confidence: number;
+  resolved_at: string | null;
+  resolution_reason: string | null;
+  created_at: string;
+}
+
 /** One signal Sentinel actually observed. FACT - never model-written. */
 export interface SituationEvidence {
   signal_id: string;

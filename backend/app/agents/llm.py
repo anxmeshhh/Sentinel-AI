@@ -41,15 +41,37 @@ class LLMClient:
         """
         last_err: Exception | None = None
         for attempt in range(max_retries + 1):
-            response = self._client.chat.completions.create(
-                model=self._model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.2,
-            )
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._model,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.2,
+                )
+            except APIStatusError as exc:
+                # Every caller of complete_json has a deterministic fallback
+                # for exactly this - a channel briefing, an investigation and
+                # a proactive situation all degrade to their retrieved
+                # evidence without prose. But those fallbacks catch LLMError,
+                # and a raw Groq exception sailed straight past them, so a
+                # spent quota crashed the request instead of degrading it.
+                #
+                # Found for real: the free tier's 200k tokens/day ran out
+                # mid-session and 32 tests failed with no code change.
+                # complete_with_tools had handled this since Phase 2; this
+                # path simply never did.
+                if exc.status_code in (413, 429):
+                    logger.warning("llm_unavailable", attempt=attempt, status=exc.status_code, error=str(exc))
+                    raise LLMOverloadedError(
+                        "The AI service has hit its usage limit for now - please try again in a little while."
+                    ) from exc
+                last_err = exc
+                logger.warning("llm_request_failed", attempt=attempt, error=str(exc))
+                continue
+
             content = response.choices[0].message.content or ""
             try:
                 return json.loads(content)

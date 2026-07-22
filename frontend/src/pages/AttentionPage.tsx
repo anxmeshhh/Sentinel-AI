@@ -12,6 +12,7 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
 import { InvestigationPanel, useInvestigation } from "../components/InvestigationPanel";
 import { ProactiveStrip } from "../components/ProactiveStrip";
+import { CommitmentStrip } from "../components/CommitmentStrip";
 import { LoadingBlock } from "../components/ui";
 
 const STATE_FILTERS = [
@@ -241,6 +242,9 @@ export function AttentionPage() {
           {/* What Sentinel noticed unasked, above what merely arrived.
               Renders nothing when nothing qualifies. */}
           <ProactiveStrip scope="personal" />
+
+          {/* What was promised, beneath what Sentinel noticed. */}
+          <CommitmentStrip scope="personal" />
 
           {loading ? (
             <LoadingBlock />

@@ -2,6 +2,7 @@ from app.models.agent_run import AgentRun
 from app.models.base import Base
 from app.models.brief import Brief
 from app.models.channel_required_connection import ChannelRequiredConnection
+from app.models.commitment import Commitment
 from app.models.connection import Connection
 from app.models.shared_connection import ChannelConnectionExclusion, SharedConnection, SharedConnectionResource
 from app.models.hierarchy import Group, WorkspaceClass
@@ -39,4 +40,5 @@ __all__ = [
     "EmailSummary",
     "Investigation",
     "Situation",
+    "Commitment",
 ]

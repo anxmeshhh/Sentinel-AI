@@ -2717,6 +2717,100 @@ context. **Confirmed against MySQL.**
 
 ---
 
+### Commitment Intelligence ✅ Built · scoped by measurement
+
+**Objective:** *"What did we say would happen — and is it actually
+happening?"* Not a task manager: a commitment carries the evidence it came
+from, and its lifecycle is driven by dates and source state rather than by
+someone ticking a box.
+
+#### Measurement decided the scope
+
+`scripts/audit_commitments.py`, against the real corpus:
+
+| Source | Finding | Built |
+|---|---|---|
+| Manual statements | always available | ✅ |
+| GitHub issues/PRs | owner + subject + observable closure | ⚠️ built, **0 real signals** |
+| **Email prose** | **0 promise subjects in 190; 0 sent mail; bodies never stored** | ❌ **not built** |
+
+The email row is the whole feasibility question. A commitment is a promise
+made in a conversation; conversations live in message bodies; this codebase
+deliberately never stores them. The stored corpus is subjects only, and it
+contained no promise language at all — nor a single message the account owner
+had *sent*, which is where "what did **I** commit to" would have to come from.
+An LLM extractor over that corpus would produce confident output from nothing,
+so it does not exist.
+
+**What would unblock it:** ingesting sent mail (the Gmail query already has no
+INBOX filter — this mailbox simply has none), or a provider where commitments
+are structured rather than prose: Slack messages, Jira issues, GitHub.
+
+#### Zero LLM calls — by construction, not by tuning
+
+There is no synthesis step anywhere in this module. Every transition comes
+from a date, a source's own state field, or a person's explicit action. A test
+asserts `LLMClient` is not even importable from it, so "let the model
+summarise this" cannot slip in later. That is not a cost optimisation — it is
+what makes *"Sentinel says you promised this"* defensible.
+
+#### Lifecycle
+
+    PENDING → DUE_SOON → AT_RISK → OVERDUE → RESOLVED / DISMISSED
+
+- **AT_RISK requires an observation**, not a mood: due soon **and** the source
+  has shown no activity for 3+ days. A manual commitment has no progress
+  signal to read, so it is never labelled at risk rather than guessed about.
+- **Resolved ≠ dismissed.** "This got done" and "this never mattered" are
+  different facts; collapsing them would make the record useless for the only
+  question that matters later — do commitments here actually get met?
+- **Resolution is evidence, never similarity.** A tracked commitment resolves
+  when *its own* source says so (issue closed, PR merged). A near-identical
+  closed issue resolves nothing — pinned by a test.
+
+#### Real-data verification
+
+`verify_commitments.py` through the real route functions on MySQL: **15/15**,
+cleanup verified. Private and channel lists proven not to bleed in either
+direction; overdue sorts first; resolve and dismiss are distinguishable.
+
+Tracked (GitHub) detection is **functionally tested — awaiting real-data
+validation**: no GitHub connection exists, so it has never run on live data.
+
+#### A production bug this pass surfaced
+
+Groq's free tier allows 200k tokens/day. That budget ran out mid-session and
+**32 tests failed with no code change** — because `complete_json` let the
+provider's own `APIStatusError` escape. Every caller has a careful
+`except LLMError` fallback (a briefing without prose, an investigation that
+still lists its evidence) and **none of them ran**, since a raw provider
+exception is not an `LLMError`. `complete_with_tools` had handled this since
+Phase 2; this path never did.
+
+Fixed, with `test_llm_degradation.py` pinning it: quota and size failures
+become `LLMOverloadedError`, carry a message a user can read, and are not
+retried against a limit that cannot refill mid-loop. The full suite now passes
+with the LLM entirely unreachable — and runs in 19s instead of 135s, which is
+the fallbacks proving themselves.
+
+#### Known limitations
+
+- **No automatic detection from conversation.** The largest gap, and a data
+  limitation rather than a design one — see above.
+- **Tracked detection has never run on real data.** Zero issue/PR signals.
+- **Owners are labels, not identities.** `owner_label` holds an external
+  account name; resolving it to a Sentinel user would be a guess.
+- **No commitment→Investigate link yet.** Investigations anchor on attention
+  items and situations; commitments would need a third anchor.
+- **Manual commitments never enter AT_RISK**, by design — there is nothing to
+  observe.
+
+**Exit criteria:** commitments can be stated or derived, age deterministically,
+resolve on evidence, and stay strictly separated between private and shared
+scopes. **Confirmed against MySQL.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

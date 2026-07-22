@@ -85,6 +85,14 @@ export const api = {
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }, opts?.workspaceId),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
+  // PUT for idempotent replace-in-place, which is what setting a policy is:
+  // "this action is enabled here" has one correct final state regardless of
+  // how many times it is sent.
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   postStream,
-  delete: (path: string) => request<void>(path, { method: "DELETE" }),
+  // Generic with a `void` default: most DELETEs return 204, but some return
+  // the updated resource (unlinking a commitment returns the recomputed
+  // goal), and callers of those need the body rather than a second fetch.
+  delete: <T = void>(path: string) => request<T>(path, { method: "DELETE" }),
 };

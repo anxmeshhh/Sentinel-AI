@@ -355,6 +355,30 @@ export interface Goal {
   created_at: string;
 }
 
+export interface ActionCatalogEntry {
+  key: string;
+  label: string;
+  risk: string;
+  scopes: string[];
+  external: boolean;
+  needs_approval: boolean;
+  available: boolean;
+  unavailable_reason: string | null;
+  requires_channel_admin: boolean;
+  /** What Sentinel can honestly promise about undoing it. */
+  reversibility: "reversible" | "compensatable" | "irreversible";
+  /** Whether it could ever run unattended - and even then only after an
+   *  explicit per-scope opt-in. */
+  autonomy_eligible: boolean;
+}
+
+export interface ActionPolicy {
+  action_type: string;
+  enabled: boolean;
+  daily_limit: number;
+  enabled_at: string | null;
+}
+
 export interface GoalEvidenceItem {
   kind: string;
   id: string;

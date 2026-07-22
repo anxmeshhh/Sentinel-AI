@@ -11,10 +11,7 @@ import { workspaceContext } from "../components/context";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
 import { InvestigationPanel, useInvestigation } from "../components/InvestigationPanel";
-import { ProactiveStrip } from "../components/ProactiveStrip";
-import { CommitmentStrip } from "../components/CommitmentStrip";
-import { GoalPanel } from "../components/GoalPanel";
-import { ActionPanel } from "../components/ActionPanel";
+import { IntelligenceTabs } from "../components/IntelligenceTabs";
 import { LoadingBlock } from "../components/ui";
 
 const STATE_FILTERS = [
@@ -241,18 +238,14 @@ export function AttentionPage() {
 
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="min-w-0 flex-1">
-          {/* What Sentinel noticed unasked, above what merely arrived.
-              Renders nothing when nothing qualifies. */}
-          <ProactiveStrip scope="personal" />
-
-          {/* What was promised, beneath what Sentinel noticed. */}
-          <ActionPanel scope="personal" />
-
-          <GoalPanel scope="personal" />
-
-          <CommitmentStrip scope="personal" />
-
-          {loading ? (
+          {/* One question per tab. Stacking these as four panels put five
+              surfaces in competition for the top of the page and buried the
+              attention list - the thing people open this page for. */}
+          <IntelligenceTabs
+            scope="personal"
+            counts={{ attention: items.filter((i) => i.state === "new").length }}
+            attention={
+              loading ? (
             <LoadingBlock />
           ) : items.length === 0 ? (
             <AttentionEmptyState context={context} filter={stateFilter} />
@@ -388,7 +381,9 @@ export function AttentionPage() {
                 </div>
               ))}
             </div>
-          )}
+              )
+            }
+          />
         </div>
 
         {askItem && (

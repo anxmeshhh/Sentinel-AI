@@ -48,7 +48,9 @@ export function CommitmentStrip({ scope, teamId }: { scope: "personal" | "channe
   const load = useCallback(
     async (refresh = false) => {
       try {
-        setCommitments(await api.get<Commitment[]>(`${path}${refresh ? "?refresh=true" : ""}`));
+        setCommitments(
+          await api.get<Commitment[]>(`${path}?include_closed=true${refresh ? "&refresh=true" : ""}`),
+        );
       } catch {
         setCommitments([]);
       }
@@ -60,7 +62,7 @@ export function CommitmentStrip({ scope, teamId }: { scope: "personal" | "channe
     void load(true);
   }, [load]);
 
-  async function act(id: string, action: "resolve" | "dismiss" | "confirm") {
+  async function act(id: string, action: "resolve" | "dismiss" | "confirm" | "reopen") {
     setBusy(true);
     try {
       await api.post(`/commitments/${id}/${action}`, action === "resolve" ? { reason: "Marked done" } : undefined);
@@ -206,6 +208,15 @@ export function CommitmentStrip({ scope, teamId }: { scope: "personal" | "channe
                           Dismiss
                         </button>
                       </>
+                    )}
+                    {(c.status === "resolved" || c.status === "dismissed") && (
+                      <button
+                        onClick={() => act(c.id, "reopen")}
+                        disabled={busy}
+                        className="text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
+                      >
+                        Reopen
+                      </button>
                     )}
                   </div>
                 </div>

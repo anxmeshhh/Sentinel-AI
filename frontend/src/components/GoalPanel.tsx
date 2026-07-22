@@ -45,7 +45,7 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
 
   const load = useCallback(async () => {
     try {
-      setGoals(await api.get<Goal[]>(basePath));
+      setGoals(await api.get<Goal[]>(`${basePath}?include_closed=true`));
     } catch {
       setGoals([]);
     }
@@ -104,7 +104,44 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
     }
   }
 
-  async function close(goalId: string, action: "achieved" | "abandoned") {
+  async function unlink(goalId: string, commitmentId: string) {
+    setBusy(true);
+    try {
+      setDetail(await api.delete<GoalDetail>(`/goals/${goalId}/commitments/${commitmentId}`));
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** How much of the goal one commitment represents. Not a task hierarchy -
+   *  a way to say "the backend is most of this" without inventing sub-goals. */
+  async function setWeight(goalId: string, commitmentId: string, weight: number) {
+    setBusy(true);
+    try {
+      setDetail(await api.patch<GoalDetail>(`/goals/${goalId}/commitments/${commitmentId}`, { weight }));
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Say how a situation relates to this goal. Scope alone is not a
+   *  relationship - an unclassified situation contributes nothing. */
+  async function classify(goalId: string, situationId: string, relation: string) {
+    setBusy(true);
+    try {
+      setDetail(await api.post<GoalDetail>(`/goals/${goalId}/situations`, {
+        situation_id: situationId,
+        relation,
+      }));
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function close(goalId: string, action: "achieved" | "abandoned" | "reopen") {
     setBusy(true);
     try {
       await api.post(`/goals/${goalId}/${action}`);
@@ -225,7 +262,29 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
                     {detail.risks.length > 0 && (
                       <Section label="⚠️ Risks in this context">
                         {detail.risks.map((r) => (
-                          <Row key={r.id} title={r.title} detail={r.detail} tone="text-watch" />
+                          <div key={r.id} className="flex items-baseline justify-between gap-2">
+                            <Row title={r.title} detail={r.detail} tone="text-watch" />
+                            {/* A person's judgement overrides Sentinel's guess,
+                                and is never overwritten by a later pass. */}
+                            {r.kind === "situation" && (
+                              <div className="flex flex-none gap-2 text-micro">
+                                <button
+                                  onClick={() => classify(g.id, r.id, "blocking")}
+                                  disabled={busy}
+                                  className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
+                                >
+                                  blocking
+                                </button>
+                                <button
+                                  onClick={() => classify(g.id, r.id, "unrelated")}
+                                  disabled={busy}
+                                  className="text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
+                                >
+                                  not related
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </Section>
                     )}
@@ -237,12 +296,39 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
                         </p>
                       ) : (
                         detail.commitments.map((c) => (
-                          <Row
-                            key={c.id}
-                            title={c.what}
-                            detail={c.weight !== 1 ? `${c.status.replace("_", " ")} · ×${c.weight}` : c.status.replace("_", " ")}
-                            tone="text-ink-faint"
-                          />
+                          <div key={c.id} className="flex items-baseline justify-between gap-2">
+                            <Row
+                              title={c.what}
+                              detail={c.status.replace("_", " ")}
+                              tone="text-ink-faint"
+                            />
+                            <div className="flex flex-none items-center gap-2 text-micro">
+                              {/* Weight: how much of the goal this represents. */}
+                              <label className="flex items-center gap-1 text-ink-faint">
+                                <span aria-hidden>×</span>
+                                <span className="sr-only">Weight for {c.what}</span>
+                                <input
+                                  type="number"
+                                  min={0.1}
+                                  max={100}
+                                  step={1}
+                                  defaultValue={c.weight}
+                                  onBlur={(e) => {
+                                    const next = Number(e.target.value);
+                                    if (next && next !== c.weight) void setWeight(g.id, c.id, next);
+                                  }}
+                                  className="w-12 rounded border border-border bg-transparent px-1 py-px text-micro text-ink-dim outline-none focus:border-border-strong"
+                                />
+                              </label>
+                              <button
+                                onClick={() => unlink(g.id, c.id)}
+                                disabled={busy}
+                                className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
+                              >
+                                unlink
+                              </button>
+                            </div>
+                          </div>
                         ))
                       )}
                     </Section>
@@ -309,6 +395,15 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
                       >
                         Abandon
                       </button>
+                      {(g.health === "achieved" || g.health === "abandoned") && (
+                        <button
+                          onClick={() => close(g.id, "reopen")}
+                          disabled={busy}
+                          className="text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
+                        >
+                          Reopen
+                        </button>
+                      )}
                     </div>
 
                     {investigatingId === g.id && (investigation.investigation || investigation.error) && (

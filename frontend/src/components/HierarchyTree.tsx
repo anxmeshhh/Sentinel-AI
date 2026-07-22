@@ -98,6 +98,24 @@ export function HierarchyTree() {
 
         {!loading && tree.map((klass) => <ClassNode key={klass.id} klass={klass} />)}
 
+        {/* What Sentinel has actually changed here. Admin-only, because the
+            trail spans everyone's actions - it answers "what did this system
+            do in my workspace", which belongs to whoever is responsible for
+            it. Routed but unreachable until now, which made it effectively
+            not exist. */}
+        {canManageClasses && (
+          <NavLink
+            to="/audit/actions"
+            className={({ isActive }) =>
+              `mt-2 rounded-sm px-2.5 py-2 text-small transition-colors ${
+                isActive ? "bg-surface-2 font-semibold text-ink" : "text-ink-faint hover:bg-surface/60 hover:text-ink"
+              }`
+            }
+          >
+            Action history
+          </NavLink>
+        )}
+
         {canManageClasses && (
           <div className="mt-2 px-2">
             {creatingClass ? (

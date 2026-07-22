@@ -22,7 +22,18 @@ const STATUS_COPY: Record<string, { label: string; tone: string }> = {
  * person looking at a situation must know whether it was assembled from
  * their own private context or from what their team shares.
  */
-export function ProactiveStrip({ scope, teamId }: { scope: "personal" | "channel"; teamId?: string }) {
+export function ProactiveStrip({
+  scope,
+  teamId,
+  alwaysShow = false,
+}: {
+  scope: "personal" | "channel";
+  teamId?: string;
+  /** On its own tab, silence is the answer rather than a reason to
+   *  render nothing - a blank tab looks broken. Inline, the strip
+   *  still disappears entirely when there is nothing to say. */
+  alwaysShow?: boolean;
+}) {
   const [situations, setSituations] = useState<Situation[]>([]);
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -64,7 +75,7 @@ export function ProactiveStrip({ scope, teamId }: { scope: "personal" | "channel
   }, [load]);
 
   // Silence is the correct output most days.
-  if (situations.length === 0) return null;
+  if (situations.length === 0 && !alwaysShow) return null;
 
   return (
     <div className="mb-4 flex flex-col gap-2">
@@ -83,6 +94,14 @@ export function ProactiveStrip({ scope, teamId }: { scope: "personal" | "channel
           {busy ? "Checking…" : "↻ Check again"}
         </button>
       </div>
+
+      {situations.length === 0 && (
+        <p className="text-caption leading-relaxed text-ink-faint">
+          Nothing is developing that Sentinel can see. It watches
+          {scope === "personal" ? " your connected accounts" : " this channel's authorized connections"} and will
+          surface a situation here the moment several signals add up to one.
+        </p>
+      )}
 
       {situations.map((s) => {
         const status = STATUS_COPY[s.status] ?? STATUS_COPY.emerging;

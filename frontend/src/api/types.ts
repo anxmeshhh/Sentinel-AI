@@ -293,6 +293,45 @@ export interface Investigation {
   created_at: string;
 }
 
+/** One signal Sentinel actually observed. FACT - never model-written. */
+export interface SituationEvidence {
+  signal_id: string;
+  kind: string;
+  title: string;
+  actor: string | null;
+  occurred_at: string;
+  url: string | null;
+  relation: string;
+}
+
+/** A developing situation Sentinel noticed without being asked. Distinct
+ *  from an AttentionItem: that is one thing that arrived, this is a reading
+ *  of several signals over time, with a lifecycle. */
+export interface Situation {
+  id: string;
+  situation_key: string;
+  kind: "service_jeopardy" | "meeting_unprepared";
+  status: "emerging" | "active" | "resolved";
+  title: string;
+  evidence: SituationEvidence[];
+  evidence_count: number;
+  first_seen_at: string;
+  last_evidence_at: string;
+  /** Deterministic, not model-assigned. */
+  importance: number;
+  confidence: number;
+  /** INFERENCE + RECOMMENDATION. Null until the situation earns an LLM call. */
+  what_is_developing: string | null;
+  why_it_matters: string | null;
+  suggested_next_steps: string[];
+  llm_calls: number;
+  /** The attention item to hand to Investigate This, when one of this
+   *  situation's signals also produced one. Null means the deeper
+   *  investigation isn't available for this situation - the UI omits the
+   *  action rather than offering a button that cannot work. */
+  investigatable_item_id: string | null;
+}
+
 export interface CalendarPlan {
   title: string;
   start: string;

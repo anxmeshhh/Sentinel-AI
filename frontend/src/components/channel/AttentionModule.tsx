@@ -6,10 +6,29 @@ import type { ChannelBriefing } from "../../api/types";
 import { attentionIcon, EvidenceLink } from "../AttentionStrip";
 import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
 import { InvestigationPanel, useInvestigation } from "../InvestigationPanel";
+import { ProactiveStrip } from "../ProactiveStrip";
 import { Button, ButtonLink, EmptyState, Icon, LoadingBlock } from "../ui";
 
-/** What needs this channel's attention, scoped to its authorized connections. */
+/**
+ * What needs this channel's attention.
+ *
+ * Two surfaces, deliberately separate: what Sentinel *noticed* unasked sits
+ * above what merely *arrived*. The strip renders itself away when nothing
+ * qualifies, and it is mounted outside the briefing's branches because a
+ * channel can have a developing situation while its briefing is empty - the
+ * two are computed from the same authorized connections but answer
+ * different questions.
+ */
 export function AttentionModule({ teamId }: { teamId: string }) {
+  return (
+    <>
+      <ProactiveStrip scope="channel" teamId={teamId} />
+      <ChannelBriefingPanel teamId={teamId} />
+    </>
+  );
+}
+
+function ChannelBriefingPanel({ teamId }: { teamId: string }) {
   const [briefing, setBriefing] = useState<ChannelBriefing | null>(null);
   const [loading, setLoading] = useState(true);
   const [investigateItemId, setInvestigateItemId] = useState<string | null>(null);

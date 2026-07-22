@@ -11,6 +11,7 @@ from app.models.investigation import Investigation
 from app.models.invite import WorkspaceInvite
 from app.models.otp_code import OtpCode
 from app.models.signal import Signal
+from app.models.situation import Situation
 from app.models.team import Team, TeamMembership
 from app.models.user import User
 from app.models.workspace import Membership, Workspace
@@ -37,4 +38,5 @@ __all__ = [
     "Brief",
     "EmailSummary",
     "Investigation",
+    "Situation",
 ]

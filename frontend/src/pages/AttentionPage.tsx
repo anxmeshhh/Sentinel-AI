@@ -11,6 +11,7 @@ import { workspaceContext } from "../components/context";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
 import { InvestigationPanel, useInvestigation } from "../components/InvestigationPanel";
+import { ProactiveStrip } from "../components/ProactiveStrip";
 import { LoadingBlock } from "../components/ui";
 
 const STATE_FILTERS = [
@@ -237,6 +238,17 @@ export function AttentionPage() {
 
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="min-w-0 flex-1">
+          {/* What Sentinel noticed unasked, above what merely arrived.
+              Renders nothing when nothing qualifies. */}
+          <ProactiveStrip
+            scope="personal"
+            onInvestigate={(situation) => {
+              if (!situation.investigatable_item_id) return;
+              setInvestigateItemId(situation.investigatable_item_id);
+              void investigation.load(`/attention/${situation.investigatable_item_id}/investigate`);
+            }}
+          />
+
           {loading ? (
             <LoadingBlock />
           ) : items.length === 0 ? (

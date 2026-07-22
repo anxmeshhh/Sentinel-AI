@@ -16,6 +16,7 @@ from app.api.routes import (
     channel_connections,
     channel_readiness,
     investigations,
+    proactive,
     hierarchy,
     shared_connections,
     connections,
@@ -107,6 +108,7 @@ app.include_router(invites.router)
 app.include_router(integrations.router)
 app.include_router(assistant.router)
 app.include_router(investigations.router)
+app.include_router(proactive.router)
 app.include_router(mail.router)
 app.include_router(calendar.router)
 app.include_router(connections_ai.router)

@@ -2567,6 +2567,108 @@ reach the other's private context. **Confirmed against MySQL.**
 
 ---
 
+### Proactive Intelligence ✅ Built and verified against MySQL
+
+**Objective:** move from *"something happened → I surfaced it → you investigate"*
+to *"several signals add up to something, and I said so before you asked."*
+
+#### Measurement killed four of five hypotheses
+
+Every rule was checked against the real mailbox **before** it was written
+(`scripts/audit_proactive_candidates.py`):
+
+| Hypothesis | Real-data result | Kept |
+|---|---|---|
+| A service you depend on is failing | **5 genuine, 0 false** in 190 emails | ✅ |
+| An upcoming meeting is unprepared | 0 future meetings exist | ⚠️ built, never fired |
+| A thread is waiting on your reply | 0 two-way threads — 189 threads / 190 emails | ❌ deleted |
+| A correspondent is escalating | 0 non-bulk repeaters | ❌ deleted |
+| Attention items going stale | 0 aged items | ❌ deleted |
+
+The detection vocabulary was then narrowed by a second measurement: including
+generic urgency words (`usage`, `limit`, `due`) pulled in newsletters at 6/7
+precision; removing them reached **5/5**. State-change language ("has been
+paused") is evidence; urgency language ("act now") is marketing.
+
+#### A Situation is not an AttentionItem
+
+An AttentionItem is *one thing that arrived*. A Situation is *a reading of
+several signals over time*, which is why it has a lifecycle:
+
+    EMERGING → ACTIVE → RESOLVED
+
+New evidence **updates the existing row**. `situation_key` is a stable
+identifier for the underlying problem, not for any signal, and a unique
+constraint on `(scope_key, situation_key)` enforces that in the database
+rather than trusting the detector. A feature that emits a fresh card per
+related email is a notification generator, which is what this must not be.
+
+Resolution is deterministic: a "restored / reactivated / renewed" message
+closes the situation. That path only ever *lowers* what Sentinel claims, so a
+false match costs a hidden card, never a wrong warning.
+
+#### Deterministic first, LLM last
+
+Detection, correlation, scoring, deduplication and lifecycle are all
+deterministic. `importance` and `confidence` are computed, **not model-
+assigned**, so the model cannot talk itself up the list. The LLM runs at most
+once per situation and only when the evidence fingerprint changes. **A quiet
+day costs zero tokens.**
+
+#### Real result, both layers
+
+Individual scope, 191 real signals: **4 candidates → 1 surfaced.**
+
+> **ACTIVE** · importance 0.80 · confidence 0.90 · 2 evidence · 1 LLM call
+> *Your Supabase Project QueryMind has been paused.*
+> **What:** the project has been paused, halting database and API access.
+> **Why:** dependent applications remain unavailable — downtime, potential data loss.
+> Evidence: `Jul 3 — is going to be paused` → `Jul 4 — has been paused`
+
+That two-message escalation is a genuine EMERGING→ACTIVE progression found in
+real data. The three rejected candidates were all 18–26 day old **singletons**
+(a trial that already expired, a decommission that already happened, a
+bandwidth spike from three weeks ago) — history, not developing situations.
+
+| | |
+|---|---|
+| First pass | 1.01s, **1 LLM call** |
+| Second pass | 0.02s, **0 additional LLM calls**, same row |
+| Duplicates | 0 |
+| Channel layer | same situation, separate row, `scope:channel:…` |
+| Unauthorized evidence | **0** |
+
+#### Both layers, one engine
+
+`scope` decides which connections may be read — the same `personal_scope` /
+`channel_scope` Investigate This uses. The detectors are identical; only the
+authorized signal set differs. A channel situation therefore cannot be
+assembled out of a member's private mail, because those signals are not in
+the query.
+
+#### Known limitations
+
+- **One detector has real-world evidence; the other has none.**
+  `meeting_unprepared` is deterministic and unit-tested but has never fired —
+  the connected calendar holds no future meetings. Kept because the rule is
+  sound, not because it is demonstrated.
+- **Detection is English-language and subject-line only.** Bodies are never
+  stored, so a state change announced only in a body is invisible.
+- **The situation→investigation link is often absent.** It requires one
+  evidence signal to also be an attention item; on real data it resolves to
+  `None`, and the UI correctly omits the button.
+- **Grouping is by sender domain.** Two unrelated problems from the same
+  vendor merge into one situation.
+- **No notification.** Situations surface when a page is opened; nothing is
+  pushed.
+
+**Exit criteria:** Sentinel recognized a real developing situation from
+authorized evidence, surfaced it to the right scope before being asked,
+explained why it mattered, produced no duplicates, and leaked no private
+context. **Confirmed against MySQL.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

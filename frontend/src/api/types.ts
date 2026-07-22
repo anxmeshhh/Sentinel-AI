@@ -320,10 +320,30 @@ export interface GoalEvidenceItem {
   detail: string;
 }
 
+/** Offered, never applied. A wrong link silently changes a goal's health,
+ *  so suggesting and linking have deliberately different bars. */
+export interface SuggestedCommitment {
+  commitment_id: string;
+  what: string;
+  status: string;
+  due_at: string | null;
+  shared_terms: string[];
+  reason: string;
+}
+
 export interface GoalDetail extends Goal {
-  commitments: { id: string; what: string; status: string; owner_label: string | null; due_at: string | null }[];
+  commitments: {
+    id: string;
+    what: string;
+    status: string;
+    owner_label: string | null;
+    due_at: string | null;
+    /** How much of the goal this represents. 1.0 unless someone said otherwise. */
+    weight: number;
+  }[];
   blockers: GoalEvidenceItem[];
   risks: GoalEvidenceItem[];
+  suggested_commitments: SuggestedCommitment[];
 }
 
 export interface CommitmentEvidence {

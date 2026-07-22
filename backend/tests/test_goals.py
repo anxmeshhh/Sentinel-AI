@@ -160,25 +160,104 @@ def test_an_overdue_commitment_blocks_the_goal(session, env):
     assert evidence["blockers"][0]["title"] == "Finish the backend"
 
 
-def test_an_active_situation_makes_the_goal_at_risk(session, env):
-    """Proactive Intelligence feeding Goal Intelligence, as context rather
-    than as a claimed cause."""
+def _situation(session, env, scope_key, title, *, signal_ids=None):
+    situation = Situation(
+        workspace_id=env["workspace"].id, scope_key=scope_key,
+        situation_key=f"service_jeopardy:{uuid.uuid4().hex[:8]}", kind=SituationKind.SERVICE_JEOPARDY,
+        status=SituationStatus.ACTIVE, title=title,
+        evidence=[{"signal_id": sid} for sid in (signal_ids or [])],
+        evidence_count=len(signal_ids or []), first_seen_at=NOW, last_evidence_at=NOW,
+        importance=0.8, confidence=0.9,
+    )
+    session.add(situation)
+    session.commit()
+    return situation
+
+
+def test_an_unrelated_situation_no_longer_creates_a_false_risk(session, env):
+    """The regression this pass exists for. Sharing a scope is not a
+    relationship - a busy channel would otherwise mark every goal at risk,
+    and "at risk" would stop carrying information."""
     goal = _goal(session, env, due_at=NOW + timedelta(days=30))
     _link(session, env, goal, _commitment(session, env, "Finish the backend", due_at=NOW + timedelta(days=20)))
-    session.add(Situation(
-        workspace_id=env["workspace"].id, scope_key=_personal(session, env).key,
-        situation_key="service_jeopardy:deploy", kind=SituationKind.SERVICE_JEOPARDY,
-        status=SituationStatus.ACTIVE, title="Deployment instability detected",
-        evidence=[], evidence_count=2, first_seen_at=NOW, last_evidence_at=NOW,
-        importance=0.8, confidence=0.9,
-    ))
-    session.commit()
+    _situation(session, env, _personal(session, env).key, "Unrelated vendor outage")
 
     reassess_goal(session, goal)
 
+    assert goal.health == GoalHealth.ON_TRACK
+    assert all("outage" not in r["title"] for r in goal_evidence(session, goal)["risks"])
+
+
+def test_a_situation_sharing_a_signal_is_detected_as_a_risk(session, env):
+    """The deterministic relationship: the situation was built from a signal
+    that also backs one of this goal's commitments, so they are about the
+    same events. That is literal overlap, not resemblance."""
+    from app.services.goals import detect_situation_relations
+
+    goal = _goal(session, env, due_at=NOW + timedelta(days=30))
+    commitment = _commitment(session, env, "Fix the deploy", due_at=NOW + timedelta(days=20))
+    shared_signal = str(uuid.uuid4())
+    commitment.evidence = [{"signal_id": shared_signal, "kind": "email", "title": "deploy failed"}]
+    session.commit()
+    _link(session, env, goal, commitment)
+    _situation(session, env, _personal(session, env).key, "Deployment instability", signal_ids=[shared_signal])
+
+    established = detect_situation_relations(session, goal)
+    reassess_goal(session, goal)
+
+    assert established == 1
     assert goal.health == GoalHealth.AT_RISK
-    assert "situation" in " ".join(goal.health_reasons)
-    assert any(r["kind"] == "situation" for r in goal_evidence(session, goal)["risks"])
+    assert any("Shares 1 signal" in r["detail"] for r in goal_evidence(session, goal)["risks"])
+
+
+def test_a_person_can_mark_a_situation_blocking(session, env):
+    from app.models.goal import GoalRelation
+    from app.services.goals import set_situation_relation
+
+    goal = _goal(session, env, due_at=NOW + timedelta(days=30))
+    _link(session, env, goal, _commitment(session, env, "Finish the backend", due_at=NOW + timedelta(days=20)))
+    situation = _situation(session, env, _personal(session, env).key, "Database is down")
+
+    set_situation_relation(session, goal, situation, GoalRelation.BLOCKING, env["admin"].id)
+
+    assert goal.health == GoalHealth.BLOCKED
+    assert goal_evidence(session, goal)["blockers"][0]["title"] == "Database is down"
+
+
+def test_marking_a_situation_unrelated_silences_it(session, env):
+    from app.models.goal import GoalRelation
+    from app.services.goals import set_situation_relation
+
+    goal = _goal(session, env, due_at=NOW + timedelta(days=30))
+    _link(session, env, goal, _commitment(session, env, "Finish the backend", due_at=NOW + timedelta(days=20)))
+    situation = _situation(session, env, _personal(session, env).key, "Noisy thing")
+    set_situation_relation(session, goal, situation, GoalRelation.RISK, env["admin"].id)
+    assert goal.health == GoalHealth.AT_RISK
+
+    set_situation_relation(session, goal, situation, GoalRelation.UNRELATED, env["admin"].id)
+
+    assert goal.health == GoalHealth.ON_TRACK
+
+
+def test_auto_detection_never_overwrites_a_persons_decision(session, env):
+    """Someone said this doesn't matter. The next deterministic pass must not
+    argue with them."""
+    from app.models.goal import GoalRelation
+    from app.services.goals import detect_situation_relations, set_situation_relation
+
+    goal = _goal(session, env, due_at=NOW + timedelta(days=30))
+    commitment = _commitment(session, env, "Fix the deploy", due_at=NOW + timedelta(days=20))
+    shared_signal = str(uuid.uuid4())
+    commitment.evidence = [{"signal_id": shared_signal}]
+    session.commit()
+    _link(session, env, goal, commitment)
+    situation = _situation(session, env, _personal(session, env).key, "Deploy noise", signal_ids=[shared_signal])
+    set_situation_relation(session, goal, situation, GoalRelation.UNRELATED, env["admin"].id)
+
+    detect_situation_relations(session, goal)
+    reassess_goal(session, goal)
+
+    assert goal.health == GoalHealth.ON_TRACK
 
 
 def test_a_passed_deadline_with_open_work_blocks(session, env):
@@ -396,3 +475,166 @@ def test_linking_the_same_commitment_twice_is_one_link(session, env):
     links = session.execute(select(GoalCommitment).where(GoalCommitment.goal_id == goal.id)).scalars().all()
     assert len(links) == 1
     assert goal.progress == 0.0  # not 0 of 2
+
+
+# --- weighted progress -----------------------------------------------------
+
+
+def test_weights_let_one_commitment_carry_more_of_the_goal(session, env):
+    """Five linked items where one is the real work should not read 20% when
+    that one lands."""
+    from app.services.goals import set_commitment_weight
+
+    goal = _goal(session, env, due_at=NOW + timedelta(days=30))
+    backend = _commitment(session, env, "Build the backend", due_at=NOW + timedelta(days=20))
+    changelog = _commitment(session, env, "Update the changelog", due_at=NOW + timedelta(days=20))
+    _link(session, env, goal, backend)
+    _link(session, env, goal, changelog)
+    set_commitment_weight(session, goal, backend.id, 9.0)
+
+    resolve_commitment(session, backend, reason="done")
+    reassess_goal(session, goal)
+
+    assert goal.progress == 0.9  # not 0.5
+    assert "weighted work resolved" in " ".join(goal.health_reasons)
+
+
+def test_unweighted_goals_still_read_as_a_plain_count(session, env):
+    """The simple case must not start speaking in weights."""
+    goal = _goal(session, env, due_at=NOW + timedelta(days=30))
+    done = _commitment(session, env, "Ship the API", due_at=NOW + timedelta(days=10))
+    _link(session, env, goal, done)
+    _link(session, env, goal, _commitment(session, env, "Ship the UI", due_at=NOW + timedelta(days=10)))
+    resolve_commitment(session, done, reason="shipped")
+
+    reassess_goal(session, goal)
+
+    assert goal.progress == 0.5
+    assert "1 of 2 linked commitments resolved" in " ".join(goal.health_reasons)
+
+
+def test_a_weight_cannot_be_set_on_an_unlinked_commitment(session, env):
+    from app.services.goals import set_commitment_weight
+
+    goal = _goal(session, env)
+    stray = _commitment(session, env, "Unrelated")
+
+    with pytest.raises(NotAuthorized):
+        set_commitment_weight(session, goal, stray.id, 5.0)
+
+
+# --- link suggestions ------------------------------------------------------
+
+
+def test_suggestions_are_offered_never_applied(session, env):
+    """Suggestion is cheap and reversible; a wrong link silently changes
+    health. The two get very different bars."""
+    from app.services.goals import suggest_commitments
+
+    goal = _goal(session, env, "Launch Product V2", due_at=NOW + timedelta(days=30))
+    _commitment(session, env, "Finish Product V2 backend", due_at=NOW + timedelta(days=10))
+
+    suggestions = suggest_commitments(session, goal)
+
+    assert len(suggestions) == 1
+    # The shared terms are normalised to lowercase for matching.
+    assert {"product", "v2"} & set(suggestions[0]["shared_terms"])
+    assert suggestions[0]["reason"].startswith("Mentions ")
+    # Offered only - health is untouched.
+    session.refresh(goal)
+    assert goal.health == GoalHealth.UNKNOWN
+    assert goal.progress is None
+
+
+def test_suggestions_never_cross_a_scope(session, env):
+    """ATTACK: a private commitment must not even be *suggested* for a
+    channel goal - the suggestion itself would disclose its wording."""
+    from app.services.goals import suggest_commitments
+
+    channel_goal = _goal(session, env, "Launch Product V2", scope=channel_scope(session, env["team"].id))
+    _commitment(
+        session, env, "Finish Product V2 secret prototype",
+        scope=_personal(session, env, env["member"]), user=env["member"],
+    )
+
+    assert suggest_commitments(session, channel_goal) == []
+
+
+def test_an_already_linked_commitment_is_not_suggested_again(session, env):
+    from app.services.goals import suggest_commitments
+
+    goal = _goal(session, env, "Launch Product V2", due_at=NOW + timedelta(days=30))
+    commitment = _commitment(session, env, "Finish Product V2 backend", due_at=NOW + timedelta(days=10))
+    _link(session, env, goal, commitment)
+
+    assert suggest_commitments(session, goal) == []
+
+
+def test_nothing_in_common_yields_no_suggestion(session, env):
+    from app.services.goals import suggest_commitments
+
+    goal = _goal(session, env, "Launch Product V2", due_at=NOW + timedelta(days=30))
+    _commitment(session, env, "Book the dentist", due_at=NOW + timedelta(days=10))
+
+    assert suggest_commitments(session, goal) == []
+
+
+# --- incremental reassessment ----------------------------------------------
+
+
+def test_reassessment_can_be_narrowed_to_affected_scopes(session, env):
+    """Prepared for volume: a full scan is fine now and will not be once
+    GitHub/Slack/Jira are feeding events in."""
+    mine = _goal(session, env, "Private goal", due_at=NOW + timedelta(days=30))
+    theirs = _goal(session, env, "Channel goal", scope=channel_scope(session, env["team"].id),
+                   due_at=NOW + timedelta(days=30))
+    _link(session, env, mine, _commitment(session, env, "Do the thing", due_at=NOW + timedelta(days=10)))
+
+    touched = reassess_goals_for_workspace(
+        session, env["workspace"].id, scope_keys={_personal(session, env).key}
+    )
+
+    assert touched == 1  # only the private scope was walked
+    assert theirs.health == GoalHealth.UNKNOWN  # untouched, as expected
+
+
+def test_a_commitment_change_reassesses_only_its_own_goals(session, env):
+    from app.services.goals import reassess_goals_for_commitment
+
+    linked_goal = _goal(session, env, "Linked goal", due_at=NOW + timedelta(days=30))
+    other_goal = _goal(session, env, "Other goal", due_at=NOW + timedelta(days=30))
+    commitment = _commitment(session, env, "Do the thing", due_at=NOW + timedelta(days=10))
+    _link(session, env, linked_goal, commitment)
+    _link(session, env, other_goal, _commitment(session, env, "Something else", due_at=NOW + timedelta(days=10)))
+
+    touched = reassess_goals_for_commitment(session, commitment)
+
+    assert touched == 1
+
+
+def test_affected_scope_keys_lists_only_scopes_with_open_goals(session, env):
+    from app.services.goals import affected_scope_keys
+
+    goal = _goal(session, env, "Private goal")
+    _goal(session, env, "Channel goal", scope=channel_scope(session, env["team"].id))
+    close_goal(session, goal, achieved=True)
+
+    keys = affected_scope_keys(session, env["workspace"].id)
+
+    assert keys == {f"channel:{env['team'].id}"}
+
+
+def test_a_private_situation_cannot_be_classified_onto_a_channel_goal(session, env):
+    """The relevance layer must not become a way around the scope boundary."""
+    from app.models.goal import GoalRelation
+    from app.services.goals import set_situation_relation
+
+    channel_goal = _goal(session, env, "Launch V2", scope=channel_scope(session, env["team"].id))
+    private_situation = _situation(
+        session, env, _personal(session, env, env["member"]).key, "My private outage"
+    )
+
+    with pytest.raises(NotAuthorized):
+        set_situation_relation(
+            session, channel_goal, private_situation, GoalRelation.BLOCKING, env["admin"].id
+        )

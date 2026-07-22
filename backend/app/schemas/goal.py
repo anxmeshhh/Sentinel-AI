@@ -17,6 +17,20 @@ class LinkedCommitmentOut(BaseModel):
     status: str
     owner_label: str | None
     due_at: str | None
+    # How much of the goal this represents. 1.0 unless someone said otherwise.
+    weight: float = 1.0
+
+
+class SuggestedCommitmentOut(BaseModel):
+    """A commitment that might belong to this goal. Never auto-linked -
+    suggestion is cheap and reversible; a wrong link silently changes health."""
+
+    commitment_id: uuid.UUID
+    what: str
+    status: str
+    due_at: str | None
+    shared_terms: list[str]
+    reason: str
 
 
 class GoalOut(BaseModel):
@@ -45,6 +59,7 @@ class GoalDetailOut(GoalOut):
     commitments: list[LinkedCommitmentOut]
     blockers: list[GoalEvidenceItem]
     risks: list[GoalEvidenceItem]
+    suggested_commitments: list[SuggestedCommitmentOut]
 
 
 class GoalCreate(BaseModel):
@@ -55,3 +70,12 @@ class GoalCreate(BaseModel):
 
 class GoalLinkCreate(BaseModel):
     commitment_id: uuid.UUID
+
+
+class GoalWeightUpdate(BaseModel):
+    weight: float = Field(ge=0.1, le=100.0)
+
+
+class GoalSituationRelation(BaseModel):
+    situation_id: uuid.UUID
+    relation: str = Field(pattern="^(unrelated|related|risk|blocking)$")

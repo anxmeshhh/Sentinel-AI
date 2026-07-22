@@ -89,6 +89,21 @@ class Goal(Base, UUIDPk, TimestampMixin):
     closed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
 
+class GoalRelation(str, enum.Enum):
+    """How a piece of evidence relates to a goal.
+
+    The default is UNRELATED, and that default is the point. Before this,
+    every active situation in a scope affected every goal in that scope - so
+    a busy channel would mark unrelated goals at risk, and "at risk" would
+    stop meaning anything. Evidence now has to earn its influence.
+    """
+
+    UNRELATED = "unrelated"  # visible, counts for nothing
+    RELATED = "related"  # context worth showing, does not move health
+    RISK = "risk"  # moves health to AT_RISK
+    BLOCKING = "blocking"  # moves health to BLOCKED
+
+
 class GoalCommitment(Base, UUIDPk, TimestampMixin):
     """An explicit link between a goal and a commitment.
 
@@ -106,4 +121,41 @@ class GoalCommitment(Base, UUIDPk, TimestampMixin):
     commitment_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("commitments.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Not every commitment is the same size of work. Weight lets one linked
+    # item count for more without inventing a task hierarchy - "ship the
+    # backend" can be worth 5 while "update the changelog" is worth 1.
+    # Default 1.0 means the simple case stays a plain ratio.
+    weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0, server_default="1.0")
     linked_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+
+class GoalSituation(Base, UUIDPk, TimestampMixin):
+    """How one proactive situation relates to one goal.
+
+    A row exists only once a relationship has been *established* - either
+    deterministically (the situation and the goal's commitments were built
+    from the same signals) or by a person choosing. A situation with no row
+    is UNRELATED to this goal and contributes nothing, which is what stops
+    unrelated noise in a busy channel from marking every goal at risk.
+    """
+
+    __tablename__ = "goal_situations"
+    __table_args__ = (UniqueConstraint("goal_id", "situation_id", name="uq_goal_situation"),)
+
+    goal_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("goals.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    situation_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("situations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    relation: Mapped[GoalRelation] = mapped_column(
+        Enum(GoalRelation, name="goal_relation"), nullable=False, default=GoalRelation.RELATED
+    )
+    # True when Sentinel established this from shared signals rather than a
+    # person choosing. Kept so a user's decision is never overwritten by the
+    # next deterministic pass.
+    auto_detected: Mapped[bool] = mapped_column(nullable=False, default=False)
+    # The observable fact behind the relation ("shares 2 signals with a
+    # linked commitment"), so the influence is auditable.
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    set_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)

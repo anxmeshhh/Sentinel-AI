@@ -27,7 +27,16 @@ from app.models.commitment import Commitment
 from app.models.goal import Goal
 from app.models.team import ChannelRole, Team
 from app.models.user import User
-from app.schemas.goal import GoalCreate, GoalDetailOut, GoalLinkCreate, GoalOut
+from app.models.goal import GoalRelation
+from app.models.situation import Situation
+from app.schemas.goal import (
+    GoalCreate,
+    GoalDetailOut,
+    GoalLinkCreate,
+    GoalOut,
+    GoalSituationRelation,
+    GoalWeightUpdate,
+)
 from app.schemas.investigation import InvestigationOut
 from app.services.goals import (
     NotAuthorized,
@@ -36,6 +45,8 @@ from app.services.goals import (
     goal_evidence,
     link_commitment,
     list_goals,
+    set_commitment_weight,
+    set_situation_relation,
     reassess_goal,
     reopen_goal,
     unlink_commitment,
@@ -62,6 +73,7 @@ def _detail(session: Session, goal: Goal) -> GoalDetailOut:
         commitments=evidence["commitments"],
         blockers=evidence["blockers"],
         risks=evidence["risks"],
+        suggested_commitments=evidence["suggested_commitments"],
     )
 
 
@@ -247,3 +259,49 @@ def investigate(
         return investigate_goal(session, goal=goal, scope=_scope_for(session, goal), refresh=refresh)
     except InvestigationNotAuthorized as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.patch("/goals/{goal_id}/commitments/{commitment_id}", response_model=GoalDetailOut)
+def set_weight(
+    goal_id: uuid.UUID,
+    commitment_id: uuid.UUID,
+    payload: GoalWeightUpdate,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> GoalDetailOut:
+    """How much of the goal one commitment represents.
+
+    Not a task hierarchy - a way to say "the backend is most of this" without
+    inventing sub-goals, milestones and dependency edges.
+    """
+    goal = _authorized(session, goal_id, user)
+    try:
+        set_commitment_weight(session, goal, commitment_id, payload.weight)
+    except NotAuthorized as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _detail(session, goal)
+
+
+@router.post("/goals/{goal_id}/situations", response_model=GoalDetailOut)
+def classify_situation(
+    goal_id: uuid.UUID,
+    payload: GoalSituationRelation,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> GoalDetailOut:
+    """Say how a situation relates to this goal.
+
+    Scope alone is not a relationship: a situation only affects health once
+    it is classified RISK or BLOCKING, either by a person here or by Sentinel
+    proving the two share signals. Marking one UNRELATED silences it for this
+    goal without touching the situation itself.
+    """
+    goal = _authorized(session, goal_id, user)
+    situation = session.get(Situation, payload.situation_id)
+    if situation is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    try:
+        set_situation_relation(session, goal, situation, GoalRelation(payload.relation), user.id)
+    except NotAuthorized as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return _detail(session, goal)

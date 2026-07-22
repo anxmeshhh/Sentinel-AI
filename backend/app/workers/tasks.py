@@ -18,7 +18,7 @@ from app.models.connection import Connection
 from app.services import agent_orchestration, ingestion
 from app.services.attention_engine import refresh_attention
 from app.services.commitments import refresh_commitments_for_workspace
-from app.services.goals import reassess_goals_for_workspace
+from app.services.goals import affected_scope_keys, reassess_goals_for_workspace
 from app.services.proactive import refresh_proactive_for_workspace
 
 logger = structlog.get_logger("sentinel.workers")
@@ -88,7 +88,15 @@ def ingest_connection(self, connection_id: str, triggered_by: str = TriggeredBy.
         # Deterministic; the model is only reached when a goal's computed
         # state actually moved.
         try:
-            reassess_goals_for_workspace(session, connection.workspace_id)
+            # Narrowed to the scopes that actually hold goals. A full scan is
+            # fine at this size and will not be once GitHub/Slack/Jira are
+            # feeding signals in - every event would otherwise re-evaluate
+            # every goal in the workspace.
+            reassess_goals_for_workspace(
+                session,
+                connection.workspace_id,
+                scope_keys=affected_scope_keys(session, connection.workspace_id),
+            )
         except Exception:
             logger.exception("goal_reassess_failed", workspace_id=str(connection.workspace_id))
         run_agents_for_connection.delay(str(connection.id), triggered_by)

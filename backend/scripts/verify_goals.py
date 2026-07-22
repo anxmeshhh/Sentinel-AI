@@ -89,13 +89,14 @@ try:
     detail = add_link(
         goal_id=goal.id, payload=GoalLinkCreate(commitment_id=backend.id), session=session, user=user
     )
-    # NOT on_track, and correctly so: Proactive Intelligence has a live
-    # situation in this very channel (the real Supabase project pause), and
-    # an active situation in the goal's scope is a risk to it. This is the
-    # modules composing on real data - the expectation here was wrong before
-    # the code was.
-    check("at risk because of a real situation in this channel", detail.health, "at_risk")
-    check("the reason names it", any("situation" in r for r in detail.health_reasons), True)
+    # ON TRACK - and this is the stabilization pass working. There IS a live
+    # situation in this channel (the real Supabase project pause), and until
+    # the relevance layer existed it made every goal here at_risk purely for
+    # sharing a scope. It shares no signals with this goal's commitments, so
+    # it is now correctly UNRELATED and contributes nothing.
+    check("on track - no false risk from an unrelated situation", detail.health, "on_track")
+    check("no situation noise in the reasons",
+          any("situation" in r for r in detail.health_reasons), False)
     check("progress measurable now", detail.progress, 0.0)
     print(f"      reasons: {detail.health_reasons}")
 

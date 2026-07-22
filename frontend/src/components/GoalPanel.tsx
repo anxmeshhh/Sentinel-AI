@@ -237,10 +237,36 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
                         </p>
                       ) : (
                         detail.commitments.map((c) => (
-                          <Row key={c.id} title={c.what} detail={c.status.replace("_", " ")} tone="text-ink-faint" />
+                          <Row
+                            key={c.id}
+                            title={c.what}
+                            detail={c.weight !== 1 ? `${c.status.replace("_", " ")} · ×${c.weight}` : c.status.replace("_", " ")}
+                            tone="text-ink-faint"
+                          />
                         ))
                       )}
                     </Section>
+
+                    {/* Sentinel offering, not deciding. */}
+                    {detail.suggested_commitments.length > 0 && (
+                      <Section label="Sentinel suggests linking">
+                        {detail.suggested_commitments.map((sg) => (
+                          <div key={sg.commitment_id} className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate text-caption text-ink-dim">{sg.what}</div>
+                              <div className="text-micro text-ink-faint">{sg.reason}</div>
+                            </div>
+                            <button
+                              onClick={() => link(g.id, sg.commitment_id)}
+                              disabled={busy}
+                              className="flex-none text-caption text-ink-faint underline underline-offset-2 hover:text-good disabled:opacity-50"
+                            >
+                              Link
+                            </button>
+                          </div>
+                        ))}
+                      </Section>
+                    )}
 
                     {available.length > 0 && (
                       <Section label="Link a commitment">

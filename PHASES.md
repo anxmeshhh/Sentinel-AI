@@ -2930,14 +2930,62 @@ Any channel member may set a goal or link a commitment. **Closing one is
 admin-only**: declaring a team objective achieved or abandoned is a statement
 about everyone's work, not just the clicker's.
 
+#### Stabilization pass — ready for richer connections
+
+**1. Relevance, not proximity.** Sharing a scope is no longer a relationship.
+A situation influences a goal only once one is *established*:
+
+| How | Result |
+|---|---|
+| Sentinel proves **signal overlap** with a linked commitment | auto → **RISK** |
+| A person classifies it | RELATED / RISK / **BLOCKING** / UNRELATED |
+| Neither | **UNRELATED** — visible, counts for nothing |
+
+Signal overlap is literal (the same signal id backs both), not resemblance —
+keyword similarity was deliberately rejected, since *"Launch V2"* and *"V2
+newsletter bounced"* share a token and nothing else. Auto-detection maxes out
+at RISK; **BLOCKING stays a human judgement**, and a person's classification
+is never overwritten by a later pass.
+
+Verified on real data: the same probe that previously came back `at_risk`
+purely because a Supabase situation existed in that channel now reads
+`on_track`, with no situation noise in its reasons.
+
+**2. Weighted progress.** `GoalCommitment.weight` (default 1.0). Five links
+where one is the real work no longer reads 20% when it lands — weight it 9
+and it reads 90%. The reason line switches to *"9 of 10 weighted work
+resolved"* only when weights are actually in use, so the simple case stays a
+plain count. Not a task hierarchy: no sub-goals, no milestones, no dependency
+edges.
+
+**3. Link suggestions, never auto-links.** `suggest_commitments` ranks
+same-scope open commitments by shared meaningful terms and returns them with
+a reason. Explicit links remain the only thing that moves health — suggestion
+is cheap and reversible, a wrong link silently changes a goal's state, so the
+two get very different bars. Suggestions **never cross a scope**: suggesting a
+private commitment on a channel goal would disclose its wording.
+
+**4. Deterministic health** — unchanged, and now guarded by a test that reads
+the prompt itself.
+
+**5. Incremental reassessment.** `reassess_goals_for_workspace(scope_keys=…)`
+narrows the pass to scopes that actually hold open goals, and
+`reassess_goals_for_commitment` touches only the goals that link a changed
+commitment. A full scan is fine at this size and would not be once
+GitHub/Jira/Slack are feeding events — every one would otherwise re-evaluate
+every goal in the workspace.
+
 #### Known limitations
 
-- **Progress counts commitments, not effort.** Five linked commitments where
-  one is the real work still reads as 20% when that one resolves.
-- **Links are manual.** No suggestion of which commitments belong to a goal —
-  deliberately, until there is evidence a suggestion could be trusted.
-- **Situations are scope-wide context, not causal.** An unrelated situation in
-  a busy channel will mark goals at risk. Honest, but blunt.
+- **Auto-relevance needs shared signals**, which today means it can only fire
+  where commitments carry evidence — tracked (GitHub) and extracted ones.
+  Manual commitments have no signals, so their goals rely on a person
+  classifying situations. This strengthens automatically as connections land.
+- **Suggestions are keyword-based** and will miss a commitment worded
+  differently from its goal. Deliberately weak evidence, deliberately only a
+  suggestion.
+- **Weights are manual** and unbounded by any total — five commitments can all
+  be weighted 10.
 - **No sub-goals, dependencies or milestones**, by design.
 - **Health cannot see work Sentinel has no connection for.** A goal whose real
   blocker lives in Jira is only as informed as the connections allow — Phase 2

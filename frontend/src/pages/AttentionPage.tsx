@@ -14,6 +14,7 @@ import { InvestigationPanel, useInvestigation } from "../components/Investigatio
 import { ProactiveStrip } from "../components/ProactiveStrip";
 import { CommitmentStrip } from "../components/CommitmentStrip";
 import { GoalPanel } from "../components/GoalPanel";
+import { ActionPanel } from "../components/ActionPanel";
 import { LoadingBlock } from "../components/ui";
 
 const STATE_FILTERS = [
@@ -245,6 +246,8 @@ export function AttentionPage() {
           <ProactiveStrip scope="personal" />
 
           {/* What was promised, beneath what Sentinel noticed. */}
+          <ActionPanel scope="personal" />
+
           <GoalPanel scope="personal" />
 
           <CommitmentStrip scope="personal" />

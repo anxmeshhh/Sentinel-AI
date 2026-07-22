@@ -293,6 +293,41 @@ export interface Investigation {
   created_at: string;
 }
 
+/** Something Sentinel wants to do, or did. Named SentinelAction because
+ *  `Action` collides with DOM and React vocabulary. */
+export interface SentinelAction {
+  id: string;
+  action_type: string;
+  risk: "low" | "medium" | "high";
+  status:
+    | "proposed"
+    | "awaiting_approval"
+    | "approved"
+    | "executing"
+    | "succeeded"
+    | "failed"
+    | "unknown"
+    | "rejected"
+    | "cancelled";
+  params: Record<string, unknown>;
+  /** Exactly what the user was shown before approving - stored server-side,
+   *  so the record proves what they agreed to. */
+  preview: { title?: string; fields?: Record<string, unknown>; effect?: string };
+  reason: string | null;
+  source_kind: string | null;
+  source_id: string | null;
+  requested_by_user_id: string;
+  approved_by_user_id: string | null;
+  approved_at: string | null;
+  executed_at: string | null;
+  result: Record<string, unknown>;
+  error: string | null;
+  /** How the outcome was confirmed. A success without this is not reported
+   *  as a success. */
+  verification: string | null;
+  created_at: string;
+}
+
 /** A desired outcome, plus whether the evidence says it will happen.
  *  `health` and `progress` are computed from linked evidence - the model
  *  explains them, it never decides them. `progress` is null when nothing is

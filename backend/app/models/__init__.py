@@ -1,3 +1,4 @@
+from app.models.action import Action
 from app.models.agent_run import AgentRun
 from app.models.base import Base
 from app.models.brief import Brief
@@ -44,4 +45,5 @@ __all__ = [
     "Commitment",
     "Goal",
     "GoalCommitment",
+    "Action",
 ]

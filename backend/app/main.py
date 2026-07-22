@@ -17,6 +17,7 @@ from app.api.routes import (
     channel_readiness,
     investigations,
     commitments,
+    actions,
     goals,
     proactive,
     hierarchy,
@@ -113,6 +114,7 @@ app.include_router(investigations.router)
 app.include_router(proactive.router)
 app.include_router(commitments.router)
 app.include_router(goals.router)
+app.include_router(actions.router)
 app.include_router(mail.router)
 app.include_router(calendar.router)
 app.include_router(connections_ai.router)

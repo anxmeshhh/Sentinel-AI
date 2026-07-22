@@ -79,6 +79,21 @@ class GoogleCalendarClient:
 
         return events
 
+    def get_event(self, event_id: str, *, calendar_id: str = "primary") -> dict | None:
+        """Read one event back by id.
+
+        Exists for verification (Module 10): an action is only SUCCEEDED once
+        the change has been confirmed to exist, not when the write call
+        returned. A 404 here is a definite answer - the event is not there -
+        while any other error is not, so it raises and the caller records
+        UNKNOWN rather than claiming failure.
+        """
+        resp = self._client.get(f"/calendars/{calendar_id}/events/{event_id}")
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()
+
     def create_event(
         self,
         *,

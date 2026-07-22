@@ -2997,6 +2997,99 @@ keeps private and shared goals strictly apart. **Confirmed against MySQL.**
 
 ---
 
+### Module 10 — Agentic Actions ✅ Built and verified against MySQL + the real Google API
+
+**Objective:** turn an insight into a safe action — understood, previewed,
+approved, executed exactly once, verified, recorded.
+
+#### The registry is the boundary
+
+`action_registry.py` declares every action Sentinel may take: risk, which
+scopes may run it, who must authorize it, a Pydantic parameter schema, an
+executor and a **verifier**. A type not in that dict cannot be proposed,
+approved or executed no matter what any prompt returns.
+
+An LLM may fill in `action_type` and `params` — **nothing else**. Both are
+validated server-side and re-validated against the scope at execution time.
+Authorization, approval, execution and verification are plain Python that
+never consults a model, so a prompt injection can at most propose something
+the server refuses.
+
+#### Read access is not write access
+
+`required_role` is declared **per action**, never inferred from whether the
+scope can see the resource. A channel member reads everything the channel is
+authorized for; writing to its calendar requires a channel admin. Pinned by
+test.
+
+#### Idempotency is a database constraint
+
+`idempotency_key` is UNIQUE and derived from *(scope + type + params)*, so a
+double-clicked Confirm, a retry and a duplicated worker all collide and the
+second one loses. The EXECUTING transition commits before anything is
+attempted, acting as a lock. **Proven against the real Google API: confirming
+twice produced one event.**
+
+#### Execution is not completion
+
+SUCCEEDED is written only after the change is read back. Three outcomes, and
+the middle one matters:
+
+| Outcome | Meaning |
+|---|---|
+| **SUCCEEDED** | executed *and* confirmed |
+| **UNKNOWN** | executed, could not be confirmed — deliberately not FAILED, since the change may exist and reporting failure invites a duplicate |
+| **FAILED** | the provider refused, or verification proved absence |
+
+#### Real-data verification — including a genuine external write
+
+`verify_actions.py`: **17/17**. One individual action, one channel action, and
+a **real Google Calendar event** created against the live account, verified by
+read-back, proven idempotent, then deleted (HTTP 204). Guardrails exercised on
+the same infrastructure: unknown type refused, `email.send` refused as
+unavailable, acting in another person's scope refused.
+
+Audit trail: every executed action names its requester, its approver, what ran,
+when, the outcome and how it was verified — **with no tokens**, checked.
+
+#### Actions implemented
+
+| Action | Risk | Status |
+|---|---|---|
+| `commitment.create` · `commitment.resolve` | LOW | ✅ real |
+| `goal.create` | LOW | ✅ real |
+| `attention.snooze` | LOW | ✅ real (personal only) |
+| `email.draft` | LOW | ✅ real — **stored, never sent** |
+| `calendar.create_event` | MEDIUM | ✅ **real external write, verified** |
+| `email.send` | HIGH | ❌ declared, not available this phase |
+| `github.create_issue` | MEDIUM | ❌ declared, awaiting OAuth App |
+
+The unavailable entries are listed **with their reasons** rather than hidden,
+so a future connection plugs in as a registry entry rather than a redesign.
+
+#### Known limitations
+
+- **No natural-language proposal path yet.** Actions are proposed by the UI
+  and by intelligence modules; there is no "tell Sentinel to do it in prose"
+  surface. The registry is what a future one would have to go through.
+- **Calendar events carry no attendees**, deliberately — inviting someone is
+  an outbound communication to a third party, a different risk class.
+- **No scheduled or autonomous execution.** Everything is triggered by a
+  person; nothing runs on a timer.
+- **Rollback is per-action-type and mostly absent.** Internal actions are
+  reversible through their own modules; a created calendar event is not
+  undone by Sentinel.
+- **The audit trail is workspace-admin only** and has no UI — the endpoint
+  exists and is tested.
+
+**Exit criteria:** an insight becomes a proposed action, the user sees exactly
+what will happen, authorization is verified, approval is required for anything
+external, execution happens once, the outcome is confirmed, and the record
+says who did what. **Confirmed against MySQL and the live Google Calendar
+API.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

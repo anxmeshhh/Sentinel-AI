@@ -2449,6 +2449,103 @@ MySQL.**
 
 ---
 
+### Investigate This ✅ Built and verified against MySQL
+
+**Objective:** turn one attention item into an evidence-backed account of what
+happened, why it matters, and what to do next.
+
+**Phase 2v rejected this feature, and that reasoning has to be answered.** The
+argument then was that it collapses: `finding` items already store
+`root_cause`, `upcoming_meeting` is Prepare Me, `manual` is user-written, and
+`deadline` items *are* emails — leaving "Ask Sentinel" on an email.
+
+That was right about the *item* and wrong about the *neighbourhood*. Asking
+Sentinel about an email reasons over one email. An investigation reasons over
+what surrounded it — the thread, the correspondent, the subject, and
+everything else that happened nearby **across providers**. The deployment
+failure matters because of the commits and meetings around it, and none of
+that is reachable from the item alone.
+
+#### Not RAG
+
+Retrieval is deterministic and correlation-driven, following meeting_prep:
+find the anchor, follow four specific relationships outward, rank, cap at 12,
+spend **one** LLM call.
+
+| Relationship | What it finds |
+|---|---|
+| `same_thread` | the conversation it belongs to |
+| `same_correspondent` | what else that person or system sent (±14d) |
+| `shared_subject` | other items about the same thing |
+| `around_the_same_time` | what else happened nearby (±72h), **across providers** |
+
+The last one is the cross-source correlation that makes this more than a
+smarter email summary.
+
+#### Facts and inference are kept apart
+
+`evidence` is retrieved from Signals, carries links, and the model never
+writes it. The narrative is the model's *reading* of that evidence, labelled
+as inference in the UI, with a reported confidence. A user who distrusts the
+narrative can check every fact it was built from.
+
+#### Authorization is the retrieval scope, not a filter
+
+One connection set per investigation, decided **before** any retrieval runs:
+
+    personal   the caller's own connections in this workspace
+    channel    the Phase 2 resolver (workspace ∪ class ∪ group ∪ channel − exclusions)
+
+A channel investigation therefore cannot reach the investigator's private
+mail — the connection is not in the set, so no query can return it. This is
+the Individual/Collective boundary made structural rather than checked.
+
+Two routes, because the scope must not be a caller-supplied parameter:
+
+    POST /attention/{item_id}/investigate
+    POST /teams/{team_id}/attention/{item_id}/investigate
+
+Cached per `(item, scope)`, never per item — one cache row shared between
+scopes would serve the personal scope's evidence to the channel.
+
+#### Measured against the real inbox, then fixed
+
+First real run returned 12 evidence items including Pinterest, Instagram and
+freelancing spam, and the model wove a coincidental Google security alert
+into a "contributing factor" — worse than returning nothing. Bulk mail is now
+excluded from `around_the_same_time` (and only there, since the other three
+relations carry an explicit link to the anchor), reusing the Phase 2v noise
+classifier.
+
+| | Before | After |
+|---|---|---|
+| Evidence items | 12 | 7 |
+| Spurious factors | 1 | 0 |
+| Latency | 1.50s | 1.72s |
+| LLM calls | 1 | 1 |
+
+Zero correlated evidence ⇒ **zero** LLM calls and an honest non-answer.
+Cached re-open: 0.001s.
+
+#### Known limitations
+
+- **Correlation is not causation, and the LLM will still reach.** Bulk
+  filtering removed the worst of it; a keyword match on "Build" can still
+  surface a marketing email. Evidence is shown in full so the user can judge.
+- **`finding` items have no anchor signal** — an agent's conclusion is not one
+  signal. They investigate on subject and time only.
+- **Keyword matching scans the 400 most recent authorized signals** in Python,
+  because titles live in a per-provider JSON payload. Fine at current volume;
+  it will need an index before it is fine at 100×.
+- **No channel UI entry point yet.** The endpoint exists and is tested; only
+  the Attention hub has the button.
+
+**Exit criteria:** a real attention item, investigated against real authorized
+data, returns a useful evidence-grounded explanation, and neither scope can
+reach the other's private context. **Confirmed against MySQL.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

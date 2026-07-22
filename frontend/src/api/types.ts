@@ -265,6 +265,34 @@ export interface MeetingBrief {
   cached: boolean;
 }
 
+/** One verified fact behind an investigation. Retrieved from Signals -
+ *  never written by the model, which is what makes it checkable. */
+export interface Evidence {
+  signal_id: string;
+  kind: string;
+  title: string;
+  actor: string | null;
+  occurred_at: string | null;
+  url: string | null;
+  relation: "same_thread" | "same_correspondent" | "shared_subject" | "around_the_same_time";
+  relation_label: string;
+}
+
+export interface Investigation {
+  id: string;
+  attention_item_id: string;
+  title: string;
+  /** The four fields below are the model's reading of `evidence`. */
+  what_happened: string;
+  why_it_matters: string;
+  contributing_factors: string[];
+  next_steps: string[];
+  confidence: number;
+  evidence: Evidence[];
+  llm_calls: number;
+  created_at: string;
+}
+
 export interface CalendarPlan {
   title: string;
   start: string;

@@ -10,6 +10,7 @@ import { SentinelPanel } from "../components/SentinelPanel";
 import { workspaceContext } from "../components/context";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
+import { InvestigationPanel, useInvestigation } from "../components/InvestigationPanel";
 import { LoadingBlock } from "../components/ui";
 
 const STATE_FILTERS = [
@@ -41,6 +42,8 @@ export function AttentionPage() {
   const [planResult, setPlanResult] = useState<string | null>(null);
   const [prepItemId, setPrepItemId] = useState<string | null>(null);
   const meetingBrief = useMeetingBrief();
+  const [investigateItemId, setInvestigateItemId] = useState<string | null>(null);
+  const investigation = useInvestigation();
   const [context, setContext] = useState<AttentionContext | null>(null);
 
   const [newTitle, setNewTitle] = useState("");
@@ -64,6 +67,19 @@ export function AttentionPage() {
     void load(stateFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateFilter]);
+
+  /** Investigate runs in the *personal* scope from this page - the hub is
+   *  one person's own attention. A channel investigation is a different
+   *  endpoint with a different authorization scope. */
+  function investigateFor(item: AttentionItem) {
+    if (investigateItemId === item.id) {
+      setInvestigateItemId(null);
+      investigation.clear();
+      return;
+    }
+    setInvestigateItemId(item.id);
+    void investigation.load(`/attention/${item.id}/investigate`);
+  }
 
   async function setState(item: AttentionItem, state: string, snoozeHours?: number) {
     setSnoozeMenuFor(null);
@@ -292,6 +308,17 @@ export function AttentionPage() {
                             Add to Calendar
                           </button>
                         )}
+                        {item.origin === "detected" && (
+                          <button
+                            onClick={() => investigateFor(item)}
+                            disabled={investigation.loading && investigateItemId === item.id}
+                            className={`underline underline-offset-2 disabled:opacity-50 ${
+                              investigateItemId === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
+                            }`}
+                          >
+                            {investigation.loading && investigateItemId === item.id ? "Investigating…" : "Investigate This ✨"}
+                          </button>
+                        )}
                         <button
                           onClick={() => setAskItem(askItem?.id === item.id ? null : item)}
                           className={`underline underline-offset-2 ${askItem?.id === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"}`}
@@ -320,6 +347,24 @@ export function AttentionPage() {
                           onClose={() => {
                             setPrepItemId(null);
                             meetingBrief.clear();
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {investigateItemId === item.id && (investigation.investigation || investigation.error) && (
+                    <div className="mt-3">
+                      {investigation.error ? (
+                        <p className="text-small text-crit">{investigation.error}</p>
+                      ) : (
+                        <InvestigationPanel
+                          investigation={investigation.investigation!}
+                          refreshing={investigation.refreshing}
+                          onRefresh={() => investigation.load(`/attention/${item.id}/investigate`, { refresh: true })}
+                          onClose={() => {
+                            setInvestigateItemId(null);
+                            investigation.clear();
                           }}
                         />
                       )}

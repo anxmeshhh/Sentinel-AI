@@ -5,12 +5,29 @@ import { api } from "../../api/client";
 import type { ChannelBriefing } from "../../api/types";
 import { attentionIcon, EvidenceLink } from "../AttentionStrip";
 import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
+import { InvestigationPanel, useInvestigation } from "../InvestigationPanel";
 import { Button, ButtonLink, EmptyState, Icon, LoadingBlock } from "../ui";
 
 /** What needs this channel's attention, scoped to its authorized connections. */
 export function AttentionModule({ teamId }: { teamId: string }) {
   const [briefing, setBriefing] = useState<ChannelBriefing | null>(null);
   const [loading, setLoading] = useState(true);
+  const [investigateItemId, setInvestigateItemId] = useState<string | null>(null);
+  const investigation = useInvestigation();
+
+  /** The channel endpoint, not the personal one. The scope is resolved
+   *  server-side from the channel, so an investigation opened here draws on
+   *  what the *channel* may see - never on the reader's own accounts, even
+   *  though they are the one clicking. */
+  function investigateFor(itemId: string) {
+    if (investigateItemId === itemId) {
+      setInvestigateItemId(null);
+      investigation.clear();
+      return;
+    }
+    setInvestigateItemId(itemId);
+    void investigation.load(`/teams/${teamId}/attention/${itemId}/investigate`);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,13 +88,42 @@ export function AttentionModule({ teamId }: { teamId: string }) {
       {briefing.narrative && <p className="mb-3 text-small leading-relaxed text-ink-dim">{briefing.narrative}</p>}
       <div className="flex flex-col gap-1.5">
         {briefing.items.map((item) => (
-          <div key={item.id} className="flex items-start gap-2.5 text-small">
-            <span className="mt-px flex-none">{attentionIcon(item)}</span>
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-semibold text-ink">{item.title}</div>
-              <div className="truncate text-caption text-ink-faint">{item.why}</div>
+          <div key={item.id}>
+            <div className="flex items-start gap-2.5 text-small">
+              <span className="mt-px flex-none">{attentionIcon(item)}</span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-semibold text-ink">{item.title}</div>
+                <div className="truncate text-caption text-ink-faint">{item.why}</div>
+              </div>
+              <button
+                onClick={() => investigateFor(item.id)}
+                disabled={investigation.loading && investigateItemId === item.id}
+                className={`flex-none text-micro underline underline-offset-2 disabled:opacity-50 ${
+                  investigateItemId === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
+                }`}
+              >
+                {investigation.loading && investigateItemId === item.id ? "Investigating…" : "Investigate ✨"}
+              </button>
+              <EvidenceLink item={item} className="flex-none text-micro font-semibold text-accent-text hover:underline" />
             </div>
-            <EvidenceLink item={item} className="flex-none text-micro font-semibold text-accent-text hover:underline" />
+
+            {investigateItemId === item.id && (investigation.investigation || investigation.error) && (
+              <div className="mt-2">
+                {investigation.error ? (
+                  <p className="text-caption text-crit">{investigation.error}</p>
+                ) : (
+                  <InvestigationPanel
+                    investigation={investigation.investigation!}
+                    refreshing={investigation.refreshing}
+                    onRefresh={() => investigation.load(`/teams/${teamId}/attention/${item.id}/investigate`, { refresh: true })}
+                    onClose={() => {
+                      setInvestigateItemId(null);
+                      investigation.clear();
+                    }}
+                  />
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>

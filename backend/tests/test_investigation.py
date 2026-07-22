@@ -303,6 +303,44 @@ def test_the_same_item_caches_per_scope_not_per_item(session, env, anchored):
     assert channel.scope_key.startswith("channel:")
 
 
+def test_a_non_member_cannot_investigate_in_a_channel(session, env, anchored):
+    """Route-level RBAC, checked before the scope is even resolved. The item
+    itself is legitimately shared with this channel, so the only thing
+    standing between an outsider and it is membership.
+
+    404 rather than 403, following the convention set in Phase 2y: "exists,
+    but not yours" would confirm the channel is real to someone who has no
+    business knowing that.
+    """
+    from fastapi import HTTPException
+
+    from app.api.routes.investigations import investigate_in_channel
+
+    outsider = User(email="outsider@acme.test", name="Outsider")
+    session.add(outsider)
+    session.flush()
+    session.add(Membership(workspace_id=env["workspace"].id, user_id=outsider.id, role=Role.EMPLOYEE))
+    session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        investigate_in_channel(
+            team_id=env["team"].id, item_id=anchored.id, session=session, user=outsider
+        )
+    assert exc_info.value.status_code == 404
+
+
+def test_a_channel_member_investigating_gets_the_channel_scope(session, env, anchored):
+    """The route must resolve the scope from the channel, never from the
+    caller - otherwise the endpoint's guarantee depends on who clicked."""
+    from app.api.routes.investigations import investigate_in_channel
+
+    result = investigate_in_channel(
+        team_id=env["team"].id, item_id=anchored.id, session=session, user=env["member"]
+    )
+
+    assert result.scope_key == f"channel:{env['team'].id}"
+
+
 def test_reopening_costs_nothing(session, env, anchored):
     scope = personal_scope(session, env["workspace"].id, env["admin"].id)
     first = investigate(session, item=anchored, scope=scope)

@@ -2527,6 +2527,26 @@ classifier.
 Zero correlated evidence ⇒ **zero** LLM calls and an honest non-answer.
 Cached re-open: 0.001s.
 
+#### Both layers, one implementation
+
+The channel entry point reuses `InvestigationPanel` and `useInvestigation`
+unchanged; only the URL differs. The Individual and Collective versions of
+this feature share every line except which endpoint they call, which is the
+point — the boundary lives in the scope resolution, not in two parallel
+features that could drift apart.
+
+Verified on the real `#backend` channel in Acme, whose Gmail and Drive are
+inherited *from its Class* and Calendar *from its Group*: 6 evidence rows, 1
+LLM call, every row traced back to an authorized connection, cached re-open
+0.014s, `scope_key = channel:…`.
+
+One honest caveat about that run: every connection in that workspace happens
+to be shared to the class, so "0 unauthorized connections contributed" is
+vacuous there. The real separation evidence is
+`verify_investigation_boundary.py`, which plants a decoy in a second
+member's private mailbox matching on thread, sender, subject *and* time, and
+confirms neither scope reaches it.
+
 #### Known limitations
 
 - **Correlation is not causation, and the LLM will still reach.** Bulk
@@ -2537,8 +2557,9 @@ Cached re-open: 0.001s.
 - **Keyword matching scans the 400 most recent authorized signals** in Python,
   because titles live in a per-provider JSON payload. Fine at current volume;
   it will need an index before it is fine at 100×.
-- **No channel UI entry point yet.** The endpoint exists and is tested; only
-  the Attention hub has the button.
+- **Channel investigations are read-only and not shared.** Each member's click
+  produces the same cached row, but there is no "the team investigated this"
+  surface — consistent with briefings, which are also read-only for now.
 
 **Exit criteria:** a real attention item, investigated against real authorized
 data, returns a useful evidence-grounded explanation, and neither scope can

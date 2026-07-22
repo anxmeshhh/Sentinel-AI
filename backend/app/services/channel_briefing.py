@@ -6,14 +6,20 @@ this Channel is authorized to see, plus a short narrative.
 
 ## The scoping rules (and why they are what they are)
 
-1. **Connection assignment is a hard gate.** An item is only ever visible in
-   a Channel if a Connection for its source provider is actually assigned to
-   that Channel (Phase 2l). No assignment, no items - never inferred, never
-   widened.
+1. **The item's own connection is a hard gate.** An item is visible here only
+   if the Connection that produced it is authorized for this Channel - by the
+   Channel itself or inherited from its Group, Class or Workspace
+   (channel_authorization). Never inferred, never widened.
+
+   Until Phase 3 this matched on *provider* instead, because an AttentionItem
+   had no link back to its source. That made an admin sharing their mailbox
+   read as "this channel may see any Gmail in the workspace", so a member's
+   private mail could surface in a shared briefing. Items now carry
+   `connection_id` and are gated on it, like every other channel surface.
 
 2. **Resource allow-lists are enforced wherever the item has an
    allow-listable resource.** A Drive-sourced item must match an allow-listed
-   file/folder if that channel-connection has any allow-list entries.
+   file/folder if that connection has any allow-list entries.
 
 3. **Email, calendar and PR items are connection-gated only** - deliberately,
    not as a shortcut. Their connections are already 1:1 with their scope in
@@ -33,18 +39,13 @@ lifecycle is built, not a default.
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
 
 import structlog
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.llm import LLMClient, LLMError
-from app.models.agent_run import AgentRun
 from app.models.attention_item import AttentionItem, AttentionType
-from app.models.channel_connection import ChannelConnection, ChannelConnectionResource
-from app.models.connection import Connection, Provider
-from app.models.finding import Finding
+from app.models.connection import Provider
 from app.services.attention_engine import list_attention
 from app.services.channel_authorization import resolve_channel_scope
 
@@ -101,13 +102,15 @@ def _is_visible_in_channel(session: Session, item: AttentionItem, scope: dict) -
     if item.type == AttentionType.MANUAL:
         return False
 
-    if item.type == AttentionType.FINDING:
-        return _finding_connection_is_assigned(session, item, scope)
-
-    provider = PROVIDER_BY_NAME.get(item.source_provider or "")
-    if provider is None or provider not in scope["providers"]:
+    # The connection that produced this item must itself be authorized here
+    # (Phase 3). This used to match on *provider*, which meant "the channel
+    # may see Gmail" resolved to "the channel may see every mailbox connected
+    # in this workspace" - a member's private mail included. An item with no
+    # connection recorded is not visible: fail-closed, as everywhere else.
+    if item.connection_id is None or item.connection_id not in scope["connections"]:
         return False
 
+    provider = PROVIDER_BY_NAME.get(item.source_provider or "")
     if provider in RESOURCE_SCOPED_PROVIDERS:
         return _resource_is_allowed(item, scope)
     return True
@@ -123,20 +126,6 @@ def _resource_is_allowed(item: AttentionItem, scope: dict) -> bool:
         if resource_key in allowed:
             return True
     return False
-
-
-def _finding_connection_is_assigned(session: Session, item: AttentionItem, scope: dict) -> bool:
-    """A finding is an agent's opinion about one connection's data - visible
-    in a channel only if that same connection is assigned to it."""
-    try:
-        finding_id = uuid.UUID(item.dedupe_key.split(":", 1)[1])
-    except (IndexError, ValueError):
-        return False
-
-    connection_id = session.execute(
-        select(AgentRun.connection_id).join(Finding, Finding.run_id == AgentRun.id).where(Finding.id == finding_id)
-    ).scalar_one_or_none()
-    return connection_id is not None and connection_id in scope["connections"]
 
 
 def _narrate(items: list[AttentionItem], labels: list[str]) -> str | None:

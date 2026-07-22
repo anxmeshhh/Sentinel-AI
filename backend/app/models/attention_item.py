@@ -57,6 +57,20 @@ class AttentionItem(Base, UUIDPk, TimestampMixin):
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
+    # Which Connection's data produced this item (Phase 3). NULL only for
+    # manual items, which belong to `created_by_user_id` instead.
+    #
+    # Every other channel surface - Feed, Insights, Knowledge, Prepare - gates
+    # on `Signal.connection_id`, but an AttentionItem had no link back to its
+    # source, so channel_briefing had to fall back to matching on *provider*.
+    # That made "the channel may see Gmail" mean "the channel may see every
+    # mailbox connected in this workspace", including a member's private one.
+    # Recording the connection is what lets attention be gated by the same
+    # authorization as everything else.
+    connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("connections.id"), nullable=True, index=True
+    )
+
     type: Mapped[AttentionType] = mapped_column(Enum(AttentionType, name="attention_type"), nullable=False)
     origin: Mapped[AttentionOrigin] = mapped_column(Enum(AttentionOrigin, name="attention_origin"), nullable=False)
     state: Mapped[AttentionState] = mapped_column(

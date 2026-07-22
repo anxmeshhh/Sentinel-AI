@@ -47,8 +47,17 @@ def get_attention(
     state: str | None = None,  # comma-separated; default: new only
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> list[AttentionItemOut]:
-    items = list_attention(session, workspace_id, states=_parse_states(state))
+    """This person's own attention list.
+
+    Scoped to the caller (Phase 3), not to the workspace. In a team workspace
+    the attention table holds items detected from every member's connections,
+    so returning the workspace's list would show one member the subject lines
+    of another's mail. Shared context has its own surface - the channel
+    briefing - where the channel's authorization decides what is visible.
+    """
+    items = list_attention(session, workspace_id, states=_parse_states(state), viewer_user_id=user.id)
     return [_to_out(i) for i in items]
 
 
@@ -56,6 +65,7 @@ def get_attention(
 def attention_context(
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> dict:
     """Why the attention list looks the way it does.
 
@@ -67,16 +77,24 @@ def attention_context(
     product cannot afford.
 
     Pure counts, no LLM, no provider calls.
+
+    Counted over the caller's own connections only, matching the list it
+    explains (Phase 3). Counting the workspace would both contradict that
+    list - "3 connections, 0 items" - and quantify a teammate's mail volume.
     """
     connections = session.execute(
-        select(Connection).where(Connection.workspace_id == workspace_id)
+        select(Connection).where(Connection.workspace_id == workspace_id, Connection.user_id == user.id)
     ).scalars().all()
     synced = [c for c in connections if c.last_synced_at is not None]
     last_synced = max((c.last_synced_at for c in synced), default=None)
 
     emails = session.execute(
-        select(Signal).where(Signal.workspace_id == workspace_id, Signal.type == SignalType.EMAIL)
-    ).scalars().all()
+        select(Signal).where(
+            Signal.workspace_id == workspace_id,
+            Signal.type == SignalType.EMAIL,
+            Signal.connection_id.in_([c.id for c in connections]),
+        )
+    ).scalars().all() if connections else []
 
     # How many looked important enough to consider, and how many of those
     # were set aside as bulk/automated - so "nothing here" can show its work.
@@ -119,10 +137,14 @@ def catch_me_up(
 def refresh(
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> list[AttentionItemOut]:
     """On-demand re-detection - also runs automatically after every sync
-    cycle, so this exists for the "refresh" button, not as the primary path."""
-    items = refresh_attention(session, workspace_id)
+    cycle, so this exists for the "refresh" button, not as the primary path.
+
+    Detection covers the workspace; the list returned is the caller's own.
+    """
+    items = refresh_attention(session, workspace_id, viewer_user_id=user.id)
     return [_to_out(i) for i in items]
 
 

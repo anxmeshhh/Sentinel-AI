@@ -22,7 +22,9 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.agent_run import AgentRun
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState, AttentionType
+from app.models.connection import Connection
 from app.models.finding import Finding
 from app.models.signal import Signal, SignalType
 from app.services.deadline_parser import find_deadline
@@ -41,10 +43,17 @@ FINDING_LOOKBACK_DAYS = 3
 MEETING_EXPIRY_GRACE_HOURS = 2
 
 
-def refresh_attention(session: Session, workspace_id: uuid.UUID) -> list[AttentionItem]:
+def refresh_attention(
+    session: Session, workspace_id: uuid.UUID, *, viewer_user_id: uuid.UUID | None = None
+) -> list[AttentionItem]:
     """Run every detector, reconcile with existing rows, return the current
     actionable list (NEW items, sorted). Called after each ingestion cycle
-    and from the on-demand refresh endpoint."""
+    and from the on-demand refresh endpoint.
+
+    Detection always covers the whole workspace - every connection's data is
+    re-examined. `viewer_user_id` only narrows what is *returned*, so the
+    caller refreshing gets their own list back and not a teammate's.
+    """
     now = datetime.now(timezone.utc)
 
     detected: dict[str, dict] = {}
@@ -77,6 +86,10 @@ def refresh_attention(session: Session, workspace_id: uuid.UUID) -> list[Attenti
                 item.priority = candidate["priority"]
                 item.due_at = candidate.get("due_at")
                 item.evidence_url = candidate.get("evidence_url")
+            # Set regardless of state: this is provenance, not a fact the
+            # user has acted on, and a row left NULL is a row that stays
+            # invisible everywhere it is now gated (Phase 3).
+            item.connection_id = candidate.get("connection_id")
         else:
             # Fact no longer qualifies (email read, meeting over, PR
             # merged...) - auto-complete unresolved rows so the list stays
@@ -95,7 +108,7 @@ def refresh_attention(session: Session, workspace_id: uuid.UUID) -> list[Attenti
         )
 
     session.commit()
-    return list_attention(session, workspace_id)
+    return list_attention(session, workspace_id, viewer_user_id=viewer_user_id)
 
 
 def _suppress_weaker_duplicates(detected: dict[str, dict]) -> None:
@@ -113,13 +126,44 @@ def _suppress_weaker_duplicates(detected: dict[str, dict]) -> None:
         detected.pop(f"email:{source_id}", None)
 
 
-def list_attention(session: Session, workspace_id: uuid.UUID, *, states: list[AttentionState] | None = None) -> list[AttentionItem]:
+def list_attention(
+    session: Session,
+    workspace_id: uuid.UUID,
+    *,
+    states: list[AttentionState] | None = None,
+    viewer_user_id: uuid.UUID | None = None,
+) -> list[AttentionItem]:
     """Snooze resurfacing happens lazily here (no scheduler needed): a
-    snoozed item whose time has come flips back to NEW on read."""
+    snoozed item whose time has come flips back to NEW on read.
+
+    `viewer_user_id` narrows the list to that person's *own* attention: items
+    produced by a connection they own, plus manual items they created. Pass it
+    for anything a single human reads as "my Sentinel".
+
+    Omitting it returns every item in the workspace, which is correct for
+    exactly one caller - channel_briefing, which then applies the channel's
+    own authorization (see that module). A team workspace holds attention
+    items derived from several members' connections, so an unfiltered list is
+    never safe to hand to a person directly.
+    """
     now = datetime.now(timezone.utc)
     items = session.execute(
         select(AttentionItem).where(AttentionItem.workspace_id == workspace_id)
     ).scalars().all()
+
+    if viewer_user_id is not None:
+        mine = set(session.execute(
+            select(Connection.id).where(
+                Connection.workspace_id == workspace_id, Connection.user_id == viewer_user_id
+            )
+        ).scalars())
+        # Fail-closed on both sides: a detected item with no connection
+        # recorded belongs to nobody and is shown to nobody; a manual item
+        # belongs to its author alone.
+        items = [
+            i for i in items
+            if (i.created_by_user_id == viewer_user_id if i.origin == AttentionOrigin.MANUAL else i.connection_id in mine)
+        ]
 
     changed = False
     for item in items:
@@ -187,6 +231,7 @@ def _detect_important_emails(session: Session, workspace_id: uuid.UUID, now: dat
         candidates.append(
             {
                 "dedupe_key": f"email:{s.external_id}",
+                "connection_id": s.connection_id,
                 "type": AttentionType.IMPORTANT_EMAIL,
                 "source_provider": "gmail",
                 "title": subject,
@@ -231,6 +276,7 @@ def _detect_upcoming_meetings(session: Session, workspace_id: uuid.UUID, now: da
                 # Recurring events keep one external_id per occurrence set -
                 # the start date in the key gives each occurrence its own row.
                 "dedupe_key": f"meeting:{s.external_id}:{start.date().isoformat()}",
+                "connection_id": s.connection_id,
                 "type": AttentionType.UPCOMING_MEETING,
                 "source_provider": "google_calendar",
                 "title": s.payload.get("title") or "Untitled meeting",
@@ -259,6 +305,7 @@ def _detect_stale_prs(session: Session, workspace_id: uuid.UUID, now: datetime) 
         candidates.append(
             {
                 "dedupe_key": f"pr:{s.external_id}",
+                "connection_id": s.connection_id,
                 "type": AttentionType.STALE_PR,
                 "source_provider": "github",
                 "title": s.payload.get("title") or f"PR #{s.payload.get('number', '?')}",
@@ -304,6 +351,7 @@ def _detect_deadlines(session: Session, workspace_id: uuid.UUID, now: datetime) 
         candidates.append(
             {
                 "dedupe_key": f"deadline:{s.external_id}",
+                "connection_id": s.connection_id,
                 "type": AttentionType.DEADLINE,
                 "source_provider": "gmail",
                 "title": subject,
@@ -335,6 +383,7 @@ def _detect_deadlines(session: Session, workspace_id: uuid.UUID, now: datetime) 
         candidates.append(
             {
                 "dedupe_key": f"deadline:{s.external_id}",
+                "connection_id": s.connection_id,
                 "type": AttentionType.DEADLINE,
                 "source_provider": "google_drive",
                 "title": f"Deadline in “{s.payload.get('name') or 'a document'}”",
@@ -374,15 +423,20 @@ def _deadline_priority(now: datetime, due: datetime) -> float:
 
 def _detect_findings(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
     since = now - timedelta(days=FINDING_LOOKBACK_DAYS)
+    # Joined to the run so the finding carries the connection it was formed
+    # about - the same link channel_briefing used to resolve separately, now
+    # recorded once on the item like every other kind.
     findings = session.execute(
-        select(Finding)
+        select(Finding, AgentRun.connection_id)
+        .join(AgentRun, AgentRun.id == Finding.run_id)
         .where(Finding.workspace_id == workspace_id, Finding.severity >= FINDING_MIN_SEVERITY, Finding.created_at >= since)
         .order_by(Finding.severity.desc())
-    ).scalars().all()
+    ).all()
 
     return [
         {
             "dedupe_key": f"finding:{f.id}",
+            "connection_id": connection_id,
             "type": AttentionType.FINDING,
             "source_provider": "agent",
             "title": f.summary,
@@ -390,5 +444,5 @@ def _detect_findings(session: Session, workspace_id: uuid.UUID, now: datetime) -
             "evidence_url": f"/findings/{f.id}",  # internal route - the finding detail page
             "priority": f.severity,
         }
-        for f in findings
+        for f, connection_id in findings
     ]

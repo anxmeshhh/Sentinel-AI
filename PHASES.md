@@ -2359,6 +2359,96 @@ access is structurally impossible. **Confirmed against MySQL.**
 
 ---
 
+### Phase 2z–3 — Shared connections, and the end of forced reconnection ✅ Built and verified against MySQL
+
+*(Not to be confused with "Phase 3 — Communication + Knowledge" below, which is the older
+product roadmap. This is the connections line of work: 2z → 3a → 3.)*
+
+**The problem.** A channel could only use a connection assigned to it directly, so an admin with
+one repo and twelve channels assigned it twelve times. And every member was made to connect their
+own Gmail before entering a channel — an account the channel then never read.
+
+| Step | What shipped |
+|---|---|
+| **2z** | Connections shared at a **Class** or **Group**, inherited by every channel beneath |
+| **2** | The **Workspace** tier, plus per-channel **exclusions** (deny beats allow), and the UI for both |
+| **3** | A shared connection **satisfies the requirement** for every member; personal connections become optional and provably private |
+
+#### One resolver, four tiers, one subtraction
+
+`channel_authorization.py` is the only place a channel's authorization is computed:
+
+    workspace ∪ class ∪ group ∪ channel − exclusions
+
+Everything else delegates: `_channel_scope`, `is_resource_allowed`, the orchestrator's
+`_get_connection`, and now `channel_readiness`. Resources merge across tiers; a connection present
+at any tier with no allow-listed resource anywhere still authorizes no resource-gated file.
+Exclusion is applied last and unconditionally, so two opposite intentions always resolve to the
+safe reading.
+
+**Inheritance stays fail-closed because sharing is always an explicit act.** Connecting a service
+grants nothing anywhere; someone must deliberately share it at a tier. A new channel therefore
+inherits only what an admin already chose to make shared context — never "everything in the
+workspace" by default.
+
+#### Phase 3: state and blocking are different questions
+
+`state` answers *"has this member connected this service themselves?"*. Whether they are **blocked**
+is separate, and since Phase 3 the answer is no whenever an admin already shared that provider
+(`provided_by`). The two are deliberately not merged: a member covered by an admin's Gmail is
+`not_connected` **and** unblocked, and reporting them "connected" would be a lie about their own
+account.
+
+`provided_by` carries a **tier name** — `"workspace"`, never an address or a connection id. Knowing
+the requirement is covered tells a member what to do; naming whose account covers it would not.
+
+#### The leak this uncovered, and had to fix
+
+Every channel surface gates on `Signal.connection_id` — Feed, Insights, Knowledge, Prepare. Except
+attention: an `AttentionItem` had **no link back to its source**, so `channel_briefing` matched on
+*provider*. "This channel may see Gmail" therefore resolved to *"this channel may see every mailbox
+connected in this workspace"* — including the private one a member had just been forced to connect.
+`/attention` had the same shape, returning every item in the workspace to every member.
+
+Phase 3's promise ("personal connections enrich **only** your private Sentinel") was false until
+this was closed, so it was closed in the same phase:
+
+- `attention_items.connection_id`, backfilled from `dedupe_key` → `signals.external_id` (and via
+  `agent_runs` for findings). **Unmatched rows are left NULL**, which is fail-closed everywhere it
+  is read; `refresh_attention` repairs anything still real on the next sync.
+- `channel_briefing` gates on that connection, like everything else.
+- `/attention`, `/attention/refresh` and `/attention/context` are scoped to the **caller**, not the
+  workspace. Shared context has its own surface — the channel briefing — where the channel's
+  authorization decides what is visible.
+
+`test_provider_matching_would_have_leaked_it` reconstructs the old rule and asserts it admits the
+member's private mail, so the reasoning stays executable rather than becoming a comment someone
+later disagrees with.
+
+#### Verified
+
+- **310 backend tests** (was 287). 22 new across
+  `test_shared_connections_satisfy_requirements.py` and `test_personal_attention_stays_private.py`.
+- **`scripts/verify_phase3_flow.py`** — 16 checks against real MySQL in a rolled-back transaction,
+  service layer only (route handlers commit internally and would leave rows behind; that mistake
+  was made once in Phase 2 and is why the script now verifies its own rollback).
+- Backfill on the live database matched **3/3** existing items, findings path included.
+
+#### Known gaps
+
+- **GitHub is still a PAT**, so an expired GitHub token still reports `ready` — `revoked_at` is
+  only written on the Google refresh path. Phase C, blocked on registering an OAuth App.
+- **No notification when an admin shares or excludes.** A member finds out on their next visit.
+- **Requirements are still per-channel.** Twelve channels needing Gmail are still declared twelve
+  times, even though one workspace share now satisfies all twelve.
+
+**Exit criteria:** a member joins a channel and can use it without connecting anything an admin
+already shared; a personal connection reaches no shared surface; deny still beats allow; and
+excluding a shared connection puts the requirement honestly back on the member. **Confirmed against
+MySQL.**
+
+---
+
 ## Phase 3 — Communication + Knowledge + Organization Workspace
 
 **IA surface that goes live:** Organization Workspace (`IA.md` §2.4) — Executive Dashboard,

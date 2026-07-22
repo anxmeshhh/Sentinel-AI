@@ -66,8 +66,10 @@ def env(session):
     return {"workspace": workspace, "user": user, "team": team, "gmail": gmail, "github": github, "drive": drive}
 
 
-# Visibility keys off source_provider (every real detected item carries
-# one), so the fixture mirrors what the detectors actually produce.
+# Every real detected item carries both the provider it came from and the
+# Connection that produced it, so the fixture mirrors that. Visibility keys
+# off the connection (Phase 3); source_provider only decides whether an item
+# is additionally resource-gated.
 _DEFAULT_PROVIDER = {
     AttentionType.IMPORTANT_EMAIL: "gmail",
     AttentionType.UPCOMING_MEETING: "google_calendar",
@@ -77,12 +79,27 @@ _DEFAULT_PROVIDER = {
     AttentionType.MANUAL: None,
 }
 
+# Which of the fixture's connections a given item type comes from. Calendar
+# items have no calendar connection in this fixture, so those tests pass
+# `connection=` explicitly.
+_DEFAULT_CONNECTION_KEY = {
+    AttentionType.IMPORTANT_EMAIL: "gmail",
+    AttentionType.STALE_PR: "github",
+    AttentionType.DEADLINE: "gmail",
+    AttentionType.MANUAL: None,
+}
 
-def _item(workspace, *, type_, dedupe_key, title="Item", origin=AttentionOrigin.DETECTED, priority=0.6, provider="__default__"):
+
+def _item(env, *, type_, dedupe_key, title="Item", origin=AttentionOrigin.DETECTED, priority=0.6,
+          provider="__default__", connection="__default__"):
+    if connection == "__default__":
+        key = _DEFAULT_CONNECTION_KEY.get(type_)
+        connection = env[key] if key else None
     return AttentionItem(
-        workspace_id=workspace.id, type=type_, origin=origin, state=AttentionState.NEW,
+        workspace_id=env["workspace"].id, type=type_, origin=origin, state=AttentionState.NEW,
         dedupe_key=dedupe_key, title=title, why="because", priority=priority,
         source_provider=_DEFAULT_PROVIDER[type_] if provider == "__default__" else provider,
+        connection_id=connection.id if connection is not None else None,
     )
 
 
@@ -94,7 +111,7 @@ def _assign(session, team, connection, user):
 
 
 def test_no_connections_assigned_yields_empty_briefing(session, env):
-    session.add(_item(env["workspace"], type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m1"))
+    session.add(_item(env, type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m1"))
     session.commit()
 
     result = build_channel_briefing(session, env["team"].id, env["workspace"].id)
@@ -106,8 +123,8 @@ def test_no_connections_assigned_yields_empty_briefing(session, env):
 def test_only_items_from_assigned_connections_are_visible(session, env):
     """The core gate: Gmail assigned, GitHub not - so the email shows and
     the PR does not, even though both exist in the workspace."""
-    session.add(_item(env["workspace"], type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m1", title="Client email"))
-    session.add(_item(env["workspace"], type_=AttentionType.STALE_PR, dedupe_key="pr:482", title="Stale PR"))
+    session.add(_item(env, type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m1", title="Client email"))
+    session.add(_item(env, type_=AttentionType.STALE_PR, dedupe_key="pr:482", title="Stale PR"))
     session.commit()
     _assign(session, env["team"], env["gmail"], env["user"])
 
@@ -116,8 +133,8 @@ def test_only_items_from_assigned_connections_are_visible(session, env):
 
 
 def test_assigning_more_connections_widens_the_briefing(session, env):
-    session.add(_item(env["workspace"], type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m1", title="Client email"))
-    session.add(_item(env["workspace"], type_=AttentionType.STALE_PR, dedupe_key="pr:482", title="Stale PR"))
+    session.add(_item(env, type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m1", title="Client email"))
+    session.add(_item(env, type_=AttentionType.STALE_PR, dedupe_key="pr:482", title="Stale PR"))
     session.commit()
     _assign(session, env["team"], env["gmail"], env["user"])
     _assign(session, env["team"], env["github"], env["user"])
@@ -128,7 +145,7 @@ def test_assigning_more_connections_widens_the_briefing(session, env):
 
 def test_personal_manual_reminders_never_appear_in_a_channel(session, env):
     session.add(
-        _item(env["workspace"], type_=AttentionType.MANUAL, dedupe_key="manual:abc", title="Call the dentist", origin=AttentionOrigin.MANUAL)
+        _item(env, type_=AttentionType.MANUAL, dedupe_key="manual:abc", title="Call the dentist", origin=AttentionOrigin.MANUAL)
     )
     session.commit()
     _assign(session, env["team"], env["gmail"], env["user"])
@@ -141,8 +158,8 @@ def test_drive_item_hidden_until_that_document_is_allow_listed(session, env):
     assigning it grants nothing until an admin authorizes specific ones."""
     session.add(
         _item(
-            env["workspace"], type_=AttentionType.DEADLINE, dedupe_key="deadline:doc-1",
-            title="Deadline in spec", provider="google_drive",
+            env, type_=AttentionType.DEADLINE, dedupe_key="deadline:doc-1",
+            title="Deadline in spec", provider="google_drive", connection=env["drive"],
         )
     )
     session.commit()
@@ -161,7 +178,7 @@ def test_email_deadline_is_connection_gated_not_resource_gated(session, env):
     """The documented asymmetry: an email-sourced deadline can't be
     pre-allow-listed by an admin, so Gmail assignment alone must surface it."""
     session.add(
-        _item(env["workspace"], type_=AttentionType.DEADLINE, dedupe_key="deadline:m9", title="Invoice due Friday")
+        _item(env, type_=AttentionType.DEADLINE, dedupe_key="deadline:m9", title="Invoice due Friday")
     )
     session.commit()
     _assign(session, env["team"], env["gmail"], env["user"])
@@ -183,7 +200,10 @@ def test_finding_visible_only_when_its_own_connection_is_assigned(session, env):
     )
     session.add(finding)
     session.flush()
-    session.add(_item(env["workspace"], type_=AttentionType.FINDING, dedupe_key=f"finding:{finding.id}", title="Risky deploy"))
+    session.add(_item(
+        env, type_=AttentionType.FINDING, dedupe_key=f"finding:{finding.id}", title="Risky deploy",
+        connection=env["github"],  # the run examined GitHub - that is what gates it
+    ))
     session.commit()
 
     # Gmail assigned, but the finding is about the GitHub connection.
@@ -196,7 +216,7 @@ def test_finding_visible_only_when_its_own_connection_is_assigned(session, env):
 
 
 def test_resolved_items_never_appear(session, env):
-    done = _item(env["workspace"], type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m1", title="Handled")
+    done = _item(env, type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m1", title="Handled")
     done.state = AttentionState.DONE
     session.add(done)
     session.commit()
@@ -206,9 +226,9 @@ def test_resolved_items_never_appear(session, env):
 
 
 def test_pending_count_matches_briefing_and_costs_no_llm_call(session, env):
-    session.add(_item(env["workspace"], type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m1"))
-    session.add(_item(env["workspace"], type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m2"))
-    session.add(_item(env["workspace"], type_=AttentionType.STALE_PR, dedupe_key="pr:1"))
+    session.add(_item(env, type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m1"))
+    session.add(_item(env, type_=AttentionType.IMPORTANT_EMAIL, dedupe_key="email:m2"))
+    session.add(_item(env, type_=AttentionType.STALE_PR, dedupe_key="pr:1"))
     session.commit()
     _assign(session, env["team"], env["gmail"], env["user"])
 
@@ -221,7 +241,7 @@ def test_briefing_is_isolated_between_channels(session, env):
     other = Team(workspace_id=env["workspace"].id, group_id=make_group(session, env["workspace"].id).id, name="marketing", slug="mkt")
     session.add(other)
     session.flush()
-    session.add(_item(env["workspace"], type_=AttentionType.STALE_PR, dedupe_key="pr:482", title="Stale PR"))
+    session.add(_item(env, type_=AttentionType.STALE_PR, dedupe_key="pr:482", title="Stale PR"))
     session.commit()
 
     _assign(session, env["team"], env["github"], env["user"])  # dev gets GitHub

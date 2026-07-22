@@ -240,14 +240,7 @@ export function AttentionPage() {
         <div className="min-w-0 flex-1">
           {/* What Sentinel noticed unasked, above what merely arrived.
               Renders nothing when nothing qualifies. */}
-          <ProactiveStrip
-            scope="personal"
-            onInvestigate={(situation) => {
-              if (!situation.investigatable_item_id) return;
-              setInvestigateItemId(situation.investigatable_item_id);
-              void investigation.load(`/attention/${situation.investigatable_item_id}/investigate`);
-            }}
-          />
+          <ProactiveStrip scope="personal" />
 
           {loading ? (
             <LoadingBlock />

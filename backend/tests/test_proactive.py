@@ -378,6 +378,211 @@ def test_the_investigation_link_is_offered_only_when_it_would_work(session, env)
     assert investigatable_item_id(session, situation) == item.id
 
 
+# --- entity correlation ----------------------------------------------------
+
+
+def test_two_problems_from_one_vendor_stay_two_situations(session, env):
+    """Grouping by sender alone merged unrelated problems. The named resource
+    in the subject separates them."""
+    session.add_all([
+        _email(env["admin_gmail"], "x1", "Your Project Alpha has been paused", days_ago=3),
+        _email(env["admin_gmail"], "x2", "Your Project Bravo has been paused", days_ago=2),
+    ])
+    session.commit()
+
+    situations = _run(session, env)
+
+    assert len(situations) == 2
+    assert {s.situation_key for s in situations} == {
+        "service_jeopardy:vendor.example:alpha",
+        "service_jeopardy:vendor.example:bravo",
+    }
+
+
+def test_the_same_resource_still_forms_one_situation(session, env):
+    """The other half - splitting is only useful if it doesn't fragment a
+    genuine escalation. This is the shape found in real data."""
+    session.add_all([
+        _email(env["admin_gmail"], "y1", "Your Project QueryMind is going to be paused", days_ago=3),
+        _email(env["admin_gmail"], "y2", "Your Project QueryMind has been paused", days_ago=2),
+    ])
+    session.commit()
+
+    [situation] = _run(session, env)
+    assert situation.evidence_count == 2
+
+
+def test_a_verb_is_never_mistaken_for_a_resource_name(session, env):
+    """Regression: "your project has been paused" once extracted "has" as the
+    resource while "your project is going to be paused" extracted nothing, so
+    one escalation split into two cards."""
+    from app.services.proactive import _entity_in
+
+    assert _entity_in("Your project has been paused") == ""
+    assert _entity_in("Your project is going to be paused") == ""
+    assert _entity_in("Your Project QueryMind has been paused") == "querymind"
+    assert _entity_in("Your instance prod-2 was suspended") == "prod-2"
+    assert _entity_in("Your project settings changed") == ""
+
+
+# --- multilingual ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        "Ihr Projekt Atlas wurde gesperrt",  # German
+        "Su proyecto Atlas ha sido suspendido",  # Spanish
+        "Votre projet Atlas a été désactivé",  # French
+        "Il tuo progetto Atlas è stato sospeso",  # Italian
+    ],
+)
+def test_state_changes_are_recognised_in_other_languages(session, env, subject):
+    """Deterministic vocabulary, not a translation pass - no LLM call per
+    signal, and nothing to hallucinate."""
+    session.add(_email(env["admin_gmail"], f"ml-{abs(hash(subject))}", subject, days_ago=2))
+    session.commit()
+
+    situations = _run(session, env)
+
+    assert len(situations) == 1
+
+
+def test_a_non_english_resolution_also_closes_the_situation(session, env):
+    session.add_all([
+        _email(env["admin_gmail"], "de1", "Ihr Projekt wurde gesperrt", days_ago=4),
+        _email(env["admin_gmail"], "de2", "Ihr Projekt wurde wiederhergestellt", days_ago=1),
+    ])
+    session.commit()
+
+    assert _run(session, env) == []
+
+
+# --- background execution --------------------------------------------------
+
+
+def test_the_background_pass_covers_every_scope_in_the_workspace(session, env):
+    """Detection runs per scope, never once over everyone's connections -
+    that separation is what makes a private mailbox structurally unable to
+    reach a channel."""
+    from app.services.proactive import refresh_proactive_for_workspace
+
+    session.add_all([
+        _email(env["admin_gmail"], "bg1", "Your Project Shared has been paused", days_ago=2),
+        _email(env["member_gmail"], "bg2", "Your Project Private has been paused", days_ago=2),
+    ])
+    session.commit()
+
+    refresh_proactive_for_workspace(session, env["workspace"].id)
+
+    rows = session.execute(select(Situation)).scalars().all()
+    by_scope = {r.scope_key: r for r in rows}
+
+    admin_key = f"personal:{env['admin'].id}"
+    member_key = f"personal:{env['member'].id}"
+    channel_key = f"channel:{env['team'].id}"
+
+    assert "Shared" in by_scope[admin_key].title
+    assert "Private" in by_scope[member_key].title
+    # The channel sees only the shared connection's situation.
+    assert "Shared" in by_scope[channel_key].title
+    assert all("Private" not in r.title for k, r in by_scope.items() if k != member_key)
+
+
+def test_a_second_background_pass_adds_no_rows_and_no_tokens(session, env):
+    from app.services.proactive import refresh_proactive_for_workspace
+
+    session.add_all([
+        _email(env["admin_gmail"], "bg1", "Your Project Zeta is going to be paused", days_ago=3),
+        _email(env["admin_gmail"], "bg2", "Your Project Zeta has been paused", days_ago=2),
+    ])
+    session.commit()
+
+    refresh_proactive_for_workspace(session, env["workspace"].id)
+    first = session.execute(select(Situation)).scalars().all()
+    calls_before = sum(s.llm_calls for s in first)
+
+    refresh_proactive_for_workspace(session, env["workspace"].id)
+    second = session.execute(select(Situation)).scalars().all()
+
+    assert len(second) == len(first)
+    assert sum(s.llm_calls for s in second) == calls_before
+
+
+# --- situation -> investigation, without the attention-item detour ---------
+
+
+def test_a_situation_is_investigable_in_its_own_right(session, env):
+    """The dependency that is being removed: a situation used to need one of
+    its signals to also be an attention item, which on real data was usually
+    false - so the deeper investigation was unavailable exactly where it was
+    most useful."""
+    from app.services.investigation import investigate_situation
+
+    session.add_all([
+        _email(env["admin_gmail"], "i1", "Your Project Delta is going to be paused", days_ago=3),
+        _email(env["admin_gmail"], "i2", "Your Project Delta has been paused", days_ago=2),
+    ])
+    session.commit()
+    [situation] = _run(session, env)
+
+    result = investigate_situation(session, situation=situation, scope=_personal(session, env))
+
+    assert result.situation_id == situation.id
+    assert result.attention_item_id is None
+    assert result.evidence  # the situation's own signals, plus correlation
+    for entry in result.evidence:
+        assert session.get(Signal, uuid.UUID(entry["signal_id"])) is not None
+
+
+def test_investigating_a_situation_is_cached_per_scope(session, env):
+    from app.services.investigation import investigate_situation
+
+    session.add_all([
+        _email(env["admin_gmail"], "j1", "Your Project Echo is going to be paused", days_ago=3),
+        _email(env["admin_gmail"], "j2", "Your Project Echo has been paused", days_ago=2),
+    ])
+    session.commit()
+    [situation] = _run(session, env)
+    scope = _personal(session, env)
+
+    first = investigate_situation(session, situation=situation, scope=scope)
+    second = investigate_situation(session, situation=situation, scope=scope)
+
+    assert first.id == second.id
+
+
+def test_a_personal_situation_cannot_be_investigated_as_the_channel(session, env):
+    """ATTACK: the situation was assembled from private mail. Re-investigating
+    it in a channel scope would launder private evidence into shared context,
+    so the service refuses on the situation's own scope_key."""
+    from app.services.investigation import NotAuthorized, investigate_situation
+
+    session.add_all([
+        _email(env["member_gmail"], "k1", "Your Project Secret is going to be paused", days_ago=3),
+        _email(env["member_gmail"], "k2", "Your Project Secret has been paused", days_ago=2),
+    ])
+    session.commit()
+    [situation] = refresh_situations(session, env["workspace"].id, _personal(session, env, env["member"]))
+
+    with pytest.raises(NotAuthorized):
+        investigate_situation(session, situation=situation, scope=channel_scope(session, env["team"].id))
+
+
+def test_a_channel_situation_cannot_be_investigated_as_a_person(session, env):
+    from app.services.investigation import NotAuthorized, investigate_situation
+
+    session.add_all([
+        _email(env["admin_gmail"], "l1", "Your Project Foxtrot is going to be paused", days_ago=3),
+        _email(env["admin_gmail"], "l2", "Your Project Foxtrot has been paused", days_ago=2),
+    ])
+    session.commit()
+    [situation] = refresh_situations(session, env["workspace"].id, channel_scope(session, env["team"].id))
+
+    with pytest.raises(NotAuthorized):
+        investigate_situation(session, situation=situation, scope=_personal(session, env))
+
+
 def test_a_scope_with_no_connections_detects_nothing(session, env):
     from app.services.investigation import Scope
 

@@ -25,11 +25,22 @@ class Investigation(Base, UUIDPk, TimestampMixin):
     __tablename__ = "investigations"
     __table_args__ = (
         UniqueConstraint("attention_item_id", "scope_key", name="uq_investigation_item_scope"),
+        UniqueConstraint("situation_id", "scope_key", name="uq_investigation_situation_scope"),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
-    attention_item_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("attention_items.id", ondelete="CASCADE"), nullable=False, index=True
+
+    # Exactly one of these is set: an investigation is anchored either on an
+    # attention item or on a proactive situation. Situations became
+    # investigable in their own right once it was clear that requiring a
+    # matching attention item was an accident of implementation rather than a
+    # rule - a situation already carries authorized evidence signals, which is
+    # everything the investigation engine actually needs.
+    attention_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("attention_items.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    situation_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("situations.id", ondelete="CASCADE"), nullable=True, index=True
     )
     # Which authorization scope produced it - see the module docstring.
     scope_key: Mapped[str] = mapped_column(String(100), nullable=False)

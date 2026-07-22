@@ -2646,21 +2646,69 @@ authorized signal set differs. A channel situation therefore cannot be
 assembled out of a member's private mail, because those signals are not in
 the query.
 
+#### Stabilization pass — the six known gaps
+
+**1. Background monitoring.** `refresh_proactive_for_workspace` rides every
+ingestion cycle. Each scope is detected *separately* — there is no "detect
+once, fan out", because that would compute a situation from the union of
+everyone's connections and then decide who may see it. Detecting inside each
+authorized scope is what makes a private mailbox structurally unable to reach
+a channel. One scope failing never stops the others.
+
+**2. Situations are investigable directly.** The requirement that an evidence
+signal *also* be an attention item was an accident of implementation — and on
+real data it was usually unmet, so the deeper investigation was unavailable
+exactly where it was most useful. `investigations.attention_item_id` is now
+nullable beside a new `situation_id`; the service refuses any situation whose
+own `scope_key` doesn't match the requested scope, so a situation assembled
+from private mail can never be re-investigated as shared context.
+Real data: **11 evidence, 1 LLM call, 1.61s, 0.001s cached.**
+
+**3. Richer email evidence — without touching the storage invariant.**
+Storing snippets would reverse a documented rule (`gmail_client` discards
+Gmail's `snippet`; bodies are never persisted in any form), which is what
+makes every downstream surface safe by construction. Instead a ≤600-char
+excerpt of the *latest* message is fetched **live** at synthesis, only for
+situations that already earned an LLM call, and discarded with that prompt.
+Verified on real data — it surfaced the cause the subject omitted: *"we
+automatically pause free-tier projects after 7 days of inactivity"* — and the
+signal payload still holds only its six metadata keys. The excerpt is labelled
+untrusted third-party text in the prompt.
+
+**4. Multilingual.** Non-English state-change terms (de/es/fr/it/pt) live
+inline in the patterns. Service-status vocabulary is small, closed and
+stereotyped, so stems cover it — with none of the per-signal cost or
+hallucination risk of an LLM translation pass. Resolution terms are looser
+than detection terms, because that direction only ever *lowers* a claim.
+
+**5. Entity correlation.** The key is now `(sender domain, named resource)`.
+A conservative extractor requires the resource to look like a name — never a
+category or a verb — and falls back to the sender when unsure. **A test
+caught a real bug here:** "your project **has** been paused" extracted `has`
+as the resource while "…is going to be paused" extracted nothing, splitting
+one escalation into two cards. Real data missed it because the vendor writes
+a proper noun.
+
+**6. `meeting_unprepared`** is wired into the background pass and both scopes.
+Status unchanged: **functionally tested, awaiting real-data validation** — the
+connected calendar still holds no future meetings.
+
 #### Known limitations
 
-- **One detector has real-world evidence; the other has none.**
-  `meeting_unprepared` is deterministic and unit-tested but has never fired —
-  the connected calendar holds no future meetings. Kept because the rule is
-  sound, not because it is demonstrated.
-- **Detection is English-language and subject-line only.** Bodies are never
-  stored, so a state change announced only in a body is invisible.
-- **The situation→investigation link is often absent.** It requires one
-  evidence signal to also be an attention item; on real data it resolves to
-  `None`, and the UI correctly omits the button.
-- **Grouping is by sender domain.** Two unrelated problems from the same
-  vendor merge into one situation.
-- **No notification.** Situations surface when a page is opened; nothing is
-  pushed.
+- **`meeting_unprepared` has never fired on real data.** Deterministic and
+  unit-tested only.
+- **Detection is subject-line only** — by choice, not omission. Excerpts are
+  read at synthesis, never at detection, so a state change announced *only* in
+  a body is still invisible to the detector.
+- **Language coverage is a word list**, not language detection. A language
+  outside the five listed is not recognised.
+- **Entity extraction is conservative by design** and returns nothing for most
+  subjects, which falls back to sender grouping.
+- **No notification.** Situations are detected in the background but surface
+  when a page is opened; nothing is pushed.
+- One migration artifact was cleaned up by hand: changing the situation-key
+  format auto-resolved two rows under the old key, recording a resolution that
+  never happened. Those rows were deleted.
 
 **Exit criteria:** Sentinel recognized a real developing situation from
 authorized evidence, surfaced it to the right scope before being asked,

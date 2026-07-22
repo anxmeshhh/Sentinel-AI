@@ -183,6 +183,189 @@ def investigate(
     return investigation
 
 
+def investigate_situation(session: Session, *, situation, scope: Scope, refresh: bool = False) -> Investigation:
+    """Investigate a proactive situation directly.
+
+    A situation already carries authorized evidence signals, so it is a
+    perfectly good anchor - requiring it to *also* have produced an attention
+    item was an accident of the first implementation, and on real data that
+    requirement was usually unmet, which meant the deeper investigation was
+    silently unavailable exactly where it was most useful.
+
+    The scope is checked against the situation's own `scope_key` rather than
+    trusted from the caller: a personal situation can only be investigated in
+    that person's scope, and a channel situation only in that channel's. So a
+    situation assembled from private mail can never be re-investigated as
+    shared team context.
+    """
+    if situation.scope_key != scope.key:
+        raise NotAuthorized("This situation belongs to a different context")
+
+    if not refresh:
+        cached = session.execute(
+            select(Investigation).where(
+                Investigation.situation_id == situation.id, Investigation.scope_key == scope.key
+            )
+        ).scalar_one_or_none()
+        if cached is not None:
+            return cached
+
+    # The situation's own evidence is the starting point; correlation then
+    # expands outward from the most recent piece, within the same scope.
+    anchor = _situation_anchor(session, situation, scope)
+    evidence = _gather_evidence_for_situation(session, situation, anchor, scope)
+
+    if evidence:
+        narrative, llm_calls = _synthesize_situation(situation, anchor, evidence)
+    else:
+        narrative, llm_calls = _no_evidence_narrative_for(situation), 0
+
+    investigation = session.execute(
+        select(Investigation).where(
+            Investigation.situation_id == situation.id, Investigation.scope_key == scope.key
+        )
+    ).scalar_one_or_none()
+    if investigation is None:
+        investigation = Investigation(
+            workspace_id=situation.workspace_id, situation_id=situation.id, scope_key=scope.key
+        )
+        session.add(investigation)
+
+    investigation.title = situation.title
+    investigation.what_happened = narrative["what_happened"]
+    investigation.why_it_matters = narrative["why_it_matters"]
+    investigation.contributing_factors = narrative["contributing_factors"]
+    investigation.next_steps = narrative["next_steps"]
+    investigation.confidence = narrative["confidence"]
+    investigation.evidence = evidence
+    investigation.llm_calls = llm_calls
+    session.commit()
+    session.refresh(investigation)
+
+    logger.info(
+        "situation_investigation_complete",
+        situation_id=str(situation.id), scope=scope.key, evidence=len(evidence), llm_calls=llm_calls,
+    )
+    return investigation
+
+
+def _situation_anchor(session: Session, situation, scope: Scope) -> Signal | None:
+    """The most recent signal behind the situation, re-checked against scope.
+
+    Re-checked rather than trusted: the situation's evidence was authorized
+    when it was detected, and a connection may have been excluded since.
+    """
+    best = None
+    for entry in situation.evidence:
+        signal = session.get(Signal, uuid.UUID(entry["signal_id"]))
+        if signal is None or signal.connection_id not in scope.connection_ids:
+            continue
+        if best is None or signal.occurred_at > best.occurred_at:
+            best = signal
+    return best
+
+
+def _gather_evidence_for_situation(session: Session, situation, anchor: Signal | None, scope: Scope) -> list[dict]:
+    """The situation's own signals, plus whatever correlates with the anchor.
+
+    Reuses the same relationship walk as an item investigation, so there is
+    one correlation implementation rather than two that can drift.
+    """
+    if not scope.connection_ids:
+        return []
+
+    found: dict[uuid.UUID, dict] = {}
+
+    # The situation's own evidence is already established fact about it.
+    for entry in situation.evidence:
+        signal = session.get(Signal, uuid.UUID(entry["signal_id"]))
+        if signal is None or signal.connection_id not in scope.connection_ids:
+            continue
+        found[signal.id] = _as_evidence(signal, "same_thread")
+
+    def add(signal: Signal, relation: str) -> None:
+        if signal.id in found:
+            return
+        found[signal.id] = _as_evidence(signal, relation)
+
+    if anchor is not None:
+        for signal in _same_correspondent(session, anchor, scope):
+            add(signal, "same_correspondent")
+        for signal in _shared_subject(session, situation.title, scope, exclude=anchor):
+            add(signal, "shared_subject")
+        for signal in _around(session, _aware_dt(anchor.occurred_at), scope):
+            add(signal, "around_the_same_time")
+
+    ranked = sorted(found.values(), key=lambda e: (_RELATION_RANK[e["_rank_relation"]], -_recency_key(e)))
+    for entry in ranked:
+        entry.pop("_rank_relation", None)
+    return ranked[:MAX_EVIDENCE]
+
+
+def _no_evidence_narrative_for(situation) -> dict:
+    return {
+        "what_happened": situation.what_is_developing or situation.title,
+        "why_it_matters": "The signals behind this situation are no longer readable in this context, "
+                          "so there is nothing left to correlate.",
+        "contributing_factors": [],
+        "next_steps": ["Open the situation's evidence directly."],
+        "confidence": 0.2,
+    }
+
+
+def _synthesize_situation(situation, anchor: Signal | None, evidence: list[dict]) -> tuple[dict, int]:
+    facts = {
+        "situation": situation.title,
+        "kind": situation.kind.value,
+        "status": situation.status.value,
+        "detected_because": situation.what_is_developing,
+        "when": (anchor.occurred_at.isoformat() if anchor is not None and anchor.occurred_at else None),
+        "related_activity": [
+            {k: e[k] for k in ("kind", "title", "actor", "occurred_at", "relation")} for e in evidence
+        ],
+    }
+    try:
+        result = LLMClient().complete_json(
+            system=(
+                "You are Sentinel, investigating a developing situation you already detected. "
+                "You are given the situation and the related activity retrieved around it. "
+                "STRICT RULES: reason ONLY from the supplied data - never invent events, systems or "
+                "causes. If the evidence is thin, say so and lower your confidence rather than "
+                "speculating. Plain text, no markdown. "
+                "what_happened: 2-3 sentences of what the evidence shows. "
+                "why_it_matters: 1-2 sentences on the practical consequence. "
+                "contributing_factors: up to 3 short strings, each grounded in the related activity; "
+                "empty list if unsupported. next_steps: up to 3 short concrete actions. "
+                "confidence: 0-1 for how well the evidence supports your reading. "
+                'Return JSON: {"what_happened": "...", "why_it_matters": "...", '
+                '"contributing_factors": ["..."], "next_steps": ["..."], "confidence": 0.0}'
+            ),
+            user=f"Investigation data: {facts}",
+        )
+        return {
+            "what_happened": (result.get("what_happened") or "").strip() or situation.title,
+            "why_it_matters": (result.get("why_it_matters") or "").strip() or (situation.why_it_matters or ""),
+            "contributing_factors": [str(f) for f in (result.get("contributing_factors") or [])][:3],
+            "next_steps": [str(s) for s in (result.get("next_steps") or [])][:3],
+            "confidence": _clamp(result.get("confidence")),
+        }, 1
+    except LLMError:
+        logger.warning("situation_investigation_llm_unavailable")
+        kinds = sorted({e["kind"] for e in evidence})
+        return {
+            "what_happened": f"{situation.title}. Sentinel found {len(evidence)} related items "
+                             f"({', '.join(kinds)}) but could not reach the language model.",
+            "why_it_matters": situation.why_it_matters or "",
+            "contributing_factors": [],
+            "next_steps": ["Review the evidence below directly."],
+            "confidence": 0.3,
+        }, 0
+
+
+def _aware_dt(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
 def _assert_in_scope(item: AttentionItem, scope: Scope) -> None:
     if item.origin == AttentionOrigin.MANUAL:
         # A manual reminder is the author's own note; it has no external

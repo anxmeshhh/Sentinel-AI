@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../api/client";
 import type { Situation } from "../api/types";
+import { InvestigationPanel, useInvestigation } from "./InvestigationPanel";
 
 const STATUS_COPY: Record<string, { label: string; tone: string }> = {
   emerging: { label: "Emerging", tone: "border-watch/40 bg-watch/5" },
@@ -21,22 +22,28 @@ const STATUS_COPY: Record<string, { label: string; tone: string }> = {
  * person looking at a situation must know whether it was assembled from
  * their own private context or from what their team shares.
  */
-export function ProactiveStrip({
-  scope,
-  teamId,
-  onInvestigate,
-}: {
-  scope: "personal" | "channel";
-  teamId?: string;
-  /** Hands the underlying evidence to the existing investigation flow
-   *  rather than growing a second one here. */
-  onInvestigate?: (situation: Situation) => void;
-}) {
+export function ProactiveStrip({ scope, teamId }: { scope: "personal" | "channel"; teamId?: string }) {
   const [situations, setSituations] = useState<Situation[]>([]);
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [investigatingId, setInvestigatingId] = useState<string | null>(null);
+  const investigation = useInvestigation();
 
   const path = scope === "channel" ? `/teams/${teamId}/proactive` : "/proactive";
+
+  /** A situation is investigable in its own right - it already carries
+   *  authorized evidence, which is all the investigation engine needs. The
+   *  endpoint matches this strip's scope, so a channel situation is
+   *  investigated as the channel and a private one as you. */
+  function investigateFor(situationId: string) {
+    if (investigatingId === situationId) {
+      setInvestigatingId(null);
+      investigation.clear();
+      return;
+    }
+    setInvestigatingId(situationId);
+    void investigation.load(`${path}/${situationId}/investigate`);
+  }
 
   const load = useCallback(
     async (refresh = false) => {
@@ -115,18 +122,37 @@ export function ProactiveStrip({
               >
                 {open ? "Hide evidence" : `Show evidence (${s.evidence.length})`}
               </button>
-              {onInvestigate && (
-                <button
-                  onClick={() => onInvestigate(s)}
-                  className="text-ink-faint underline underline-offset-2 hover:text-ink"
-                >
-                  Investigate This ✨
-                </button>
-              )}
+              <button
+                onClick={() => investigateFor(s.id)}
+                disabled={investigation.loading && investigatingId === s.id}
+                className={`underline underline-offset-2 disabled:opacity-50 ${
+                  investigatingId === s.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
+                }`}
+              >
+                {investigation.loading && investigatingId === s.id ? "Investigating…" : "Investigate This ✨"}
+              </button>
               <span className="text-micro text-ink-faint">
                 confidence {Math.round(s.confidence * 100)}%
               </span>
             </div>
+
+            {investigatingId === s.id && (investigation.investigation || investigation.error) && (
+              <div className="mt-2">
+                {investigation.error ? (
+                  <p className="text-caption text-crit">{investigation.error}</p>
+                ) : (
+                  <InvestigationPanel
+                    investigation={investigation.investigation!}
+                    refreshing={investigation.refreshing}
+                    onRefresh={() => investigation.load(`${path}/${s.id}/investigate`, { refresh: true })}
+                    onClose={() => {
+                      setInvestigatingId(null);
+                      investigation.clear();
+                    }}
+                  />
+                )}
+              </div>
+            )}
 
             {open && (
               <div className="mt-2 flex flex-col gap-1 border-t border-border pt-2">

@@ -17,6 +17,7 @@ from app.models.agent_run import TriggeredBy
 from app.models.connection import Connection
 from app.services import agent_orchestration, ingestion
 from app.services.attention_engine import refresh_attention
+from app.services.proactive import refresh_proactive_for_workspace
 
 logger = structlog.get_logger("sentinel.workers")
 
@@ -65,6 +66,15 @@ def ingest_connection(self, connection_id: str, triggered_by: str = TriggeredBy.
             refresh_attention(session, connection.workspace_id)
         except Exception:
             logger.exception("attention_refresh_failed", workspace_id=str(connection.workspace_id))
+        # Proactive detection rides the same sync, for the same reason:
+        # fresh signals are exactly when a situation might have emerged,
+        # strengthened or resolved. Deterministic and cheap; the LLM is only
+        # reached for a situation whose evidence actually changed, so a quiet
+        # workspace costs zero tokens no matter how often this runs.
+        try:
+            refresh_proactive_for_workspace(session, connection.workspace_id)
+        except Exception:
+            logger.exception("proactive_refresh_failed", workspace_id=str(connection.workspace_id))
         run_agents_for_connection.delay(str(connection.id), triggered_by)
     finally:
         session.close()

@@ -75,8 +75,12 @@ print(f"  same rows         : {before_ids == after_ids}")
 print(f"  extra LLM calls   : {after_calls - before_calls}   (must be 0 - evidence did not change)")
 print(f"  second pass       : {second_pass:.2f}s")
 
-total_rows = session.execute(select(Situation).where(Situation.scope_key == scope.key)).scalars().all()
-print(f"  total rows in db  : {len(total_rows)} (no duplicates: {len(total_rows) == len(after_ids)})")
+# Live rows only. Resolved rows are history and legitimately outnumber the
+# live list - counting them here once reported a false duplicate.
+live_rows = session.execute(
+    select(Situation).where(Situation.scope_key == scope.key, Situation.status != SituationStatus.RESOLVED)
+).scalars().all()
+print(f"  live rows in db   : {len(live_rows)} (no duplicates: {len(live_rows) == len(after_ids)})")
 
 print("\n" + "=" * 78)
 print("LAYER 2 — CHANNEL PROACTIVE INTELLIGENCE (real data)")

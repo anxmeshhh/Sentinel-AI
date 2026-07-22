@@ -257,7 +257,10 @@ def test_admin_roster_shows_who_is_behind_without_exposing_credentials(session, 
     assert "connection_id" not in serialized
     for entry in roster:
         for requirement in entry.requirements:
-            assert set(requirement) == {"provider", "is_required", "state", "account_label"}
+            # Exact set, not a subset: a new key here is a new thing the admin
+            # learns about a member, so it has to be added deliberately.
+            # `provided_by` names a tier ("workspace"), never an account.
+            assert set(requirement) == {"provider", "is_required", "state", "account_label", "provided_by"}
 
 
 def test_plain_member_cannot_read_the_roster(session, env):

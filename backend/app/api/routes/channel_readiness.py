@@ -117,6 +117,7 @@ def my_channel_readiness(
                 reason=s.reason,
                 state=s.state.value,
                 account_label=s.account_label,
+                provided_by=s.provided_by,
             )
             for s in checklist
         ],

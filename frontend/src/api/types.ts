@@ -329,6 +329,10 @@ export interface RequirementStatus {
   state: ReadinessState;
   /** The account the *viewer* connected. Never another member's. */
   account_label: string | null;
+  /** The tier that already shares this provider with the channel, if any.
+   *  A tier name ("workspace"), never an account - when set, the member has
+   *  nothing to do, and their own connection becomes optional and private. */
+  provided_by: "workspace" | "class" | "group" | "channel" | null;
 }
 
 export interface ChannelReadiness {
@@ -344,7 +348,13 @@ export interface MemberReadiness {
   email: string;
   role: string;
   is_ready: boolean;
-  requirements: { provider: string; is_required: boolean; state: ReadinessState; account_label: string | null }[];
+  requirements: {
+    provider: string;
+    is_required: boolean;
+    state: ReadinessState;
+    account_label: string | null;
+    provided_by: "workspace" | "class" | "group" | "channel" | null;
+  }[];
 }
 
 export interface AttentionContext {

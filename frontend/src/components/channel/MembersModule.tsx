@@ -65,7 +65,11 @@ export function MembersModule({ teamId, isAdmin, channelName, workspaceId }: { t
       )}
       {members.map((m) => {
         const readiness = readinessByUser.get(m.user_id);
-        const pending = readiness?.requirements.filter((r) => r.state !== "ready") ?? [];
+        // Only what this member still has to do. A requirement an admin
+        // already shared is nobody's outstanding task, so listing it here
+        // would contradict the "ready" chip beside it and send the admin
+        // chasing people who have nothing to connect.
+        const pending = readiness?.requirements.filter((r) => r.state !== "ready" && r.provided_by === null) ?? [];
         return (
           <div key={m.user_id} className="flex items-start justify-between gap-3">
             <div className="min-w-0">

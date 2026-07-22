@@ -23,6 +23,12 @@ class RequirementStatusOut(BaseModel):
 
     Carries no connection id and no token - only the provider, the derived
     state, and the account label this member connected themselves.
+
+    `provided_by` names the tier that already shares this provider with the
+    channel ("workspace"/"class"/"group"/"channel"), or None. It is a tier
+    name, never an account or a connection id: knowing the requirement is
+    already covered tells a member what they need to do, while naming whose
+    account covers it would not.
     """
 
     provider: str
@@ -30,6 +36,7 @@ class RequirementStatusOut(BaseModel):
     reason: str | None
     state: str
     account_label: str | None
+    provided_by: str | None = None
 
 
 class ChannelReadinessOut(BaseModel):

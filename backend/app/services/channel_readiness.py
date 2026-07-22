@@ -27,6 +27,15 @@ frontend spinner promoted to a server-side fact, and it would get stuck the
 moment a user abandoned the consent screen. The frontend can show whatever
 transient affordance it likes; the API only reports what it can prove.
 
+## State is not the same question as blocking (Phase 3)
+
+`state` answers "has *this member* connected this service themselves?".
+Whether the member is *blocked* is a second question, and since Phase 3 the
+answer is no whenever an admin has already shared that provider with the
+channel (`provided_by`). The two are kept apart deliberately: a member whose
+channel is covered by an admin's Gmail is `not_connected` *and* unblocked,
+and reporting them as "connected" would be a lie about their own account.
+
 ## What this module must never do
 
 Readiness is computed *about* a member, but it never exposes a member's
@@ -45,6 +54,10 @@ from app.models.channel_required_connection import ChannelRequiredConnection
 from app.models.connection import Connection, Provider
 from app.models.team import Team, TeamMembership
 from app.models.user import User
+from app.services.channel_authorization import authorized_connections
+
+# Same ordering the resolver uses to attribute a connection to a tier.
+_TIER_RANK = {"workspace": 0, "class": 1, "group": 2, "channel": 3}
 
 
 class ReadinessState(str, enum.Enum):
@@ -57,15 +70,37 @@ class ReadinessState(str, enum.Enum):
 class RequirementStatus:
     """One row of a member's setup checklist."""
 
-    def __init__(self, provider: Provider, *, is_required: bool, reason: str | None, state: ReadinessState, account_label: str | None):
+    def __init__(
+        self,
+        provider: Provider,
+        *,
+        is_required: bool,
+        reason: str | None,
+        state: ReadinessState,
+        account_label: str | None,
+        provided_by: str | None = None,
+    ):
         self.provider = provider
         self.is_required = is_required
         self.reason = reason
         self.state = state
         self.account_label = account_label
+        # Which tier already supplies this provider as shared context, if any:
+        # "workspace" | "class" | "group" | "channel". None means nobody has
+        # shared it and the member's own account is the only way to satisfy it.
+        self.provided_by = provided_by
 
     @property
     def blocks(self) -> bool:
+        # Phase 3: an admin who already shared this service has satisfied the
+        # requirement for the whole channel. Making the member connect their
+        # own account on top of it buys the channel nothing - shared context
+        # is resolved from shared connections only (channel_authorization),
+        # never from a member's personal one - so it was pure friction, and
+        # friction that pushed private mailboxes into a team workspace for no
+        # gain. The member may still connect privately; it just isn't a gate.
+        if self.provided_by is not None:
+            return False
         return self.is_required and self.state != ReadinessState.READY
 
 
@@ -100,12 +135,37 @@ def list_requirements(session: Session, team_id: uuid.UUID) -> list[ChannelRequi
     )
 
 
+def provided_providers(session: Session, team_id: uuid.UUID) -> dict[Provider, str]:
+    """provider -> the tier that already supplies it as shared context.
+
+    Reads through the Phase 2 resolver, so a requirement counts as satisfied
+    by exactly the same authorization the channel's Feed and Briefing use.
+    An excluded connection is absent from the resolver's result, so excluding
+    it here correctly puts the requirement back on the member.
+    """
+    provided: dict[Provider, str] = {}
+    for auth in authorized_connections(session, team_id).values():
+        current = provided.get(auth.connection.provider)
+        # Most specific tier wins the label, matching how the resolver itself
+        # attributes a connection authorized at more than one level.
+        if current is None or _TIER_RANK[auth.source] > _TIER_RANK[current]:
+            provided[auth.connection.provider] = auth.source
+    return provided
+
+
 def member_checklist(session: Session, team_id: uuid.UUID, workspace_id: uuid.UUID, user_id: uuid.UUID) -> list[RequirementStatus]:
     """This member's own setup checklist for this channel.
 
-    Looks up connections by `(workspace, this user, provider)` only. There is
-    no fallback to a workspace-wide connection, so a member is never reported
-    ready on the strength of a teammate's account.
+    A member's *own* connection is looked up by `(workspace, this user,
+    provider)` only - there is no fallback to a workspace-wide connection, so
+    `state` and `account_label` are never reported on the strength of a
+    teammate's account.
+
+    Separately, `provided_by` records whether an admin already shared that
+    provider with this channel. That is what makes a requirement non-blocking
+    (see RequirementStatus.blocks); it never changes `state`, which continues
+    to describe only this member's own connection - conflating the two would
+    tell a member they had connected something they hadn't.
     """
     requirements = list_requirements(session, team_id)
     if not requirements:
@@ -117,6 +177,7 @@ def member_checklist(session: Session, team_id: uuid.UUID, workspace_id: uuid.UU
             select(Connection).where(Connection.workspace_id == workspace_id, Connection.user_id == user_id)
         ).scalars()
     }
+    provided = provided_providers(session, team_id)
 
     return [
         RequirementStatus(
@@ -125,6 +186,7 @@ def member_checklist(session: Session, team_id: uuid.UUID, workspace_id: uuid.UU
             reason=r.reason,
             state=_state_for(owned.get(r.provider)),
             account_label=owned[r.provider].full_name if r.provider in owned else None,
+            provided_by=provided.get(r.provider),
         )
         for r in requirements
     ]
@@ -173,6 +235,7 @@ def roster_readiness(session: Session, team_id: uuid.UUID, workspace_id: uuid.UU
                         "is_required": s.is_required,
                         "state": s.state.value,
                         "account_label": s.account_label,
+                        "provided_by": s.provided_by,
                     }
                     for s in checklist
                 ],

@@ -40,12 +40,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.action import Action, ActionStatus
+from app.models.action import Action, ActionRisk, ActionStatus
 from app.models.team import ChannelRole, TeamMembership
 from app.services.action_registry import (
     ActionRejected,
     ActionSpec,
     ActionUnavailable,
+    Reversibility,
     get_spec,
     validate_params,
 )
@@ -96,6 +97,11 @@ def propose_action(
         raise ActionRejected(f"{spec.label} cannot be run in a {scope_kind} context")
 
     validated = validate_params(spec, params)
+    # Risk can depend on the parameters: a calendar event for yourself is a
+    # private write, the same event with attendees is an invitation sent to
+    # other people. Computed here so the escalation reaches both the approval
+    # requirement and the stored record.
+    risk = spec.effective_risk(validated)
     _assert_authorized(session, spec, scope_key, user_id)
 
     key = idempotency_key or _derive_idempotency_key(scope_key, action_type, validated.model_dump(mode="json"))
@@ -111,8 +117,8 @@ def propose_action(
         workspace_id=workspace_id,
         scope_key=scope_key,
         action_type=spec.key,
-        risk=spec.risk,
-        status=ActionStatus.AWAITING_APPROVAL if spec.needs_approval else ActionStatus.APPROVED,
+        risk=risk,
+        status=ActionStatus.AWAITING_APPROVAL if spec.needs_approval_for(risk) else ActionStatus.APPROVED,
         params=validated.model_dump(mode="json"),
         preview=spec.preview(validated) if spec.preview else {},
         reason=reason,
@@ -124,7 +130,7 @@ def propose_action(
     # A LOW-risk internal action is pre-approved by the request itself, and
     # the record says who that was - the audit trail never has a blank
     # approver just because no dialog appeared.
-    if not spec.needs_approval:
+    if not spec.needs_approval_for(risk):
         action.approved_by_user_id = user_id
         action.approved_at = datetime.now(timezone.utc)
 
@@ -139,8 +145,8 @@ def propose_action(
     session.refresh(action)
     logger.info(
         "action_proposed",
-        action_id=str(action.id), type=spec.key, scope=scope_key, risk=spec.risk.value,
-        needs_approval=spec.needs_approval,
+        action_id=str(action.id), type=spec.key, scope=scope_key, risk=risk.value,
+        needs_approval=spec.needs_approval_for(risk),
     )
     return action
 
@@ -325,3 +331,51 @@ def audit_trail(session: Session, workspace_id: uuid.UUID, *, limit: int = 100) 
         .order_by(Action.executed_at.desc())
         .limit(limit)
     ).scalars())
+
+
+# --- undo ------------------------------------------------------------------
+
+
+def undo_action(session: Session, action: Action, user_id: uuid.UUID) -> Action:
+    """Reverse an executed action, where an inverse genuinely exists.
+
+    Never called "rollback" for the external cases, because it is not one: a
+    deleted calendar event that had attendees notifies all of them of the
+    cancellation. The compensator returns wording that says so, and it is
+    stored on the record rather than replaced with a cheerful "undone".
+
+    An IRREVERSIBLE action has no compensator and is refused here - which is
+    the whole reason the registry declares reversibility instead of assuming
+    every action can be taken back.
+    """
+    spec = get_spec(action.action_type)
+    _assert_authorized(session, spec, action.scope_key, user_id)
+
+    if action.status not in (ActionStatus.SUCCEEDED, ActionStatus.UNKNOWN):
+        raise ActionRejected("Only an executed action can be undone")
+    if spec.compensate is None or spec.reversibility is Reversibility.IRREVERSIBLE:
+        raise ActionRejected(f"{spec.label} cannot be undone")
+    if action.undone_at is not None:
+        # Undoing twice would, for a compensatable action, mean a second
+        # provider call - and a second cancellation notice.
+        return action
+
+    try:
+        outcome = spec.compensate(session, action)
+    except ActionRejected as exc:
+        action.error = str(exc)
+        session.commit()
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("action_undo_failed", action_id=str(action.id), error=str(exc)[:300])
+        action.error = _safe_error(exc)
+        session.commit()
+        raise ActionRejected(action.error) from exc
+
+    action.undone_at = datetime.now(timezone.utc)
+    action.undone_by_user_id = user_id
+    action.undo_result = outcome
+    session.commit()
+    session.refresh(action)
+    logger.info("action_undone", action_id=str(action.id), type=action.action_type)
+    return action

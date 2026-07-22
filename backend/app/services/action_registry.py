@@ -33,6 +33,8 @@ in as a new entry rather than a redesign, and nothing here pretends to work
 in the meantime.
 """
 
+import enum
+import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -40,7 +42,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -51,6 +53,26 @@ from app.models.goal import Goal
 from app.models.team import ChannelRole
 
 logger = structlog.get_logger("sentinel.actions")
+
+
+class Reversibility(str, enum.Enum):
+    """What Sentinel can honestly promise about undoing an action.
+
+    Declared per action rather than assumed, because the difference matters
+    to a user deciding whether to approve: "you can undo this" and "this is
+    permanent" are different offers. Nothing here claims rollback the
+    provider cannot actually deliver.
+    """
+
+    # Sentinel's own state. Undo restores it exactly.
+    REVERSIBLE = "reversible"
+    # External, but the provider offers an inverse operation - a created
+    # calendar event can be deleted. Not a true rollback: anyone who already
+    # saw the change saw it.
+    COMPENSATABLE = "compensatable"
+    # Cannot be taken back. A sent email is the canonical case, which is why
+    # this phase does not send any.
+    IRREVERSIBLE = "irreversible"
 
 
 class ActionError(Exception):
@@ -90,13 +112,31 @@ class SnoozeAttentionParams(BaseModel):
     hours: int = Field(ge=1, le=24 * 30)
 
 
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
 class CreateCalendarEventParams(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     start: datetime
     end: datetime
-    # Deliberately absent: attendees. Adding someone to an event notifies
-    # them, which makes it an outbound communication to another human - a
-    # different risk class that this phase does not execute.
+    # Adding an attendee makes Google send that person an invitation, so this
+    # field turns a private calendar write into an outbound message to a
+    # third party. It is supported, capped, validated, and it escalates the
+    # action's risk to HIGH - see `risk_for` - so it can never be executed
+    # without an explicit preview naming every recipient.
+    attendee_emails: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("attendee_emails")
+    @classmethod
+    def _validate_attendees(cls, value: list[str]) -> list[str]:
+        cleaned = []
+        for raw in value:
+            address = (raw or "").strip().lower()
+            if not _EMAIL_RE.match(address):
+                raise ValueError(f"Not a valid email address: {raw!r}")
+            if address not in cleaned:
+                cleaned.append(address)
+        return cleaned
 
 
 class DraftEmailParams(BaseModel):
@@ -131,13 +171,39 @@ class ActionSpec:
     # Human-readable preview built from validated params.
     preview: Callable[..., dict] = field(default=None, repr=False)
 
-    @property
-    def needs_approval(self) -> bool:
+    # What Sentinel can honestly promise about undoing this.
+    reversibility: Reversibility = Reversibility.REVERSIBLE
+    # (session, action) -> str describing what was undone. Present only where
+    # an inverse genuinely exists; absence is what makes IRREVERSIBLE real
+    # rather than a label.
+    compensate: Callable[..., str] = field(default=None, repr=False)
+
+    # Some actions change risk with their parameters: a calendar event for
+    # yourself is a private write, the same event with attendees is an
+    # invitation sent to other people. Declared as a function so the escalation
+    # cannot be forgotten at a call site.
+    risk_for: Callable[..., ActionRisk] = field(default=None, repr=False)
+
+    # May this ever run without a human present? Default no. See
+    # services/action_policy.py - even a true here requires an explicit,
+    # per-scope opt-in before anything runs unattended.
+    autonomy_eligible: bool = False
+
+    def effective_risk(self, params: BaseModel | None = None) -> ActionRisk:
+        if self.risk_for is not None and params is not None:
+            return self.risk_for(params)
+        return self.risk
+
+    def needs_approval_for(self, risk: ActionRisk) -> bool:
         """LOW-risk internal actions are reversible Sentinel state - a snooze,
         a reminder - and a second confirmation for them is friction that
-        teaches people to click through dialogs. Anything external or shared
-        is always previewed and approved."""
-        return self.risk is not ActionRisk.LOW or self.external
+        teaches people to click through dialogs. Anything external, shared, or
+        escalated by its own parameters is always previewed and approved."""
+        return risk is not ActionRisk.LOW or self.external
+
+    @property
+    def needs_approval(self) -> bool:
+        return self.needs_approval_for(self.risk)
 
 
 # --- previews --------------------------------------------------------------
@@ -183,19 +249,32 @@ def _preview_snooze(params: SnoozeAttentionParams) -> dict:
     }
 
 
+def _risk_for_calendar(params: CreateCalendarEventParams) -> ActionRisk:
+    """An event for yourself is a private write. The same event with
+    attendees sends each of them an invitation, which is an outbound message
+    to another human - a different thing, and priced as one."""
+    return ActionRisk.HIGH if params.attendee_emails else ActionRisk.MEDIUM
+
+
 def _preview_calendar(params: CreateCalendarEventParams) -> dict:
-    return {
-        "title": "Create a calendar event",
-        "fields": {
-            "Title": params.title,
-            "Start": params.start.strftime("%a %d %b, %H:%M"),
-            "End": params.end.strftime("%a %d %b, %H:%M"),
-            "Calendar": "Your primary Google Calendar",
-        },
-        # Says plainly what leaves Sentinel, because this one actually does.
-        "effect": "Creates a real event in your Google Calendar. Sentinel sends "
-                  "the title and times above, and nothing else.",
+    fields = {
+        "Title": params.title,
+        "Start": params.start.strftime("%a %d %b, %H:%M"),
+        "End": params.end.strftime("%a %d %b, %H:%M"),
+        "Calendar": "Your primary Google Calendar",
     }
+    if params.attendee_emails:
+        # Every recipient is named. Nobody is invited by a count.
+        fields["Invites"] = ", ".join(params.attendee_emails)
+        effect = (
+            f"Creates a real event in your Google Calendar AND sends an invitation to "
+            f"{len(params.attendee_emails)} " + ("person" if len(params.attendee_emails) == 1 else "people") +
+            ". They will see the title and times above. Deleting the event later notifies them again."
+        )
+    else:
+        effect = ("Creates a real event in your Google Calendar. Nobody is invited, and Sentinel sends "
+                  "the title and times above and nothing else.")
+    return {"title": "Create a calendar event", "fields": fields, "effect": effect}
 
 
 def _preview_draft(params: DraftEmailParams) -> dict:
@@ -340,13 +419,17 @@ def _execute_create_calendar_event(session: Session, action) -> dict:
 
     token = get_valid_access_token(session, connection)
     with GoogleCalendarClient(token) as client:
-        event = client.create_event(title=params.title, start=params.start, end=params.end)
+        event = client.create_event(
+            title=params.title, start=params.start, end=params.end,
+            attendee_emails=params.attendee_emails or None,
+        )
 
     return {
         "event_id": event["id"],
         "title": event.get("title"),
         "url": event.get("url"),
         "start": event.get("start"),
+        "attendee_emails": params.attendee_emails,
         "connection_id": str(connection.id),
     }
 
@@ -409,6 +492,85 @@ def _verify_draft(session: Session, action, result: dict) -> tuple[bool, str]:
     return True, "Draft stored in Sentinel; nothing was sent"
 
 
+# --- compensation ----------------------------------------------------------
+#
+# Undo, where an inverse genuinely exists. An action with no function here is
+# IRREVERSIBLE and says so, rather than offering a button that cannot work.
+
+
+def _compensate_create_commitment(session: Session, action) -> str:
+    from app.services.commitments import dismiss_commitment
+
+    commitment = session.get(Commitment, uuid.UUID(action.result["commitment_id"]))
+    if commitment is None:
+        return "It was already gone"
+    dismiss_commitment(session, commitment, reason="Undone by the person who created it")
+    return "The commitment was dismissed"
+
+
+def _compensate_resolve_commitment(session: Session, action) -> str:
+    from app.services.commitments import reopen_commitment
+
+    commitment = session.get(Commitment, uuid.UUID(action.result["commitment_id"]))
+    if commitment is None:
+        return "It was already gone"
+    reopen_commitment(session, commitment)
+    return "The commitment was reopened"
+
+
+def _compensate_create_goal(session: Session, action) -> str:
+    from app.services.goals import close_goal
+
+    goal = session.get(Goal, uuid.UUID(action.result["goal_id"]))
+    if goal is None:
+        return "It was already gone"
+    close_goal(session, goal, achieved=False)
+    return "The goal was abandoned"
+
+
+def _compensate_snooze(session: Session, action) -> str:
+    from app.models.attention_item import AttentionItem, AttentionState
+
+    item = session.get(AttentionItem, uuid.UUID(action.result["item_id"]))
+    if item is None:
+        return "It was already gone"
+    item.state = AttentionState.NEW
+    item.snoozed_until = None
+    session.commit()
+    return "The item is back in your attention list"
+
+
+def _compensate_calendar_event(session: Session, action) -> str:
+    """Compensation, not rollback.
+
+    The event is deleted, but anyone who was invited already received the
+    invitation and will now receive a cancellation. The world does not return
+    to how it was, and the message returned here says so rather than
+    reporting a clean undo.
+    """
+    from app.integrations.google_auth import get_valid_access_token
+    from app.integrations.google_calendar_client import GoogleCalendarClient
+
+    connection = session.get(Connection, uuid.UUID(action.result["connection_id"]))
+    if connection is None:
+        raise ActionRejected("The connection used to create it is gone")
+
+    token = get_valid_access_token(session, connection)
+    with GoogleCalendarClient(token) as client:
+        deleted = client.delete_event(action.result["event_id"])
+
+    if not deleted:
+        raise ActionRejected("Google did not confirm the deletion")
+    if action.result.get("attendee_emails"):
+        return ("The event was deleted. Everyone invited has been notified of the cancellation - "
+                "the invitation itself cannot be unsent.")
+    return "The event was deleted from your calendar"
+
+
+def _compensate_draft(session: Session, action) -> str:
+    return "The draft was discarded"
+
+
 # --- the allow-list --------------------------------------------------------
 
 REGISTRY: dict[str, ActionSpec] = {
@@ -422,6 +584,9 @@ REGISTRY: dict[str, ActionSpec] = {
             preview=_preview_commitment,
             execute=_execute_create_commitment,
             verify=_verify_create_commitment,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_create_commitment,
+            autonomy_eligible=True,
         ),
         ActionSpec(
             key="commitment.resolve",
@@ -431,6 +596,8 @@ REGISTRY: dict[str, ActionSpec] = {
             preview=_preview_resolve,
             execute=_execute_resolve_commitment,
             verify=_verify_resolve_commitment,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_resolve_commitment,
         ),
         ActionSpec(
             key="goal.create",
@@ -440,6 +607,8 @@ REGISTRY: dict[str, ActionSpec] = {
             preview=_preview_goal,
             execute=_execute_create_goal,
             verify=_verify_create_goal,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_create_goal,
         ),
         ActionSpec(
             key="attention.snooze",
@@ -450,6 +619,9 @@ REGISTRY: dict[str, ActionSpec] = {
             preview=_preview_snooze,
             execute=_execute_snooze_attention,
             verify=_verify_snooze_attention,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_snooze,
+            autonomy_eligible=True,
         ),
         ActionSpec(
             key="calendar.create_event",
@@ -463,6 +635,11 @@ REGISTRY: dict[str, ActionSpec] = {
             preview=_preview_calendar,
             execute=_execute_create_calendar_event,
             verify=_verify_create_calendar_event,
+            risk_for=_risk_for_calendar,
+            # The provider offers an inverse, so this is compensatable -
+            # but not reversible: an invitation that was seen cannot be unseen.
+            reversibility=Reversibility.COMPENSATABLE,
+            compensate=_compensate_calendar_event,
         ),
         ActionSpec(
             key="email.draft",
@@ -472,6 +649,8 @@ REGISTRY: dict[str, ActionSpec] = {
             preview=_preview_draft,
             execute=_execute_draft,
             verify=_verify_draft,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_draft,
         ),
         # --- declared, deliberately not available -------------------------
         # These exist so the shape is settled and a future connection plugs
@@ -484,6 +663,9 @@ REGISTRY: dict[str, ActionSpec] = {
             external=True,
             available=False,
             unavailable_reason="Sending mail is not enabled in this phase - Sentinel only drafts.",
+            # Why this stays unavailable: there is no inverse. A sent message
+            # cannot be recalled, so an approval could never be undone.
+            reversibility=Reversibility.IRREVERSIBLE,
         ),
         ActionSpec(
             key="github.create_issue",
@@ -494,6 +676,7 @@ REGISTRY: dict[str, ActionSpec] = {
             required_role=ChannelRole.CHANNEL_ADMIN,
             available=False,
             unavailable_reason="Requires a GitHub OAuth App with write scope (see CONNECTIONS.md).",
+            reversibility=Reversibility.COMPENSATABLE,  # an issue can be closed
         ),
     )
 }

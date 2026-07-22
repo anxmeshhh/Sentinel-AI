@@ -115,3 +115,12 @@ class Action(Base, UUIDPk, TimestampMixin):
     # How the outcome was confirmed, in words - "the event was read back from
     # the provider". An unverifiable success is not a success.
     verification: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    # --- undo. Recorded rather than deleting the row: "this was done and then
+    # taken back" is a different fact from "this never happened", and an audit
+    # trail that quietly loses the first one is not an audit trail.
+    undone_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    undone_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    # What the compensator actually achieved, in plain words - including when
+    # it could not fully undo the effect.
+    undo_result: Mapped[str | None] = mapped_column(String(300), nullable=True)

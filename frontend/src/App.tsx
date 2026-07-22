@@ -11,6 +11,7 @@ import { useOnboarding } from "./context/OnboardingContext";
 import { AdminPage } from "./pages/AdminPage";
 import { AssistantPage } from "./pages/AssistantPage";
 import { AttentionPage } from "./pages/AttentionPage";
+import { ActionAuditPage } from "./pages/ActionAuditPage";
 import { BriefPage } from "./pages/BriefPage";
 import { CalendarPage } from "./pages/CalendarPage";
 import { ChannelWorkspacePage } from "./pages/ChannelWorkspacePage";
@@ -137,6 +138,7 @@ export function App() {
 
       <Route path="/" element={<RequireAuth><BriefPage /></RequireAuth>} />
       <Route path="/attention" element={<RequireAuth><AttentionPage /></RequireAuth>} />
+      <Route path="/audit/actions" element={<RequireAuth><ActionAuditPage /></RequireAuth>} />
       <Route path="/findings/:id" element={<RequireAuth><FindingDetailPage /></RequireAuth>} />
       <Route path="/history" element={<RequireAuth><HistoryPage /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />

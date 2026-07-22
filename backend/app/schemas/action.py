@@ -17,6 +17,11 @@ class ActionCatalogEntry(BaseModel):
     available: bool
     unavailable_reason: str | None
     requires_channel_admin: bool
+    # What Sentinel can honestly promise about undoing it.
+    reversibility: str
+    # Whether it could ever run unattended - and even then only after an
+    # explicit per-scope opt-in.
+    autonomy_eligible: bool
 
 
 class ActionOut(BaseModel):
@@ -44,6 +49,9 @@ class ActionOut(BaseModel):
     # How the outcome was confirmed. A success with no verification is not
     # reported as a success.
     verification: str | None
+    undone_at: datetime | None
+    undone_by_user_id: uuid.UUID | None
+    undo_result: str | None
     created_at: datetime
 
 
@@ -53,3 +61,27 @@ class ActionCreate(BaseModel):
     reason: str | None = Field(default=None, max_length=1000)
     source_kind: str | None = Field(default=None, max_length=40)
     source_id: uuid.UUID | None = None
+
+
+class NaturalLanguageActionRequest(BaseModel):
+    """Plain text in, a *proposal* out. There is no execution path from here."""
+
+    text: str = Field(min_length=3, max_length=1000)
+
+
+class ProposedIntentOut(BaseModel):
+    action: ActionOut
+    interpretation: str
+
+
+class ActionPolicyOut(BaseModel):
+    action_type: str
+    enabled: bool
+    daily_limit: int
+    enabled_at: datetime | None
+
+
+class ActionPolicyUpdate(BaseModel):
+    action_type: str = Field(max_length=80)
+    enabled: bool
+    daily_limit: int = Field(default=5, ge=1, le=100)

@@ -94,6 +94,20 @@ class GoogleCalendarClient:
         resp.raise_for_status()
         return resp.json()
 
+    def delete_event(self, event_id: str, *, calendar_id: str = "primary") -> bool:
+        """Delete one event. Returns True when the provider confirms it is gone.
+
+        Used for compensation (Module 10), not rollback: Google notifies any
+        attendees of the cancellation, so deleting an invited event is a
+        second visible act rather than an undo. A 404 counts as success -
+        the desired end state is "not there", and it already is.
+        """
+        resp = self._client.delete(f"/calendars/{calendar_id}/events/{event_id}")
+        if resp.status_code in (200, 204, 404, 410):
+            return True
+        logger.warning("google_calendar_delete_event_failed", status=resp.status_code, body=resp.text[:300])
+        return False
+
     def create_event(
         self,
         *,

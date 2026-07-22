@@ -325,6 +325,13 @@ export interface SentinelAction {
   /** How the outcome was confirmed. A success without this is not reported
    *  as a success. */
   verification: string | null;
+  /** Undo is recorded, never erased: "done and then taken back" is a
+   *  different fact from "never happened". */
+  undone_at: string | null;
+  undone_by_user_id: string | null;
+  /** What the compensator achieved - including when it could not fully undo
+   *  the effect, e.g. an invitation that was already delivered. */
+  undo_result: string | null;
   created_at: string;
 }
 

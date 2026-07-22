@@ -3067,20 +3067,70 @@ when, the outcome and how it was verified — **with no tokens**, checked.
 The unavailable entries are listed **with their reasons** rather than hidden,
 so a future connection plugs in as a registry entry rather than a redesign.
 
+#### Enhancement pass — all five limitations closed
+
+**1. Natural language → proposal, never an act.** `action_intent.py` takes
+text, gives the model the permitted catalogue, and returns
+`{action_type, params}` — which then goes through **the same
+`propose_action`** the UI uses. There is deliberately **no execution path
+from that module at all**. The worst a poisoned document achieves is a
+proposal the user sees, previews and declines. Tested: an invented tool is
+refused, an unavailable one is refused, junk parameters are refused, and a
+member asking in prose for an admin-only action still gets 403.
+
+**2. Calendar attendees — supported, and priced correctly.** `risk_for`
+escalates the action to **HIGH** when attendees are present, because adding
+someone makes Google send them an invitation. Every recipient is **named in
+the preview** — nobody is invited by a count. Addresses are validated and
+de-duplicated.
+
+**3. Bounded autonomy foundation.** Nothing runs unattended today; this is the
+gate a future scheduler must pass. **Four independent conditions**, all
+required: the registry marks it eligible · risk is LOW · it is fully
+REVERSIBLE (not merely compensatable) · a person explicitly opted in *for that
+scope*. Plus a daily limit. Enabling in a channel is admin-only — the unit of
+consent matches the unit of consequence. An impossible policy is refused at
+set time, so it can never be stored and later look like consent.
+
+**4. Compensation, honestly labelled.** Every action declares
+`REVERSIBLE | COMPENSATABLE | IRREVERSIBLE`; a test asserts IRREVERSIBLE
+actions have **no compensator**, so there is never a button that cannot work.
+The calendar undo says what it actually is:
+
+> *"The event was deleted. Everyone invited has been notified of the
+> cancellation — the invitation itself cannot be unsent."*
+
+Undo is **recorded, not erased** — status stays SUCCEEDED with `undone_at`
+set, because "done and then taken back" is a different fact from "never
+happened".
+
+**Verified against the live Google API:** event created → verified →
+undone → confirmed absent at Google.
+
+**5. Audit UI** at `/audit/actions`, workspace-admin only: who requested, who
+approved, what ran, when, the result, the verification, and any undo.
+
+#### A latent bug this pass surfaced
+
+`app/models/__init__.py` was missing four models (`attention_item`,
+`channel_ai_history`, `channel_connection`, `meeting_brief`). Since conftest
+relies on `import app.models` to register tables before `create_all()`, any
+test not importing them by another route failed with a confusing
+`NoReferencedTableError` pointing at a *different* model's foreign key. Fixed
+at the root, with the reasoning recorded in that file's docstring.
+
 #### Known limitations
 
-- **No natural-language proposal path yet.** Actions are proposed by the UI
-  and by intelligence modules; there is no "tell Sentinel to do it in prose"
-  surface. The registry is what a future one would have to go through.
-- **Calendar events carry no attendees**, deliberately — inviting someone is
-  an outbound communication to a third party, a different risk class.
-- **No scheduled or autonomous execution.** Everything is triggered by a
-  person; nothing runs on a timer.
-- **Rollback is per-action-type and mostly absent.** Internal actions are
-  reversible through their own modules; a created calendar event is not
-  undone by Sentinel.
-- **The audit trail is workspace-admin only** and has no UI — the endpoint
-  exists and is tested.
+- **Nothing actually runs unattended.** The policy gate is built and tested;
+  no scheduler calls it yet. That is the honest state — the foundation
+  exists, the autonomy does not.
+- **Natural language handles one action per request.** No multi-step plans,
+  deliberately: a chain a user approves once is a chain they did not read.
+- **Undo of an invited event is compensation, not rollback.** Attendees saw
+  the invitation and will see the cancellation.
+- **`email.send` and `github.create_issue` remain unavailable** — declared
+  with reasons so a future connection plugs into the same registry, policy,
+  approval, verification, compensation and audit path.
 
 **Exit criteria:** an insight becomes a proposed action, the user sees exactly
 what will happen, authorization is verified, approval is required for anything

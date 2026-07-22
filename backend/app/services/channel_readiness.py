@@ -69,11 +69,22 @@ class RequirementStatus:
         return self.is_required and self.state != ReadinessState.READY
 
 
+# Providers whose data is fetched live on every request rather than ingested
+# into Signals (see integrations.INGESTABLE_PROVIDERS). They have no first
+# sync to wait for, so `last_synced_at` stays NULL forever - reading it as
+# "still syncing" left Google Drive permanently stuck on Syncing and
+# permanently blocking channel setup, since 3/3 could never be reached.
+_LIVE_QUERY_PROVIDERS = {Provider.GOOGLE_DRIVE}
+
+
 def _state_for(connection: Connection | None) -> ReadinessState:
     if connection is None:
         return ReadinessState.NOT_CONNECTED
     if connection.revoked_at is not None:
         return ReadinessState.EXPIRED
+    if connection.provider in _LIVE_QUERY_PROVIDERS:
+        # Nothing to ingest: authorized means usable, immediately.
+        return ReadinessState.READY
     if connection.last_synced_at is None:
         return ReadinessState.SYNCING
     return ReadinessState.READY

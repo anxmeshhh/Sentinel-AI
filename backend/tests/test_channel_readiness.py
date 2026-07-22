@@ -309,3 +309,28 @@ def test_outsider_cannot_see_or_set_requirements(session, env):
     with pytest.raises(HTTPException) as exc_info:
         list_channel_requirements(team_id=env["team"].id, session=session, user=outsider)
     assert exc_info.value.status_code == 404  # not 403 - don't confirm existence
+
+
+def test_live_query_providers_are_ready_immediately_not_stuck_syncing(session, env):
+    """Google Drive is never ingested - files are searched live - so
+    `last_synced_at` stays NULL forever. Reading that as "still syncing" left
+    Drive permanently Syncing and permanently blocking setup: 3/3 was
+    unreachable. Authorized means usable for a live-query provider."""
+    _require(session, env, env["admin"], provider=Provider.GOOGLE_DRIVE)
+    # synced=False mirrors reality: nothing ever sets last_synced_at here.
+    _connect(session, env, env["member"], provider=Provider.GOOGLE_DRIVE, synced=False)
+
+    [status] = member_checklist(session, env["team"].id, env["workspace"].id, env["member"].id)
+    assert status.state == ReadinessState.READY
+    assert status.blocks is False
+
+
+def test_ingested_providers_still_show_syncing_until_first_sync(session, env):
+    """The fix must not blanket-skip the syncing state - Gmail genuinely has
+    a first ingestion to wait for."""
+    _require(session, env, env["admin"], provider=Provider.GMAIL)
+    _connect(session, env, env["member"], provider=Provider.GMAIL, synced=False)
+
+    [status] = member_checklist(session, env["team"].id, env["workspace"].id, env["member"].id)
+    assert status.state == ReadinessState.SYNCING
+    assert status.blocks is True

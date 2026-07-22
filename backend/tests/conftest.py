@@ -17,6 +17,17 @@ os.environ.setdefault("SESSION_SECRET_KEY", secrets.token_urlsafe(48))
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
 os.environ.setdefault("LOG_JSON", "false")
 
+# Register every model on Base.metadata before any test's create_all() runs.
+#
+# Each test file builds its own in-memory schema from whatever models its
+# own imports happened to register, so a table was created only if some
+# import chain reached it first. A service that later queried an
+# unreferenced table failed with "no such table" - and worse, a test could
+# pass purely because the table it should have been checking didn't exist.
+# Importing the models package here makes the test schema complete and
+# identical everywhere, independent of import order.
+import app.models  # noqa: E402,F401  (side-effect import, must follow env setup)
+
 
 @event.listens_for(Engine, "connect")
 def _enforce_sqlite_foreign_keys(dbapi_connection, _connection_record):

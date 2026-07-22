@@ -520,3 +520,12 @@ export interface AuthorizedConnection {
   source: "channel" | "group" | "class";
   resources: string[];
 }
+
+/** A connection a channel has opted out of. Grants nothing - subtractive only. */
+export interface ChannelExclusion {
+  id: string;
+  connection_id: string;
+  provider: string;
+  label: string;
+  reason: string | null;
+}

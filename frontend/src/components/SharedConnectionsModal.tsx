@@ -25,17 +25,20 @@ export function SharedConnectionsModal({
   label,
   onClose,
 }: {
-  scope: "class" | "group";
+  scope: "workspace" | "class" | "group";
   workspaceId: string;
-  classId: string;
+  /** Not needed for workspace scope. */
+  classId?: string;
   groupId?: string;
   label: string;
   onClose: () => void;
 }) {
   const base =
-    scope === "class"
-      ? `/workspaces/${workspaceId}/classes/${classId}/connections`
-      : `/workspaces/${workspaceId}/classes/${classId}/groups/${groupId}/connections`;
+    scope === "workspace"
+      ? `/workspaces/${workspaceId}/connections`
+      : scope === "class"
+        ? `/workspaces/${workspaceId}/classes/${classId}/connections`
+        : `/workspaces/${workspaceId}/classes/${classId}/groups/${groupId}/connections`;
 
   const [shared, setShared] = useState<SharedConnection[]>([]);
   const [available, setAvailable] = useState<Connection[]>([]);
@@ -70,8 +73,8 @@ export function SharedConnectionsModal({
   return (
     <Modal title={`Shared connections · ${label}`} onClose={onClose}>
       <p className="mb-4 text-caption leading-relaxed text-ink-faint">
-        Connections shared here become context for every channel in this {scope}. Drive connections grant no file until
-        you allow-list one.
+        <span className="text-ink-dim">Connecting a service does not share it.</span> A connection shared here becomes
+        context every channel in this {scope} inherits. Drive connections still grant no file until you allow-list one.
       </p>
 
       {loading ? (

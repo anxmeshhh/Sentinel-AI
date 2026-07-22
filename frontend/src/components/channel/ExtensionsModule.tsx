@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, ApiError } from "../../api/client";
-import type { ChannelConnection, ChannelReadiness, ChannelRequirement, Connection, AuthorizedConnection } from "../../api/types";
+import type { ChannelConnection, ChannelReadiness, ChannelRequirement, Connection, AuthorizedConnection, ChannelExclusion } from "../../api/types";
 import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
-import { LoadingBlock } from "../ui";
+import { LoadingBlock, useToast } from "../ui";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const REQUIREABLE_PROVIDERS = ["gmail", "google_calendar", "google_drive", "github"];
@@ -263,7 +263,7 @@ function AssignedConnectionsSection({
         else from the workspace.
       </p>
 
-      <InheritedConnections teamId={teamId} />
+      <InheritedConnections teamId={teamId} isAdmin={isAdmin} />
 
       {connections.length === 0 && <p className="text-small text-ink-faint">Nothing assigned directly to this channel.</p>}
 
@@ -462,43 +462,137 @@ function RosterSection({ teamId, hasRequirements }: { teamId: string; hasRequire
 }
 
 
-/** Connections this channel inherits from its Group or Class - shared
- *  context an admin set once, one or two tiers up. Read-only here: a
- *  channel admin manages channel-level assignments, but inherited ones are
- *  changed at the Group/Class they came from. Shows members the full
- *  authorized picture, not just channel rows. */
-function InheritedConnections({ teamId }: { teamId: string }) {
+/**
+ * What this channel can actually read, and why - the three states an admin
+ * has to be able to tell apart:
+ *
+ *   INHERITED  shared at the Workspace/Class/Group, flows down here
+ *   EXCLUDED   inherited, but switched off for this channel only
+ *   (channel-level assignments render in the section below this one)
+ *
+ * An admin can exclude an inherited connection without unsharing it from
+ * anyone else, and lift that exclusion again. Everything else about an
+ * inherited connection is managed where it was shared - this panel narrows,
+ * it never grants.
+ */
+function InheritedConnections({ teamId, isAdmin }: { teamId: string; isAdmin: boolean }) {
   const [inherited, setInherited] = useState<AuthorizedConnection[]>([]);
+  const [excluded, setExcluded] = useState<ChannelExclusion[]>([]);
+  const [busy, setBusy] = useState(false);
+  const { toast } = useToast();
 
-  useEffect(() => {
-    api
-      .get<AuthorizedConnection[]>(`/teams/${teamId}/authorized-connections`)
-      .then((all) => setInherited(all.filter((c) => c.source !== "channel")))
-      .catch(() => setInherited([]));
+  const load = useCallback(async () => {
+    try {
+      const [all, ex] = await Promise.all([
+        api.get<AuthorizedConnection[]>(`/teams/${teamId}/authorized-connections`),
+        api.get<ChannelExclusion[]>(`/teams/${teamId}/exclusions`),
+      ]);
+      setInherited(all.filter((c) => c.source !== "channel"));
+      setExcluded(ex);
+    } catch {
+      setInherited([]);
+      setExcluded([]);
+    }
   }, [teamId]);
 
-  if (inherited.length === 0) return null;
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (inherited.length === 0 && excluded.length === 0) return null;
+
+  async function exclude(connectionId: string) {
+    setBusy(true);
+    try {
+      await api.post(`/teams/${teamId}/exclusions`, { connection_id: connectionId });
+      await load();
+      toast("Excluded from this channel only", "success");
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Failed to exclude", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function lift(exclusionId: string) {
+    setBusy(true);
+    try {
+      await api.delete(`/teams/${teamId}/exclusions/${exclusionId}`);
+      await load();
+      toast("Access restored — inheriting again", "success");
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Failed to restore", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="mb-4 rounded-md border border-brand/25 bg-brand/[0.04] p-3.5">
-      <div className="label-sub mb-2 text-brand">Inherited shared context</div>
+      <div className="label-sub mb-1 text-brand">Inherited shared context</div>
+      <p className="mb-2.5 text-micro leading-relaxed text-ink-faint">
+        Shared by an admin above this channel. Managed where it was shared — here you can only switch it off for this
+        channel.
+      </p>
+
       <div className="flex flex-col gap-1.5">
         {inherited.map((c) => (
           <div key={c.connection_id} className="flex items-center justify-between gap-3 text-caption">
             <span className="min-w-0 truncate text-ink-dim">
               {PROVIDER_LABEL[c.provider] ?? c.provider} · {c.label}
-              {c.resources.length > 0 && <span className="text-ink-faint"> · {c.resources.length} resource{c.resources.length === 1 ? "" : "s"}</span>}
+              {c.resources.length > 0 && (
+                <span className="text-ink-faint">
+                  {" "}
+                  · {c.resources.length} resource{c.resources.length === 1 ? "" : "s"}
+                </span>
+              )}
             </span>
-            <span className="flex-none rounded-full border border-brand/30 px-2 py-px text-micro text-brand">
-              from {c.source}
+            <span className="flex flex-none items-center gap-2">
+              <span className="rounded-full border border-brand/30 px-2 py-px text-micro text-brand">
+                from {c.source}
+              </span>
+              {isAdmin && (
+                <button
+                  onClick={() => exclude(c.connection_id)}
+                  disabled={busy}
+                  className="text-micro text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
+                >
+                  Exclude
+                </button>
+              )}
+            </span>
+          </div>
+        ))}
+
+        {excluded.map((e) => (
+          <div key={e.id} className="flex items-center justify-between gap-3 text-caption">
+            <span className="min-w-0 truncate text-ink-faint line-through">
+              {PROVIDER_LABEL[e.provider] ?? e.provider} · {e.label}
+            </span>
+            <span className="flex flex-none items-center gap-2">
+              <span className="rounded-full border border-crit/30 bg-crit/10 px-2 py-px text-micro text-crit">
+                excluded here
+              </span>
+              {isAdmin && (
+                <button
+                  onClick={() => lift(e.id)}
+                  disabled={busy}
+                  className="text-micro text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
+                >
+                  Restore
+                </button>
+              )}
             </span>
           </div>
         ))}
       </div>
-      <p className="mt-2 text-micro leading-relaxed text-ink-faint">
-        Shared by an admin at the {inherited.some((c) => c.source === "class") ? "Class" : "Group"} level. Managed there,
-        not here.
-      </p>
+
+      {excluded.length > 0 && (
+        <p className="mt-2 text-micro leading-relaxed text-ink-faint">
+          An exclusion blocks the connection <span className="text-ink-dim">in this channel only</span> — other channels
+          keep inheriting it normally.
+        </p>
+      )}
     </div>
   );
 }

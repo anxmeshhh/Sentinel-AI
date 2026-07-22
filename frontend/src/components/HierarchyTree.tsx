@@ -26,6 +26,7 @@ export function HierarchyTree() {
   const { tree, loading, refresh } = useHierarchy();
   const [creatingClass, setCreatingClass] = useState(false);
   const [inviting, setInviting] = useState(false);
+  const [sharingWorkspace, setSharingWorkspace] = useState(false);
 
   if (!active) return null;
 
@@ -50,17 +51,37 @@ export function HierarchyTree() {
               context identity - icon, name and PRIVATE/SHARED - so the
               answer to "which world am I in" is stated, not inferred. */}
           <ContextBadge identity={workspaceContext(active)} />
-          <button
-            onClick={() => setInviting(true)}
-            className="flex-none text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-          >
-            Invite
-          </button>
+          <div className="flex flex-none items-center gap-2.5">
+            {canManageClasses && (
+              <button
+                onClick={() => setSharingWorkspace(true)}
+                title="Connections shared with the whole workspace"
+                className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
+              >
+                Shared
+              </button>
+            )}
+            <button
+              onClick={() => setInviting(true)}
+              className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
+            >
+              Invite
+            </button>
+          </div>
         </div>
       </div>
 
       {inviting && (
         <InviteModal scope={{ type: "workspace", id: active.id }} label={active.name.trim()} onClose={() => setInviting(false)} />
+      )}
+
+      {sharingWorkspace && (
+        <SharedConnectionsModal
+          scope="workspace"
+          workspaceId={active.id}
+          label={active.name.trim()}
+          onClose={() => setSharingWorkspace(false)}
+        />
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5">

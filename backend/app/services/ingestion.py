@@ -8,6 +8,7 @@ import structlog
 from sqlalchemy.orm import Session
 
 from app.core.security import decrypt_token
+from app.integrations.github_auth import get_valid_token
 from app.integrations.github_client import GitHubClient
 from app.integrations.gmail_client import GmailClient
 from app.integrations.google_auth import get_valid_access_token
@@ -36,7 +37,7 @@ def ingest_connection(session: Session, connection: Connection) -> int:
         raise ValueError(f"{spec.label} is queried live and is never ingested")
 
     if connection.provider == Provider.GITHUB:
-        count = _ingest_github(connection, since, signal_repo)
+        count = _ingest_github(session, connection, since, signal_repo)
     elif connection.provider == Provider.GOOGLE_CALENDAR:
         count = _ingest_google_calendar(session, connection, since, signal_repo)
     elif connection.provider == Provider.GMAIL:
@@ -52,8 +53,20 @@ def ingest_connection(session: Session, connection: Connection) -> int:
     return count
 
 
-def _ingest_github(connection: Connection, since: datetime, signal_repo: SignalRepository) -> int:
-    token = decrypt_token(connection.encrypted_token)
+def _ingest_github(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository) -> int:
+    # A connection whose repository has not been chosen yet is not a failure
+    # and not something to retry - the user simply has not finished
+    # connecting. Syncing "" would 404 on every call.
+    if not connection.repo:
+        logger.info("github_repo_not_selected", connection_id=str(connection.id))
+        return 0
+
+    # Verifies the token and records revocation on the connection, which is
+    # what makes `expired` reportable for GitHub at all. Raises
+    # GitHubAuthError when the user must reconnect - deliberately not caught
+    # here, so the caller sees a dead connection rather than an empty sync
+    # that looks like "nothing happened".
+    token = get_valid_token(session, connection)
     count = 0
 
     with GitHubClient(token) as client:

@@ -67,6 +67,28 @@ if GOOGLE_CONFIGURED:
         },
     )
 
+GITHUB_CONFIGURED = bool(_settings.github_client_id and _settings.github_client_secret)
+
+if GITHUB_CONFIGURED:
+    # GitHub is not an OpenID provider, so there is no discovery document to
+    # point at - the two endpoints are given explicitly.
+    #
+    # Scopes: `repo` covers private repository metadata (the client fetches
+    # titles, timestamps, authors and file paths only - never diffs, see
+    # github_client.py), and `read:org` is what lets an org member see the
+    # org's repositories at all. Nothing here grants write access; the one
+    # write action Sentinel declares for GitHub is unavailable precisely
+    # because it would need a scope this deliberately does not request.
+    oauth.register(
+        name="github",
+        client_id=_settings.github_client_id,
+        client_secret=_settings.github_client_secret,
+        access_token_url="https://github.com/login/oauth/access_token",
+        authorize_url="https://github.com/login/oauth/authorize",
+        api_base_url="https://api.github.com/",
+        client_kwargs={"scope": "repo read:org"},
+    )
+
 if MICROSOFT_CONFIGURED:
     oauth.register(
         name="microsoft",

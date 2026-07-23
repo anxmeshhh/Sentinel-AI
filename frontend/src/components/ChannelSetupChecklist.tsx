@@ -30,6 +30,11 @@ const STATE_COPY: Record<ReadinessState, { label: string; tone: string; hint: st
     hint: "Access was revoked or expired, so Sentinel can no longer read this. Reconnecting fixes it.",
   },
   not_connected: { label: "Not connected", tone: "text-ink-faint", hint: "" },
+  needs_setup: {
+    label: "Needs setup",
+    tone: "text-watch",
+    hint: "Connected, but not pointed at anything yet - pick a repository to finish.",
+  },
 };
 
 /** Where an admin shared it, in the member's words. The API returns a tier
@@ -143,7 +148,9 @@ function ChecklistRow({
 }) {
   const copy = STATE_COPY[status.state];
   const isProvided = status.provided_by !== null;
-  const needsAction = !isProvided && (status.state === "not_connected" || status.state === "expired");
+  const needsAction =
+    !isProvided &&
+    (status.state === "not_connected" || status.state === "expired" || status.state === "needs_setup");
   const isGoogle = GOOGLE_PROVIDERS.has(status.provider);
 
   return (

@@ -17,7 +17,7 @@ re-designed per provider:
 | Provider | Auth | Data | Attention | AI | Shared/RBAC | Status |
 |---|---|---|---|---|---|---|
 | Google (Gmail, Calendar, Drive) | OAuth ✅ | ✅ | ✅ | ✅ | ✅ | **COMPLETE** ✅ |
-| GitHub | PAT 🟡 | ✅ | ✅ | ✅ | ✅ | **PARTIAL** 🟡 — OAuth app needed |
+| GitHub | OAuth ✅ | ✅ | ✅ | ✅ | ✅ | **COMPLETE** ✅ |
 | Slack | — | — | — | — | — | **BLOCKED** 🔴 |
 | Notion | — | — | — | — | — | **BLOCKED** 🔴 |
 | Microsoft 365 | — | — | — | — | — | **BLOCKED** 🔴 |
@@ -42,7 +42,10 @@ Each block below is what unblocks one provider. Add the values to
 `backend/.env`. All redirect URIs assume the current
 `backend_base_url=http://localhost:8000`.
 
-### 1. GitHub OAuth App — unblocks the highest-value fix
+### 1. GitHub OAuth App — ✅ DONE
+
+Registered and verified. Kept here as the reference for the other five.
+
 
 <https://github.com/settings/developers> → **New OAuth App**
 

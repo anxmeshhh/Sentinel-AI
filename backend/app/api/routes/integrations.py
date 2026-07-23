@@ -25,13 +25,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.core.auth import InvalidTokenError, create_connect_ticket, decode_connect_ticket
 from app.core.config import get_settings
-from app.core.oauth import GOOGLE_CONFIGURED, oauth
+from app.core.oauth import GITHUB_CONFIGURED, GOOGLE_CONFIGURED, oauth
 from app.core.security import encrypt_token
 from app.models.connection import Connection, Provider
 from app.models.email_summary import EmailSummary
 from app.models.signal import Signal
 from app.models.user import User
-from app.schemas.integration import ConnectTicketOut
+from app.schemas.integration import ConnectTicketOut, GitHubRepoOut, GitHubRepoSelect
 
 logger = structlog.get_logger("sentinel.integrations")
 
@@ -44,6 +44,7 @@ from app.providers.registry import INGESTABLE_PROVIDERS  # noqa: E402
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 GOOGLE_CONNECT_PURPOSE = "google_connect"
+GITHUB_CONNECT_PURPOSE = "github_connect"
 
 
 @router.post("/google/connect-ticket", response_model=ConnectTicketOut)
@@ -233,3 +234,224 @@ def upsert_google_connections(
                 )
             )
     session.commit()
+
+
+# --- GitHub -----------------------------------------------------------------
+#
+# Same three-step shape as Google - ticket, redirect, callback - because the
+# constraint is the same: a full-page OAuth redirect cannot carry an
+# Authorization header, so the authenticated fetch that starts it exchanges
+# the session for a short-lived ticket that is safe to put in a URL.
+#
+# What differs is the end of the flow. A GitHub OAuth App issues a
+# non-expiring access token and no refresh token, so there is nothing to
+# renew and the stored value is the token itself rather than Google's
+# {access,refresh,expires} blob - which is also what github_client.py has
+# always expected.
+#
+# And a token is not yet a connection: it can read many repositories, and
+# Sentinel watches one. So the callback records the account and leaves the
+# repository unset, and the user picks from the repositories the token can
+# genuinely see (see /github/repos). Typing a repo name by hand would be a
+# guess that fails silently at the first sync.
+
+
+@router.post("/github/connect-ticket", response_model=ConnectTicketOut)
+def create_github_connect_ticket(
+    user: User = Depends(get_current_user),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+) -> ConnectTicketOut:
+    if not GITHUB_CONFIGURED:
+        raise HTTPException(status_code=501, detail="GitHub integration is not configured yet")
+    ticket = create_connect_ticket(user_id=user.id, workspace_id=workspace_id, purpose=GITHUB_CONNECT_PURPOSE)
+    return ConnectTicketOut(ticket=ticket)
+
+
+@router.get("/github/connect")
+async def github_connect(request: Request, ticket: str):
+    if not GITHUB_CONFIGURED:
+        raise HTTPException(status_code=501, detail="GitHub integration is not configured yet")
+    try:
+        user_id, workspace_id = decode_connect_ticket(ticket, expected_purpose=GITHUB_CONNECT_PURPOSE)
+    except InvalidTokenError:
+        raise HTTPException(status_code=400, detail="This connect link is invalid or has expired - try again")
+
+    request.session["github_connect_user_id"] = str(user_id)
+    request.session["github_connect_workspace_id"] = str(workspace_id)
+    request.session["github_connect_return_to"] = _safe_return_path(request.query_params.get("return_to"))
+
+    redirect_uri = f"{get_settings().backend_base_url}/integrations/github/callback"
+    return await oauth.github.authorize_redirect(request, redirect_uri)
+
+
+@router.get("/github/callback")
+async def github_connect_callback(request: Request, session: Session = Depends(get_db)):
+    if not GITHUB_CONFIGURED:
+        raise HTTPException(status_code=501, detail="GitHub integration is not configured yet")
+
+    workspace_id_str = request.session.pop("github_connect_workspace_id", None)
+    user_id_str = request.session.pop("github_connect_user_id", None)
+    return_to = _safe_return_path(request.session.pop("github_connect_return_to", None))
+    if not workspace_id_str or not user_id_str:
+        return RedirectResponse(f"{get_settings().frontend_base_url}/?github_error=session_expired")
+
+    token = await oauth.github.authorize_access_token(request)
+    access_token = token.get("access_token")
+    if not access_token:
+        # GitHub reports a refused or expired authorization code in the body
+        # rather than with an error status, so this is a normal outcome to
+        # handle, not an exceptional one.
+        return RedirectResponse(f"{get_settings().frontend_base_url}/?github_error=no_token")
+
+    from app.integrations.github_client import GitHubClient
+
+    try:
+        with GitHubClient(access_token) as client:
+            account = client.get_authenticated_user()
+    except Exception:
+        logger.warning("github_identity_lookup_failed")
+        return RedirectResponse(f"{get_settings().frontend_base_url}/?github_error=identity_failed")
+
+    login = account.get("login") or "unknown-github-account"
+    upsert_github_connection(
+        session,
+        workspace_id=uuid.UUID(workspace_id_str),
+        user_id=uuid.UUID(user_id_str),
+        login=login,
+        encrypted_token=encrypt_token(access_token),
+    )
+
+    separator = "&" if "?" in return_to else "?"
+    return RedirectResponse(f"{get_settings().frontend_base_url}{return_to}{separator}connected=github")
+
+
+def upsert_github_connection(
+    session: Session, *, workspace_id: uuid.UUID, user_id: uuid.UUID, login: str, encrypted_token: str
+) -> Connection:
+    """One GitHub account per person per workspace, same key as every other
+    provider.
+
+    The repository is deliberately left empty here. A token that can read
+    thirty repositories has not told us which one this workspace cares about,
+    and picking one for the user would be a guess that quietly syncs the
+    wrong thing.
+    """
+    existing = session.execute(
+        select(Connection).where(
+            Connection.workspace_id == workspace_id,
+            Connection.user_id == user_id,
+            Connection.provider == Provider.GITHUB,
+        )
+    ).scalars().first()
+
+    if existing is not None:
+        if existing.org != login:
+            # A different GitHub account: whatever was synced belonged to the
+            # previous one and is not this account's to keep.
+            logger.info("github_account_replaced", old=existing.org, new=login, workspace_id=str(workspace_id))
+            session.query(Signal).filter(Signal.connection_id == existing.id).delete()
+            existing.org = login
+            existing.repo = ""
+            existing.last_synced_at = None
+        existing.encrypted_token = encrypted_token
+        # A fresh consent is the evidence that the connection is alive again.
+        existing.revoked_at = None
+        session.commit()
+        return existing
+
+    connection = Connection(
+        workspace_id=workspace_id, user_id=user_id, provider=Provider.GITHUB,
+        org=login, repo="", encrypted_token=encrypted_token,
+    )
+    session.add(connection)
+    session.commit()
+    session.refresh(connection)
+    return connection
+
+
+@router.get("/github/repos", response_model=list[GitHubRepoOut])
+def list_github_repos(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> list[GitHubRepoOut]:
+    """The repositories this person's token can actually read.
+
+    Scoped to the caller's own connection - one member's GitHub access is
+    never listed for another, exactly as with every other provider.
+    """
+    from app.integrations.github_auth import GitHubAuthError, get_valid_token
+    from app.integrations.github_client import GitHubClient
+
+    connection = _github_connection_for(session, workspace_id, user.id)
+    try:
+        token = get_valid_token(session, connection)
+        with GitHubClient(token) as client:
+            repos = client.list_repositories()
+    except GitHubAuthError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.warning("github_repo_list_failed", error=str(exc)[:200])
+        raise HTTPException(status_code=502, detail="GitHub could not be reached just now") from exc
+
+    return [GitHubRepoOut(**r) for r in repos]
+
+
+@router.post("/github/repo", response_model=dict)
+def select_github_repo(
+    payload: GitHubRepoSelect,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Point this connection at one repository, and sync it immediately.
+
+    Verified against the token before it is stored: a repository the token
+    cannot read would otherwise be accepted here and fail silently on every
+    later sync, leaving a connection that looks configured and produces
+    nothing.
+    """
+    from app.integrations.github_auth import GitHubAuthError, get_valid_token
+    from app.integrations.github_client import GitHubClient
+
+    connection = _github_connection_for(session, workspace_id, user.id)
+    try:
+        token = get_valid_token(session, connection)
+        with GitHubClient(token) as client:
+            allowed = {r["full_name"].lower() for r in client.list_repositories()}
+    except GitHubAuthError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.warning("github_repo_verify_failed", error=str(exc)[:200])
+        raise HTTPException(status_code=502, detail="GitHub could not be reached just now") from exc
+
+    wanted = f"{payload.org}/{payload.repo}".lower()
+    if wanted not in allowed:
+        raise HTTPException(status_code=403, detail="Your GitHub account cannot read that repository")
+
+    if connection.repo and (connection.org.lower(), connection.repo.lower()) != (payload.org.lower(), payload.repo.lower()):
+        # Pointing at a different repository: the signals already stored
+        # describe the old one and would otherwise be silently attributed to
+        # the new one.
+        session.query(Signal).filter(Signal.connection_id == connection.id).delete()
+        connection.last_synced_at = None
+
+    connection.org = payload.org
+    connection.repo = payload.repo
+    session.commit()
+
+    _queue_first_sync(session, workspace_id, user.id)
+    return {"org": connection.org, "repo": connection.repo, "syncing": True}
+
+
+def _github_connection_for(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Connection:
+    connection = session.execute(
+        select(Connection).where(
+            Connection.workspace_id == workspace_id,
+            Connection.user_id == user_id,
+            Connection.provider == Provider.GITHUB,
+        )
+    ).scalars().first()
+    if connection is None:
+        raise HTTPException(status_code=404, detail="Connect GitHub first")
+    return connection

@@ -56,7 +56,13 @@ class Settings(BaseSettings):
     frontend_base_url: str = "http://localhost:5173"
     backend_base_url: str = "http://localhost:8000"
 
-    # GitHub
+    # GitHub. The OAuth App is what a real user connects through; each person
+    # authorizes their own account, so the token belongs to them rather than
+    # to the workspace (the Phase A per-user connection model).
+    github_client_id: str | None = None
+    github_client_secret: str | None = None
+    # Legacy single shared PAT. Kept only so an existing .env doesn't fail to
+    # load; nothing reads it any more.
     github_default_token: str | None = None
 
     # LLM (Groq)

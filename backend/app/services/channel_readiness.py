@@ -66,6 +66,17 @@ class ReadinessState(str, enum.Enum):
     SYNCING = "syncing"
     READY = "ready"
     EXPIRED = "expired"
+    # Authorized, but not yet usable: the account is connected and the token
+    # works, and something the provider needs is still unchosen. GitHub is
+    # the case that forced this - one OAuth token can read many repositories
+    # and Sentinel watches one, so a connection exists before it points
+    # anywhere.
+    #
+    # Worth its own state rather than being folded into an existing one:
+    # `not_connected` would be untrue and send the user back through OAuth
+    # they already completed, and `ready` would be the Google Drive bug again
+    # - a connection reporting healthy while providing nothing.
+    NEEDS_SETUP = "needs_setup"
 
 
 class RequirementStatus:
@@ -110,6 +121,12 @@ def _state_for(connection: Connection | None) -> ReadinessState:
         return ReadinessState.NOT_CONNECTED
     if connection.revoked_at is not None:
         return ReadinessState.EXPIRED
+    # A GitHub connection with no repository chosen has a working token and
+    # nothing to read with it. It syncs "successfully" every time - zero
+    # signals from a repo that was never named - so `last_synced_at` gets
+    # set and every other check below would call it ready.
+    if connection.provider == Provider.GITHUB and not connection.repo:
+        return ReadinessState.NEEDS_SETUP
     # A live-query provider has no first sync to wait for, so `last_synced_at`
     # stays NULL forever - reading that as "still syncing" is what left Google
     # Drive permanently stuck and permanently blocking channel setup. The

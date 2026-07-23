@@ -9,6 +9,17 @@ export interface Connection {
   last_synced_at: string | null;
 }
 
+/** A repository the connected GitHub token can actually read.
+ *  Offered as a choice rather than typed: a hand-entered repo name is a
+ *  guess that fails silently at the first sync. */
+export interface GitHubRepo {
+  org: string;
+  repo: string;
+  full_name: string;
+  private: boolean;
+  pushed_at: string | null;
+}
+
 export interface Finding {
   id: string;
   run_id: string;
@@ -526,7 +537,7 @@ export interface ChannelBriefing {
   blocking_providers: string[];
 }
 
-export type ReadinessState = "not_connected" | "syncing" | "ready" | "expired";
+export type ReadinessState = "not_connected" | "syncing" | "ready" | "expired" | "needs_setup";
 
 /** What an admin declared this channel needs - a provider, never an account. */
 export interface ChannelRequirement {

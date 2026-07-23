@@ -1,9 +1,9 @@
-import type { FormEvent, ReactNode } from "react";
-import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { api } from "../api/client";
-import type { Connection } from "../api/types";
+import { api, ApiError } from "../api/client";
+import type { Connection, GitHubRepo } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { ConnectScopeDialog } from "../components/ConnectScopeDialog";
 import { SentinelPanel } from "../components/SentinelPanel";
@@ -262,89 +262,168 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
   );
 }
 
+/**
+ * GitHub, connected by OAuth.
+ *
+ * Replaces a personal-access-token form that had been failing since
+ * connections became per-user: it never sent an owner, so every submission
+ * hit a NOT NULL constraint. Nobody could have connected GitHub through it.
+ *
+ * The flow is two steps on purpose. One token can read many repositories and
+ * Sentinel watches one, so authorizing does not by itself say which - and
+ * picking for the user would quietly sync the wrong thing. The second step
+ * offers exactly the repositories the granted scopes can actually read, so a
+ * choice made here is known to work rather than typed and hoped for.
+ */
 function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]; onChanged: () => void }) {
-  const repos = connections.filter((c) => c.provider === "github");
-  const [org, setOrg] = useState("");
-  const [repo, setRepo] = useState("");
-  const [token, setToken] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const connection = connections.find((c) => c.provider === "github");
+  const needsRepo = Boolean(connection && !connection.repo);
 
-  async function handleConnect(e: FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
+  const [repos, setRepos] = useState<GitHubRepo[]>([]);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+
+  const loadRepos = useCallback(async () => {
+    setLoadingRepos(true);
     setError(null);
     try {
-      await api.post("/connections", { org, repo, github_token: token });
-      setOrg("");
-      setRepo("");
-      setToken("");
-      onChanged();
+      setRepos(await api.get<GitHubRepo[]>("/integrations/github/repos"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to connect repository");
+      setError(err instanceof ApiError ? err.message : "Couldn't load your repositories");
     } finally {
-      setSubmitting(false);
+      setLoadingRepos(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (needsRepo) void loadRepos();
+  }, [needsRepo, loadRepos]);
+
+  async function connect() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { ticket } = await api.post<{ ticket: string }>("/integrations/github/connect-ticket");
+      const returnTo = encodeURIComponent("/connections/github");
+      window.location.href = `${API_BASE}/integrations/github/connect?ticket=${encodeURIComponent(ticket)}&return_to=${returnTo}`;
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't start the GitHub connection");
+      setBusy(false);
     }
   }
 
-  async function handleDisconnect(id: string) {
+  async function choose(org: string, repo: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post("/integrations/github/repo", { org, repo });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't select that repository");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnect(id: string) {
     await api.delete(`/connections/${id}`);
     onChanged();
   }
 
+  const visible = filter
+    ? repos.filter((r) => r.full_name.toLowerCase().includes(filter.toLowerCase()))
+    : repos;
+
   return (
     <div>
-      {repos.length > 0 && (
+      {connection && connection.repo && (
         <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {repos.map((c) => (
-            <ServiceCard
-              key={c.id}
-              icon={<GitHubIcon />}
-              name={`${c.org}/${c.repo}`}
-              status="Connected"
-              desc={c.last_synced_at ? `synced ${new Date(c.last_synced_at).toLocaleString()}` : "not yet synced"}
-              connected
-              onRemove={() => handleDisconnect(c.id)}
-            />
-          ))}
+          <ServiceCard
+            icon={<GitHubIcon />}
+            name={`${connection.org}/${connection.repo}`}
+            status="Connected"
+            desc={
+              connection.last_synced_at
+                ? `synced ${new Date(connection.last_synced_at).toLocaleString()}`
+                : "not yet synced"
+            }
+            connected
+            onRemove={() => disconnect(connection.id)}
+          />
         </div>
       )}
 
-      <form onSubmit={handleConnect} className="card p-4">
-        <div className="mb-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <input
-            required
-            placeholder="org (e.g. northwind)"
-            value={org}
-            onChange={(e) => setOrg(e.target.value)}
-            className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
-          />
-          <input
-            required
-            placeholder="repo (e.g. checkout-service)"
-            value={repo}
-            onChange={(e) => setRepo(e.target.value)}
-            className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
-          />
+      {error && <p className="mb-3 text-small text-crit">{error}</p>}
+
+      {!connection && (
+        <div className="card p-4">
+          <div className="mb-1 text-body font-semibold text-ink">Connect your GitHub account</div>
+          <p className="mb-3 text-small leading-relaxed text-ink-dim">
+            You'll authorize Sentinel on GitHub, then choose which repository to watch. Sentinel reads pull request,
+            commit, issue and review <span className="text-ink">metadata only</span> — never source code, diffs or file
+            contents.
+          </p>
+          <button onClick={connect} disabled={busy} className="btn-primary">
+            {busy ? "Redirecting…" : "Connect GitHub"}
+          </button>
         </div>
-        <input
-          required
-          type="password"
-          placeholder="GitHub personal access token"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          className="mb-2.5 w-full rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
-        />
-        {error && <p className="mb-2 text-small text-crit">{error}</p>}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="btn-primary"
-        >
-          {submitting ? "Connecting…" : "Connect repository"}
-        </button>
-        <p className="mt-2 text-caption text-ink-dim">🔒 PR, commit, issue, and review metadata only — never source code.</p>
-      </form>
+      )}
+
+      {needsRepo && (
+        <div className="card p-4">
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-body font-semibold text-ink">Choose a repository</div>
+              <p className="text-small text-ink-dim">
+                Connected as <span className="text-ink">{connection?.org}</span>. Sentinel watches one repository.
+              </p>
+            </div>
+            <button onClick={connect} disabled={busy} className="flex-none text-caption text-ink-faint underline underline-offset-2 hover:text-ink">
+              Use a different account
+            </button>
+          </div>
+
+          {loadingRepos ? (
+            <LoadingBlock />
+          ) : repos.length === 0 ? (
+            <p className="mt-2 text-small text-ink-dim">
+              No repositories are readable with the access you granted. If the one you want belongs to an
+              organization, it may need to approve Sentinel first.
+            </p>
+          ) : (
+            <>
+              <input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder={`Filter ${repos.length} repositories…`}
+                className="mb-2 mt-3 w-full rounded-md border border-border bg-transparent px-3 py-2 text-small outline-none focus:border-border-strong"
+              />
+              <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+                {visible.map((r) => (
+                  <button
+                    key={r.full_name}
+                    onClick={() => choose(r.org, r.repo)}
+                    disabled={busy}
+                    className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-small text-ink-dim transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-50"
+                  >
+                    <span className="min-w-0 truncate">{r.full_name}</span>
+                    <span className="flex-none text-micro text-ink-faint">
+                      {r.private ? "private" : "public"}
+                      {r.pushed_at ? ` · ${new Date(r.pushed_at).toLocaleDateString()}` : ""}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      <p className="mt-3 text-caption text-ink-dim">
+        🔒 PR, commit, issue and review metadata only — never source code.
+      </p>
     </div>
   );
 }

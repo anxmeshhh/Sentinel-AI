@@ -21,6 +21,7 @@ from app.providers.registry import (
     PROVIDERS,
     RESOURCE_SCOPED_PROVIDERS,
     AuthKind,
+    ProviderSpec,
     Retrieval,
     spec_for,
 )
@@ -94,16 +95,34 @@ def test_resource_scoped_providers_are_the_ones_that_reach_many_things():
     assert spec_for(Provider.GITHUB).resource_scoped is False
 
 
-def test_revocation_is_only_observable_for_oauth_providers():
-    """Why an expired GitHub token still reports `ready`. Detecting a dead
-    connection requires a refresh that fails, which requires a refresh token -
-    a pasted PAT has none. Stated once here instead of being rediscovered
-    per provider."""
-    assert spec_for(Provider.GITHUB).auth is AuthKind.PAT
-    assert spec_for(Provider.GITHUB).revocation_observable is False
+def test_every_provider_can_now_report_its_own_death():
+    """This test used to assert the opposite for GitHub, and the change is
+    the point.
 
-    for provider in (Provider.GMAIL, Provider.GOOGLE_CALENDAR, Provider.GOOGLE_DRIVE):
-        assert spec_for(provider).revocation_observable is True
+    While GitHub was a pasted PAT, Sentinel had no way to notice a revoked
+    token: there was no refresh to fail and no credentials of its own to ask
+    with, so a dead connection kept reporting `ready` and any channel
+    depending on it looked healthy while returning nothing. The OAuth App
+    closed that - it can ask GitHub directly whether a grant still stands
+    (integrations/github_auth.py).
+
+    No provider is PAT any more, so this asserts the property rather than the
+    exception. If a future provider is added with PAT auth, the second half
+    fails and forces the same question to be answered for it.
+    """
+    for provider in Provider:
+        spec = spec_for(provider)
+        assert spec.auth is AuthKind.OAUTH, f"{spec.label} is not OAuth"
+        assert spec.revocation_observable is True
+
+    # The rule that made the old GitHub case unavoidable, kept executable:
+    # PAT auth still means revocation is undetectable, whoever adds one next.
+    pat_like = ProviderSpec(
+        key=Provider.GITHUB, label="Hypothetical PAT provider",
+        retrieval=Retrieval.INGESTED, auth=AuthKind.PAT,
+        signal_types=(SignalType.ISSUE,),
+    )
+    assert pat_like.revocation_observable is False
 
 
 def test_labels_are_human_and_unique():

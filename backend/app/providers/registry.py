@@ -92,10 +92,13 @@ class ProviderSpec:
     def revocation_observable(self) -> bool:
         """Can Sentinel tell when this connection has died?
 
-        Only via a refresh that actually fails, which needs a refresh token -
-        so PAT providers cannot report `expired` honestly and will keep
-        reporting `ready` with a dead token. Stated here rather than
-        rediscovered per provider; see channel_readiness for how it's used.
+        Only for OAuth providers, though by two different mechanisms: Google
+        finds out when a token refresh fails, GitHub by asking its own OAuth
+        App whether a token is still valid. What both have and a pasted PAT
+        does not is credentials of their own to ask with - so a PAT provider
+        cannot report `expired` honestly and would keep reporting `ready`
+        with a dead token. Stated here rather than rediscovered per provider;
+        see channel_readiness for how it is used.
         """
         return self.auth is AuthKind.OAUTH
 
@@ -107,9 +110,14 @@ PROVIDERS: dict[Provider, ProviderSpec] = {
             key=Provider.GITHUB,
             label="GitHub",
             retrieval=Retrieval.INGESTED,
-            # Still a pasted token. Phase C replaces this with a GitHub OAuth
-            # App, at which point `expired` becomes reportable for GitHub too.
-            auth=AuthKind.PAT,
+            # An OAuth App since Phase 2. Revocation is observable, but not
+            # the way it is for Google: a GitHub OAuth App token never
+            # expires and has no refresh token, so there is no failed refresh
+            # to infer from. Instead the app's own credentials can ask GitHub
+            # directly whether a token is still good - see
+            # integrations/github_auth.py. A direct answer beats an inference
+            # from a side effect.
+            auth=AuthKind.OAUTH,
             signal_types=(SignalType.PR, SignalType.REVIEW_SUBMITTED, SignalType.COMMIT, SignalType.ISSUE),
         ),
         ProviderSpec(

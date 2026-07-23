@@ -48,6 +48,58 @@ class GitHubClient:
     def __exit__(self, *exc) -> None:
         self.close()
 
+    # ---- identity and discovery (OAuth connect flow) ----
+
+    def get_authenticated_user(self) -> dict:
+        """Who this token belongs to.
+
+        Read once at connect time so the resulting Connection is labelled
+        with the account that authorized it, rather than with whatever the
+        user typed. `login` is the stable handle; `name` is often absent.
+        """
+        resp = self._request("GET", "/user")
+        resp.raise_for_status()
+        data = resp.json()
+        return {"login": data.get("login"), "name": data.get("name"), "id": data.get("id")}
+
+    def list_repositories(self, *, limit: int = 100) -> list[dict]:
+        """Repositories this token can actually read, most recently pushed
+        first.
+
+        Asked of GitHub rather than typed by the user: a repo name entered by
+        hand is a guess that fails silently at the first sync, whereas this
+        list is exactly what the granted scopes permit - so anything shown
+        here is known to work before it is chosen.
+        """
+        repos: list[dict] = []
+        page = 1
+        while len(repos) < limit:
+            resp = self._request(
+                "GET",
+                "/user/repos",
+                params={"per_page": 100, "page": page, "sort": "pushed", "affiliation": "owner,collaborator,organization_member"},
+            )
+            resp.raise_for_status()
+            batch = resp.json()
+            if not batch:
+                break
+            for item in batch:
+                full = item.get("full_name") or ""
+                owner, _, name = full.partition("/")
+                if not owner or not name:
+                    continue
+                repos.append({
+                    "org": owner,
+                    "repo": name,
+                    "full_name": full,
+                    "private": bool(item.get("private")),
+                    "pushed_at": item.get("pushed_at"),
+                })
+            if len(batch) < 100:
+                break
+            page += 1
+        return repos[:limit]
+
     # ---- low-level request with rate-limit + retry handling ----
 
     def _request(self, method: str, url: str, params: dict | None = None) -> httpx.Response:

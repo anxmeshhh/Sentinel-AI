@@ -23,11 +23,25 @@ logger = structlog.get_logger("sentinel.ingestion")
 
 # First-ever sync for a brand new connection looks back this far.
 INITIAL_BACKFILL = timedelta(days=30)
+# GitHub gets a longer window: commit-and-review work moves in weeks, not
+# hours, and measured against the real account every repository's most recent
+# activity was already 30-40 days old - a 30-day backfill would have started
+# every new GitHub connection empty. This is not a shortcut; it is matching
+# the window to how the source is actually used.
+GITHUB_BACKFILL = timedelta(days=90)
 
 
 def ingest_connection(session: Session, connection: Connection) -> int:
     """Pull everything new for one connection since its last sync. Returns signal count ingested."""
-    since = connection.last_synced_at or (datetime.now(timezone.utc) - INITIAL_BACKFILL)
+    # A paused connection keeps its history but stops fetching. Checked here,
+    # not just in the poll, so a directly-triggered "sync now" also respects
+    # the pause rather than quietly overriding a deliberate choice.
+    if connection.paused_at is not None:
+        logger.info("ingest_skipped_paused", connection_id=str(connection.id))
+        return 0
+
+    backfill = GITHUB_BACKFILL if connection.provider == Provider.GITHUB else INITIAL_BACKFILL
+    since = connection.last_synced_at or (datetime.now(timezone.utc) - backfill)
     signal_repo = SignalRepository(session, connection.workspace_id)
 
     spec = spec_for(connection.provider)
@@ -46,7 +60,13 @@ def ingest_connection(session: Session, connection: Connection) -> int:
         # The registry says this provider ingests, but nothing here does it.
         raise ValueError(f"{spec.label} declares ingestion but has no handler")
 
-    ConnectionRepository(session, connection.workspace_id).mark_synced(connection, datetime.now(timezone.utc))
+    now = datetime.now(timezone.utc)
+    ConnectionRepository(session, connection.workspace_id).mark_synced(connection, now)
+    # last_synced_at advances on every attempt; last_success_at only when the
+    # fetch actually completed without raising. The gap between them is what
+    # tells a user "it's been trying but failing", which last_synced_at alone
+    # would hide.
+    connection.last_success_at = now
     session.commit()
 
     logger.info("ingestion_complete", connection=connection.full_name, provider=connection.provider.value, signals_ingested=count)

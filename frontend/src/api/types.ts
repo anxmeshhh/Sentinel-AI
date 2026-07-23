@@ -18,6 +18,22 @@ export interface GitHubRepo {
   full_name: string;
   private: boolean;
   pushed_at: string | null;
+  monitored: boolean;
+  connection_id: string | null;
+}
+
+/** One repository Sentinel is watching, with its own health - the management
+ *  view. Multi-repo means each carries its own sync state and signal count. */
+export interface GitHubRepository {
+  connection_id: string;
+  org: string;
+  repo: string;
+  full_name: string;
+  state: "ready" | "syncing" | "error" | "paused" | "token_revoked" | "needs_setup";
+  paused: boolean;
+  last_synced_at: string | null;
+  last_success_at: string | null;
+  signal_count: number;
 }
 
 export interface Finding {

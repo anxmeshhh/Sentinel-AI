@@ -208,3 +208,73 @@ agnostic and come for free.
 still reports ready" a stated property rather than a surprise: detecting a
 dead connection requires a refresh that fails, which requires a refresh
 token, which a pasted PAT does not have.
+
+---
+
+## GitHub: from one repo to a first-class multi-repo sense
+
+Multi-repository, per-repo lifecycle, and real signal flow — built and
+verified against the live GitHub API.
+
+### One account, many repositories — each a full connection
+
+A monitored repository is its own `Connection` row. That is the load-bearing
+decision: every downstream system (signals, attention, channel sharing,
+exclusions, investigation, goals) already keys on `connection_id`, so a
+repo-as-connection flows through all of it unchanged and gains independent
+behaviour for free — one repo can be shared to a channel and another kept
+private, one paused, one investigated, without touching the rest. The
+alternative (an account with a child repository table) would have meant
+threading `repository_id` through every one of those systems. The unique key
+moved from `(workspace, user, provider)` to `(workspace, user, provider,
+repo)`; Google is unaffected (its services are distinct providers).
+
+The OAuth token is one account's, stored redundantly per repo row, so
+account events fan out: reconnect refreshes every row, a different account
+replacing the old one wipes every row (`github_login` is what makes that
+detectable — `org` holds a repo's *owner*, often an org the user only
+collaborates in).
+
+### Per-repository lifecycle
+
+Add · remove · **pause** (keep history, stop syncing — skipped by both the
+poll and direct ingestion) · **sync now** · and honest per-repo state:
+`ready / syncing / error / paused / token_revoked / needs_setup`. `error`
+exists because `last_success_at` is tracked separately from `last_synced_at`
+— a connection that has tried and never succeeded looks recent by the latter
+and is exposed as failing by the gap. `CONNECTING` and `OUTAGE` are
+deliberately *not* stored states: the first has no row yet, the second is a
+live-request property returned as a 502, and inventing stored versions would
+claim knowledge the row does not hold.
+
+### Backfill widened 30 → 90 days
+
+Measured against the real account, every repository's most recent activity
+was already 30–40 days old — a 30-day window started every new GitHub
+connection empty. Dev work moves in weeks, not hours; the window now matches
+the source.
+
+### Real-data verification
+
+Two repositories connected and synced against the live API:
+**`growth-compass` → 22 commit signals, `opti-query-hub` → 16**, all
+reachable in the personal scope and flowing into Feed, Insights and
+Investigate through the same `connection_id` gate every provider uses. GitHub
+is a sense feeding the engine, not a dashboard beside it.
+
+Evidence is now rendered as structured cards with a **View raw data**
+expander, rather than `JSON.stringify`.
+
+### Honestly deferred — awaiting data or scope, not faked
+
+- **Attention detectors beyond stale-PR.** This account produces only commits
+  — no PRs, issues or CI runs — so PR-waiting / review-requested / issue-aging
+  detectors cannot be *validated* against real data. The existing stale-PR
+  detector stands; new ones wait for real PR/issue activity rather than being
+  shipped unfireable. (A data-quality note for later: many commits here are
+  `lovable-dev[bot]`, so a human-vs-bot distinction will matter.)
+- **Workflows / CI failures, security & Dependabot alerts, releases, tags,
+  branch events.** Not fetched; several need scopes (`actions:read`,
+  `security_events`) this OAuth App does not request. The signal-type
+  architecture is ready for them.
+- **Webhooks / real-time.** Polling only for now.

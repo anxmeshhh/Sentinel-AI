@@ -27,11 +27,19 @@ class Connection(Base, UUIDPk, TimestampMixin):
     """
 
     __tablename__ = "connections"
-    # One account per person per provider per workspace. The database
-    # enforces this so a race between two browser tabs can't recreate the
-    # duplicate-connection problem the ownership change exists to fix.
+    # One connection per (person, provider, resource) per workspace. `repo` is
+    # part of the key so one GitHub *account* can monitor several
+    # repositories, each its own row - which is what lets a repo flow through
+    # the whole pipeline independently: it can be shared to one channel and
+    # not another, excluded, investigated and attention-gated on its own,
+    # because every downstream system already keys on connection_id.
+    #
+    # The key was (workspace, user, provider) before multi-repo. Google is
+    # unaffected: its three services are distinct Provider values, and each
+    # keeps repo as a fixed label ("gmail"/"calendar"/"drive"), so their rows
+    # stay unique under the wider key exactly as before.
     __table_args__ = (
-        UniqueConstraint("workspace_id", "user_id", "provider", name="uq_connection_workspace_user_provider"),
+        UniqueConstraint("workspace_id", "user_id", "provider", "repo", name="uq_connection_workspace_user_provider_repo"),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
@@ -70,6 +78,26 @@ class Connection(Base, UUIDPk, TimestampMixin):
     # hour. The only honest signal is a refresh that actually failed - so
     # that's what gets recorded. Cleared on a successful reconnect.
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+    # A person can silence a monitored repository without disconnecting it -
+    # keep the connection and its history, just stop syncing and stop it
+    # producing attention. Distinct from revoked (the token still works) and
+    # from deleted (the choice to watch it stands). Ingestion and the poll
+    # skip a paused connection; readiness reports it as paused, not broken.
+    # The GitHub account that authorized this, stored redundantly on each of
+    # that account's repo rows. `org` holds a repo's *owner* (often an
+    # organization the user only collaborates in), so it cannot double as the
+    # account identity - without this, a user re-authorizing with a different
+    # GitHub account could not be told apart from reconnecting the same one,
+    # and the old account's repositories would be silently attributed to the
+    # new token. NULL for non-GitHub providers.
+    github_login: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    paused_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    # When the most recent sync actually succeeded, as opposed to last_synced_at
+    # which advances even on a sync that fetched nothing. "Last successful" is
+    # the honest health signal a user reads to trust a connection.
+    last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
     signals: Mapped[list["Signal"]] = relationship(back_populates="connection", cascade="all, delete-orphan")
 

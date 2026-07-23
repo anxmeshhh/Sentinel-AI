@@ -59,15 +59,17 @@ def env(session):
     return {"workspace": workspace, "owner": owner, "other": other}
 
 
-def _github(session, env, *, user=None, repo="api", revoked=False, synced=True):
+def _github(session, env, *, user=None, org="acme", repo="api", login="acme", revoked=False, synced=True):
     connection = Connection(
         workspace_id=env["workspace"].id,
         user_id=(user or env["owner"]).id,
         provider=Provider.GITHUB,
-        org="acme",
+        org=org,
         repo=repo,
+        github_login=login,
         encrypted_token=encrypt_token("gho_token"),
         last_synced_at=NOW - timedelta(minutes=5) if synced else None,
+        last_success_at=NOW - timedelta(minutes=5) if synced else None,
         revoked_at=NOW if revoked else None,
     )
     session.add(connection)
@@ -193,14 +195,20 @@ def test_a_repo_less_connection_syncs_nothing_rather_than_failing(session, env, 
 
 def test_one_members_github_is_not_listed_for_another(session, env):
     """ATTACK: the owner is an ORG_ADMIN. Rank does not grant access to
-    somebody else's GitHub account."""
-    from app.api.routes.integrations import _github_connection_for
+    somebody else's monitored repository - `_owned_repo` refuses a connection
+    whose user_id is not the caller's, so it is a 404 to everyone else."""
+    from app.api.routes.integrations import _owned_repo
 
-    _github(session, env, user=env["other"])
+    theirs = _github(session, env, user=env["other"])
 
     with pytest.raises(HTTPException) as exc_info:
-        _github_connection_for(session, env["workspace"].id, env["owner"].id)
+        _owned_repo(session, theirs.id, env["workspace"].id, env["owner"].id)
     assert exc_info.value.status_code == 404
+
+    # ...and the owner sees none of the other member's repositories.
+    from app.services.github_connections import monitored_repositories
+
+    assert monitored_repositories(session, env["workspace"].id, env["owner"].id) == []
 
 
 def test_each_person_gets_their_own_connection(session, env):
@@ -222,26 +230,33 @@ def test_each_person_gets_their_own_connection(session, env):
 
 
 def test_switching_github_accounts_discards_the_old_accounts_signals(session, env):
-    """Those signals describe a repository the new account may not even be
-    able to see - keeping them would attribute one person's work to another's
-    connection."""
-    from app.api.routes.integrations import upsert_github_connection
+    """A different GitHub account is not the same one reconnecting. The old
+    account's repositories - and every signal describing them - are wiped,
+    because they are not the new token's to read. What remains is a fresh
+    anchor for the new account, waiting to pick repositories."""
+    from app.services.github_connections import (
+        account_connections,
+        connect_github_account,
+        monitored_repositories,
+    )
 
-    connection = _github(session, env)
+    connection = _github(session, env, login="acme")
     session.add(Signal(
         workspace_id=env["workspace"].id, connection_id=connection.id, type=SignalType.PR,
         external_id="1", actor="someone", occurred_at=NOW, payload={"title": "Old work"},
     ))
     session.commit()
 
-    upsert_github_connection(
+    connect_github_account(
         session, workspace_id=env["workspace"].id, user_id=env["owner"].id,
         login="a-different-account", encrypted_token=encrypt_token("c"),
     )
 
-    assert session.execute(select(Signal)).scalars().all() == []
-    session.refresh(connection)
-    assert connection.repo == ""  # and it must be pointed at a repo again
+    assert session.execute(select(Signal)).scalars().all() == []  # old account's work is gone
+    remaining = account_connections(session, env["workspace"].id, env["owner"].id)
+    assert len(remaining) == 1
+    assert remaining[0].github_login == "a-different-account"
+    assert monitored_repositories(session, env["workspace"].id, env["owner"].id) == []  # anchor only
 
 
 def test_the_same_account_reconnecting_keeps_its_repository(session, env):

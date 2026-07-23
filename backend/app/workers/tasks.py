@@ -33,7 +33,12 @@ def poll_all_connections() -> None:
     """
     session = SessionLocal()
     try:
-        connection_ids = session.execute(select(Connection.id)).scalars().all()
+        # Paused connections are excluded at the source, so a paused repo
+        # costs nothing on the schedule rather than being fetched and
+        # discarded.
+        connection_ids = session.execute(
+            select(Connection.id).where(Connection.paused_at.is_(None))
+        ).scalars().all()
         for connection_id in connection_ids:
             ingest_connection.delay(str(connection_id))
         logger.info("poll_all_connections_dispatched", connection_count=len(connection_ids))

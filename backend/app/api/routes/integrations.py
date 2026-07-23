@@ -31,7 +31,20 @@ from app.models.connection import Connection, Provider
 from app.models.email_summary import EmailSummary
 from app.models.signal import Signal
 from app.models.user import User
-from app.schemas.integration import ConnectTicketOut, GitHubRepoOut, GitHubRepoSelect
+from app.schemas.integration import (
+    ConnectTicketOut,
+    GitHubRepoOut,
+    GitHubRepositoryOut,
+    GitHubRepoSelect,
+)
+from app.services.github_connections import (
+    account_connections,
+    add_repository,
+    connect_github_account,
+    monitored_repositories,
+    remove_repository,
+    set_paused,
+)
 
 logger = structlog.get_logger("sentinel.integrations")
 
@@ -313,7 +326,7 @@ async def github_connect_callback(request: Request, session: Session = Depends(g
         return RedirectResponse(f"{get_settings().frontend_base_url}/?github_error=identity_failed")
 
     login = account.get("login") or "unknown-github-account"
-    upsert_github_connection(
+    connect_github_account(
         session,
         workspace_id=uuid.UUID(workspace_id_str),
         user_id=uuid.UUID(user_id_str),
@@ -325,48 +338,19 @@ async def github_connect_callback(request: Request, session: Session = Depends(g
     return RedirectResponse(f"{get_settings().frontend_base_url}{return_to}{separator}connected=github")
 
 
-def upsert_github_connection(
-    session: Session, *, workspace_id: uuid.UUID, user_id: uuid.UUID, login: str, encrypted_token: str
-) -> Connection:
-    """One GitHub account per person per workspace, same key as every other
-    provider.
-
-    The repository is deliberately left empty here. A token that can read
-    thirty repositories has not told us which one this workspace cares about,
-    and picking one for the user would be a guess that quietly syncs the
-    wrong thing.
-    """
-    existing = session.execute(
-        select(Connection).where(
-            Connection.workspace_id == workspace_id,
-            Connection.user_id == user_id,
-            Connection.provider == Provider.GITHUB,
-        )
-    ).scalars().first()
-
-    if existing is not None:
-        if existing.org != login:
-            # A different GitHub account: whatever was synced belonged to the
-            # previous one and is not this account's to keep.
-            logger.info("github_account_replaced", old=existing.org, new=login, workspace_id=str(workspace_id))
-            session.query(Signal).filter(Signal.connection_id == existing.id).delete()
-            existing.org = login
-            existing.repo = ""
-            existing.last_synced_at = None
-        existing.encrypted_token = encrypted_token
-        # A fresh consent is the evidence that the connection is alive again.
-        existing.revoked_at = None
-        session.commit()
-        return existing
-
-    connection = Connection(
-        workspace_id=workspace_id, user_id=user_id, provider=Provider.GITHUB,
-        org=login, repo="", encrypted_token=encrypted_token,
+# A `login` alias kept so tests and older imports of the previous helper name
+# continue to resolve; the real logic lives in services/github_connections.py.
+def upsert_github_connection(session, *, workspace_id, user_id, login, encrypted_token):  # noqa: ANN001
+    """Deprecated shim for connect_github_account (single-repo era name)."""
+    connect_github_account(
+        session, workspace_id=workspace_id, user_id=user_id, login=login, encrypted_token=encrypted_token
     )
-    session.add(connection)
-    session.commit()
-    session.refresh(connection)
-    return connection
+    return _account_anchor(session, workspace_id, user_id)
+
+
+def _account_anchor(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Connection:
+    connections = account_connections(session, workspace_id, user_id)
+    return next((c for c in connections if not c.repo), connections[0] if connections else None)
 
 
 @router.get("/github/repos", response_model=list[GitHubRepoOut])
@@ -375,17 +359,26 @@ def list_github_repos(
     workspace_id: uuid.UUID = Depends(get_workspace_id),
     user: User = Depends(get_current_user),
 ) -> list[GitHubRepoOut]:
-    """The repositories this person's token can actually read.
+    """The repositories this person's token can read, each flagged with whether
+    it is already monitored.
 
-    Scoped to the caller's own connection - one member's GitHub access is
-    never listed for another, exactly as with every other provider.
+    Scoped to the caller's own account - one member's GitHub access is never
+    listed for another. The `monitored` flag is what lets the picker show a
+    repository as already-watched rather than offering it a second time.
     """
     from app.integrations.github_auth import GitHubAuthError, get_valid_token
     from app.integrations.github_client import GitHubClient
 
-    connection = _github_connection_for(session, workspace_id, user.id)
+    account = account_connections(session, workspace_id, user.id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Connect GitHub first")
+
+    watched = {
+        f"{c.org.lower()}/{c.repo.lower()}": c.id
+        for c in account if c.repo
+    }
     try:
-        token = get_valid_token(session, connection)
+        token = get_valid_token(session, account[0])
         with GitHubClient(token) as client:
             repos = client.list_repositories()
     except GitHubAuthError as exc:
@@ -394,29 +387,50 @@ def list_github_repos(
         logger.warning("github_repo_list_failed", error=str(exc)[:200])
         raise HTTPException(status_code=502, detail="GitHub could not be reached just now") from exc
 
-    return [GitHubRepoOut(**r) for r in repos]
+    out = []
+    for r in repos:
+        conn_id = watched.get(r["full_name"].lower())
+        out.append(GitHubRepoOut(**r, monitored=conn_id is not None, connection_id=conn_id))
+    return out
 
 
-@router.post("/github/repo", response_model=dict)
-def select_github_repo(
+@router.get("/github/repositories", response_model=list[GitHubRepositoryOut])
+def list_monitored_repositories(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> list[GitHubRepositoryOut]:
+    """What Sentinel is actually watching, with each repository's own health.
+
+    This is the management view - one row per monitored repository, carrying
+    its own sync timestamps and paused/revoked state, because the whole point
+    of multi-repo is that these are independent.
+    """
+    return [_repository_out(session, c) for c in monitored_repositories(session, workspace_id, user.id)]
+
+
+@router.post("/github/repositories", response_model=GitHubRepositoryOut, status_code=201)
+def add_monitored_repository(
     payload: GitHubRepoSelect,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
     user: User = Depends(get_current_user),
-) -> dict:
-    """Point this connection at one repository, and sync it immediately.
+) -> GitHubRepositoryOut:
+    """Start monitoring one more repository, verified before it is stored.
 
-    Verified against the token before it is stored: a repository the token
-    cannot read would otherwise be accepted here and fail silently on every
-    later sync, leaving a connection that looks configured and produces
-    nothing.
+    A repository the token cannot read is refused here rather than accepted
+    and left to fail silently on every later sync - the same guarantee the
+    single-repo flow made, now per repository.
     """
     from app.integrations.github_auth import GitHubAuthError, get_valid_token
     from app.integrations.github_client import GitHubClient
 
-    connection = _github_connection_for(session, workspace_id, user.id)
+    account = account_connections(session, workspace_id, user.id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Connect GitHub first")
+
     try:
-        token = get_valid_token(session, connection)
+        token = get_valid_token(session, account[0])
         with GitHubClient(token) as client:
             allowed = {r["full_name"].lower() for r in client.list_repositories()}
     except GitHubAuthError as exc:
@@ -425,33 +439,106 @@ def select_github_repo(
         logger.warning("github_repo_verify_failed", error=str(exc)[:200])
         raise HTTPException(status_code=502, detail="GitHub could not be reached just now") from exc
 
-    wanted = f"{payload.org}/{payload.repo}".lower()
-    if wanted not in allowed:
+    if f"{payload.org}/{payload.repo}".lower() not in allowed:
         raise HTTPException(status_code=403, detail="Your GitHub account cannot read that repository")
 
-    if connection.repo and (connection.org.lower(), connection.repo.lower()) != (payload.org.lower(), payload.repo.lower()):
-        # Pointing at a different repository: the signals already stored
-        # describe the old one and would otherwise be silently attributed to
-        # the new one.
-        session.query(Signal).filter(Signal.connection_id == connection.id).delete()
-        connection.last_synced_at = None
-
-    connection.org = payload.org
-    connection.repo = payload.repo
-    session.commit()
-
-    _queue_first_sync(session, workspace_id, user.id)
-    return {"org": connection.org, "repo": connection.repo, "syncing": True}
+    connection = add_repository(session, workspace_id=workspace_id, user_id=user.id, org=payload.org, repo=payload.repo)
+    _sync_one(session, connection)
+    return _repository_out(session, connection)
 
 
-def _github_connection_for(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Connection:
-    connection = session.execute(
-        select(Connection).where(
-            Connection.workspace_id == workspace_id,
-            Connection.user_id == user_id,
-            Connection.provider == Provider.GITHUB,
-        )
-    ).scalars().first()
-    if connection is None:
-        raise HTTPException(status_code=404, detail="Connect GitHub first")
+@router.delete("/github/repositories/{connection_id}", status_code=204)
+def remove_monitored_repository(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> None:
+    remove_repository(session, _owned_repo(session, connection_id, workspace_id, user.id))
+
+
+@router.post("/github/repositories/{connection_id}/pause", response_model=GitHubRepositoryOut)
+def pause_monitored_repository(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> GitHubRepositoryOut:
+    connection = set_paused(session, _owned_repo(session, connection_id, workspace_id, user.id), paused=True)
+    return _repository_out(session, connection)
+
+
+@router.post("/github/repositories/{connection_id}/resume", response_model=GitHubRepositoryOut)
+def resume_monitored_repository(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> GitHubRepositoryOut:
+    connection = set_paused(session, _owned_repo(session, connection_id, workspace_id, user.id), paused=False)
+    # Resuming should pick up whatever was missed while paused, without waiting
+    # for the next scheduled poll.
+    _sync_one(session, connection)
+    return _repository_out(session, connection)
+
+
+@router.post("/github/repositories/{connection_id}/sync", response_model=GitHubRepositoryOut)
+def sync_monitored_repository(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> GitHubRepositoryOut:
+    """Sync one repository now, rather than at the next scheduled poll."""
+    connection = _owned_repo(session, connection_id, workspace_id, user.id)
+    if connection.paused_at is not None:
+        raise HTTPException(status_code=409, detail="This repository is paused - resume it first")
+    _sync_one(session, connection)
+    return _repository_out(session, connection)
+
+
+def _owned_repo(session: Session, connection_id: uuid.UUID, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Connection:
+    """A GitHub connection that belongs to this caller, or 404.
+
+    Ownership is checked against the record, not the path: another member's
+    repository, or another provider's connection, is not found here even by a
+    workspace admin - the same rule every scoped mutation in the codebase
+    follows.
+    """
+    connection = session.get(Connection, connection_id)
+    if (
+        connection is None
+        or connection.provider != Provider.GITHUB
+        or connection.workspace_id != workspace_id
+        or connection.user_id != user_id
+        or not connection.repo
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
     return connection
+
+
+def _sync_one(session: Session, connection: Connection) -> None:
+    """Queue one repository's ingestion. Degrades to "at the next poll" if the
+    broker is down rather than failing the request the user just made."""
+    from app.workers.tasks import ingest_connection as ingest_task
+
+    try:
+        ingest_task.delay(str(connection.id))
+    except Exception:
+        logger.warning("github_sync_enqueue_failed", connection_id=str(connection.id))
+
+
+def _repository_out(session: Session, connection: Connection) -> "GitHubRepositoryOut":
+    from app.services.github_state import github_repository_state
+
+    return GitHubRepositoryOut(
+        connection_id=connection.id,
+        org=connection.org,
+        repo=connection.repo,
+        full_name=connection.full_name,
+        state=github_repository_state(connection).value,
+        paused=connection.paused_at is not None,
+        last_synced_at=connection.last_synced_at,
+        last_success_at=connection.last_success_at,
+        signal_count=session.query(Signal).filter(Signal.connection_id == connection.id).count(),
+    )

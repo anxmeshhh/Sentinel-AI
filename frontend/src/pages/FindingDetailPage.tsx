@@ -108,16 +108,73 @@ function EvidenceView({ evidence }: { evidence: Record<string, unknown> }) {
     );
   }
 
+  // Structured cards, not a wall of JSON. Each field is labelled and its
+  // value formatted for a human; the raw payload stays available behind an
+  // expander for anyone who actually needs it, rather than being the default
+  // a normal reader has to decode.
+  const entries = Object.entries(evidence).filter(([, v]) => v !== null && v !== undefined && v !== "");
   return (
-    <div className="rounded-md border border-border p-4">
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-body">
-        {Object.entries(evidence).map(([key, value]) => (
-          <React.Fragment key={key}>
-            <dt className="text-ink-faint">{key.replace(/_/g, " ")}</dt>
-            <dd className="text-ink-dim">{JSON.stringify(value)}</dd>
-          </React.Fragment>
-        ))}
-      </dl>
+    <div className="flex flex-col gap-2">
+      {entries.map(([key, value]) => (
+        <EvidenceField key={key} label={key.replace(/_/g, " ")} value={value} />
+      ))}
+      <details className="mt-1">
+        <summary className="cursor-pointer text-caption text-ink-faint hover:text-ink-dim">View raw data</summary>
+        <pre className="mt-2 overflow-x-auto rounded-md border border-border bg-surface-2 p-3 text-micro text-ink-dim">
+          {JSON.stringify(evidence, null, 2)}
+        </pre>
+      </details>
     </div>
   );
+}
+
+function EvidenceField({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div className="rounded-md border border-border bg-surface p-3">
+      <div className="label-sub mb-1 text-ink-faint">{label}</div>
+      <div className="text-body text-ink-dim">{formatEvidenceValue(value)}</div>
+    </div>
+  );
+}
+
+function formatEvidenceValue(value: unknown): React.ReactNode {
+  if (value === null || value === undefined) return "—";
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "none";
+    // Arrays of objects (e.g. related items) become compact rows; arrays of
+    // scalars become a comma list.
+    if (typeof value[0] === "object") {
+      return (
+        <div className="flex flex-col gap-1">
+          {value.map((item, i) => (
+            <div key={i} className="text-small">
+              {Object.entries(item as Record<string, unknown>)
+                .map(([k, v]) => `${k.replace(/_/g, " ")}: ${String(v)}`)
+                .join(" · ")}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return value.map(String).join(", ");
+  }
+  if (typeof value === "object") {
+    return (
+      <div className="flex flex-col gap-0.5">
+        {Object.entries(value as Record<string, unknown>).map(([k, v]) => (
+          <div key={k} className="text-small">
+            <span className="text-ink-faint">{k.replace(/_/g, " ")}: </span>
+            {String(v)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  // A URL becomes a link; an ISO timestamp becomes a readable date.
+  const str = String(value);
+  if (/^https?:\/\//.test(str)) {
+    return <a href={str} target="_blank" rel="noreferrer" className="text-accent-text hover:underline">{str}</a>;
+  }
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) return new Date(str).toLocaleString();
+  return str;
 }

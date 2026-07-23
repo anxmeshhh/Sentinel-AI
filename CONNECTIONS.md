@@ -24,15 +24,15 @@ re-designed per provider:
 | Jira | — | — | — | — | — | **BLOCKED** 🔴 |
 | Zoom | — | — | — | — | — | **BLOCKED** 🔴 |
 
-Everything below `Google` is blocked on **one thing only**: an OAuth
+Everything below `GitHub` is blocked on **one thing only**: an OAuth
 application that has to be registered by a human with an account on that
 platform. No amount of code removes that step, and a provider is not built
 until it has fetched real data from a real account — a client written against
 the docs and never run is a guess with good syntax.
 
-`google_client_id` / `google_client_secret` are the only credentials
-currently configured. `microsoft_client_id` exists in `Settings` but is empty,
-and is for *login* rather than for Outlook/OneDrive data.
+Google and GitHub credentials are configured. `microsoft_client_id` exists in
+`Settings` but is empty, and is for *login* rather than for Outlook/OneDrive
+data.
 
 ---
 
@@ -62,13 +62,6 @@ GITHUB_CLIENT_SECRET=...
 
 Scopes to request: `repo` (private repo metadata) and `read:org`. Nothing
 more — the client fetches metadata only and must never gain write access.
-
-**Why this one first:** GitHub is the only *existing* provider that cannot
-report a dead connection. Revocation is only observable through a refresh
-that fails, and a pasted PAT has no refresh token — so an expired GitHub
-token still reports `ready`, and a channel depending on it looks healthy
-while returning nothing. That is a correctness bug in shipped code, not a
-missing feature.
 
 ### 2. Slack app
 
@@ -143,8 +136,8 @@ ZOOM_CLIENT_SECRET=...
 
 ## Recommended order, and why
 
-1. **GitHub OAuth** — fixes a live correctness bug, and the client, ingestion
-   and agents already exist. Only the auth half changes.
+1. ~~**GitHub OAuth**~~ — done. Fixed two live bugs: a revoked token reported
+   `ready`, and the PAT route it replaced could not create a connection at all.
 2. **Slack** — the largest genuine intelligence gain. Unanswered questions,
    stalled decisions and missing approvals are operational signals that exist
    in no other connected system.

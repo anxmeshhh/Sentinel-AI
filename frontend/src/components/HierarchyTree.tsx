@@ -331,44 +331,131 @@ function GroupNode({ group, classId }: { group: TreeGroup; classId: string }) {
   );
 }
 
-/** The Personal portal's own navigation - deliberately a flat list.
+/** Which providers exist, grouped as the user thinks of them: a provider
+ *  family, its sub-surfaces, and the connection providers that switch it on.
  *
- * Personal has no classes or groups by design, and inventing an empty tree
- * here would imply structure that isn't allowed to exist. */
+ *  This is the mental model the whole product rests on - Connections →
+ *  Providers → Intelligence - made literal in the navigation. Adding Slack or
+ *  Jira later is one entry here, and it appears in the sidebar automatically
+ *  the moment a connection of that provider exists. Nothing is hardcoded to
+ *  "always show" any more, so a provider you have not connected does not
+ *  advertise surfaces that would be empty. */
+const PROVIDER_FAMILIES: {
+  label: string;
+  connects: string[]; // any of these provider values means this family is present
+  surfaces: { to: string; label: string }[];
+}[] = [
+  {
+    label: "Google Workspace",
+    connects: ["gmail", "google_calendar", "google_drive"],
+    surfaces: [
+      { to: "/mail", label: "Mail" },
+      { to: "/calendar", label: "Calendar" },
+      { to: "/drive", label: "Drive" },
+      { to: "/meet", label: "Meet" },
+    ],
+  },
+  {
+    label: "GitHub",
+    connects: ["github"],
+    // GitHub's operational surface is its provider page; no separate
+    // per-feature routes exist for it (yet), so the family header is the link.
+    surfaces: [{ to: "/connections/github", label: "GitHub" }],
+  },
+];
+
+/** The Personal portal's navigation, in three tiers by purpose - Sentinel's
+ *  own intelligence, then the connected providers feeding it, then utility.
+ *
+ *  Personal has no classes or groups by design, so this is a grouped list
+ *  rather than a tree. What providers appear is driven by real connections,
+ *  not a fixed roster: this is where "GitHub is connected but not navigable"
+ *  is fixed, and where every future provider becomes reachable for free. */
 function PersonalNav() {
-  const items = [
-    { to: "/", label: "Dashboard", end: true },
-    { to: "/attention", label: "Attention", end: false },
-    { to: "/assistant", label: "AI Assistant", end: false },
-    { to: "/mail", label: "Mail", end: false },
-    { to: "/calendar", label: "Calendar", end: false },
-    { to: "/drive", label: "Drive", end: false },
-    { to: "/meet", label: "Meet", end: false },
-    { to: "/history", label: "History", end: false },
-  ];
+  const [providers, setProviders] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    api
+      .get<{ provider: string }[]>("/connections")
+      .then((rows) => setProviders(new Set(rows.map((r) => r.provider))))
+      .catch(() => setProviders(new Set()));
+  }, []);
+
+  const connectedFamilies = PROVIDER_FAMILIES.filter(
+    (f) => providers && f.connects.some((p) => providers.has(p)),
+  );
+
   return (
     <>
       <div className="mb-1 px-2 text-body font-semibold text-ink">Personal</div>
-      <p className="mb-3 px-2 text-caption leading-relaxed text-ink-faint">
+      <p className="mb-4 px-2 text-caption leading-relaxed text-ink-faint">
         What matters to you, across your own connected accounts. Private to you.
       </p>
-      <nav className="flex flex-col">
-        {items.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            className={({ isActive }) =>
-              `rounded-sm px-2.5 py-2 text-small transition-colors ${
-                isActive ? "bg-surface-2 font-semibold text-ink" : "text-ink-dim hover:bg-surface/60 hover:text-ink"
-              }`
-            }
-          >
-            {item.label}
+
+      {/* Tier 1 - Sentinel's own intelligence. Always present, because these
+          are the product, not a provider. */}
+      <nav className="mb-5 flex flex-col">
+        <PersonalNavLink to="/" label="Dashboard" end />
+        <PersonalNavLink to="/attention" label="Attention" />
+        <PersonalNavLink to="/assistant" label="AI Assistant" />
+      </nav>
+
+      {/* Tier 2 - the connected providers feeding Sentinel, grouped by family
+          so the list stays legible as providers multiply. */}
+      <div className="mb-1 px-2">
+        <span className="label-sub text-ink-faint">Connections</span>
+      </div>
+      {providers === null ? (
+        <div className="px-2.5 py-2 text-caption text-ink-faint">Loading…</div>
+      ) : connectedFamilies.length === 0 ? (
+        <NavLink to="/connections/google" className="block rounded-sm px-2.5 py-2 text-small text-ink-dim hover:bg-surface/60 hover:text-ink">
+          Connect a service →
+        </NavLink>
+      ) : (
+        <div className="mb-5 flex flex-col gap-3">
+          {connectedFamilies.map((family) => (
+            <div key={family.label}>
+              {/* A single-surface family (GitHub today) needs no separate
+                  header - its one link carries the name. A multi-surface one
+                  (Google) gets a quiet typographic header, not a box. */}
+              {family.surfaces.length > 1 && (
+                <div className="mb-0.5 px-2.5 text-micro uppercase tracking-wide text-ink-faint">{family.label}</div>
+              )}
+              <nav className="flex flex-col">
+                {family.surfaces.map((s) => (
+                  <PersonalNavLink key={s.to} to={s.to} label={s.label} />
+                ))}
+              </nav>
+            </div>
+          ))}
+          <NavLink to="/connections/google" className="px-2.5 py-1 text-caption text-ink-faint hover:text-ink">
+            + Add a connection
           </NavLink>
-        ))}
+        </div>
+      )}
+
+      {/* Tier 3 - utility. Separated so History (and later, more) does not sit
+          at the same weight as the intelligence surfaces above. */}
+      <nav className="border-t border-border pt-3">
+        <PersonalNavLink to="/history" label="History" />
       </nav>
     </>
+  );
+}
+
+function PersonalNavLink({ to, label, end = false }: { to: string; label: string; end?: boolean }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `rounded-sm px-2.5 py-2 text-small transition-colors ${
+          isActive ? "bg-surface-2 font-semibold text-ink" : "text-ink-dim hover:bg-surface/60 hover:text-ink"
+        }`
+      }
+    >
+      {label}
+    </NavLink>
   );
 }
 

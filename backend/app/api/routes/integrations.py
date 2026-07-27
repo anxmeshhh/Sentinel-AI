@@ -34,6 +34,7 @@ from app.models.user import User
 from app.schemas.integration import (
     ConnectTicketOut,
     GitHubRepoOut,
+    GitHubPrioritySet,
     GitHubRepositoryOut,
     GitHubRepoSelect,
 )
@@ -44,6 +45,7 @@ from app.services.github_connections import (
     monitored_repositories,
     remove_repository,
     set_paused,
+    set_priority,
 )
 
 logger = structlog.get_logger("sentinel.integrations")
@@ -482,6 +484,28 @@ def resume_monitored_repository(
     return _repository_out(session, connection)
 
 
+@router.patch("/github/repositories/{connection_id}/priority", response_model=GitHubRepositoryOut)
+def classify_monitored_repository(
+    connection_id: uuid.UUID,
+    payload: GitHubPrioritySet,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> GitHubRepositoryOut:
+    """Classify how much a repository matters.
+
+    Not cosmetic: marking a repository CRITICAL is what lets its silence
+    become a proactive situation, and lowering it turns that off. The context
+    a person supplies here is exactly what keeps activity-based attention from
+    firing on every quiet side project.
+    """
+    from app.models.connection import ResourcePriority
+
+    connection = _owned_repo(session, connection_id, workspace_id, user.id)
+    set_priority(session, connection, ResourcePriority(payload.priority))
+    return _repository_out(session, connection)
+
+
 @router.post("/github/repositories/{connection_id}/sync", response_model=GitHubRepositoryOut)
 def sync_monitored_repository(
     connection_id: uuid.UUID,
@@ -537,6 +561,7 @@ def _repository_out(session: Session, connection: Connection) -> "GitHubReposito
         repo=connection.repo,
         full_name=connection.full_name,
         state=github_repository_state(connection).value,
+        priority=connection.priority.value,
         paused=connection.paused_at is not None,
         last_synced_at=connection.last_synced_at,
         last_success_at=connection.last_success_at,

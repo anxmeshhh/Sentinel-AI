@@ -38,7 +38,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.connection import Connection, Provider
+from app.models.connection import Connection, Provider, ResourcePriority
 from app.models.signal import Signal
 
 logger = structlog.get_logger("sentinel.github_connections")
@@ -174,6 +174,19 @@ def remove_repository(session: Session, connection: Connection) -> None:
 def set_paused(session: Session, connection: Connection, *, paused: bool) -> Connection:
     """Silence or resume a repository without disconnecting it."""
     connection.paused_at = datetime.now(timezone.utc) if paused else None
+    session.commit()
+    session.refresh(connection)
+    return connection
+
+
+def set_priority(session: Session, connection: Connection, priority: "ResourcePriority") -> Connection:
+    """Classify how much this repository matters.
+
+    The classification is the context that decides whether activity-based
+    attention (a critical repo gone silent) fires for it - so changing it
+    changes what Sentinel will surface, not just a label.
+    """
+    connection.priority = priority
     session.commit()
     session.refresh(connection)
     return connection

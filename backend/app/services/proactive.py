@@ -230,7 +230,11 @@ def refresh_situations(session: Session, workspace_id: uuid.UUID, scope: Scope) 
         return []
 
     signals = _authorized_signals(session, scope)
-    candidates = _detect_service_jeopardy(signals) + _detect_unprepared_meetings(signals)
+    candidates = (
+        _detect_service_jeopardy(signals)
+        + _detect_unprepared_meetings(signals)
+        + _detect_stalled_critical_repos(session, scope, signals)
+    )
     surfaced = [c for c in candidates if c.importance >= MIN_IMPORTANCE or c.resolved]
 
     existing = {
@@ -465,6 +469,75 @@ def _entity_in(subject: str) -> str:
 
     looks_like_a_name = raw[0].isupper() or any(c.isdigit() or c in "-._" for c in raw)
     return candidate if looks_like_a_name else ""
+
+
+# A critical repository untouched for this long is worth a look. Deliberately
+# generous - "quiet for a week and a half" is a real operational pause, not a
+# long weekend - so the signal stays rare and trustworthy.
+REPO_SILENCE_THRESHOLD = timedelta(days=10)
+
+
+def _detect_stalled_critical_repos(session: Session, scope: Scope, signals: list[Signal]) -> list[Candidate]:
+    """A repository a human marked CRITICAL has gone quiet.
+
+    This is the whole point of classification, made concrete: silence is not a
+    finding on its own - most quiet repositories are simply finished, and
+    alerting on all of them is noise. A human marking one CRITICAL supplies
+    the judgment the data cannot, so *that* repository's silence is worth
+    surfacing and no other's is.
+
+    "Went quiet" requires a baseline: there must have been commit activity
+    that then stopped. A critical repo with no commits at all is not stalled -
+    it is new, or empty - and is left alone rather than flagged on a guess.
+    """
+    from app.models.connection import Connection, Provider, ResourcePriority
+
+    critical = session.execute(
+        select(Connection).where(
+            Connection.id.in_(scope.connection_ids),
+            Connection.provider == Provider.GITHUB,
+            Connection.priority == ResourcePriority.CRITICAL,
+            Connection.paused_at.is_(None),
+            Connection.repo != "",
+        )
+    ).scalars().all()
+    if not critical:
+        return []
+
+    now = datetime.now(timezone.utc)
+    candidates = []
+    for connection in critical:
+        # Queried directly, not filtered from the windowed `signals`: the
+        # question is "when did this repo last commit", and a repo silent
+        # longer than the proactive lookback is *more* stalled, not invisible.
+        # Reading it from the windowed list would make a repo silent for two
+        # months vanish exactly when it most deserves flagging.
+        newest = session.execute(
+            select(Signal)
+            .where(Signal.connection_id == connection.id, Signal.type == SignalType.COMMIT)
+            .order_by(Signal.occurred_at.desc())
+            .limit(1)
+        ).scalars().first()
+        if newest is None:
+            continue  # no baseline - cannot call a repo with no history "stalled"
+
+        quiet_for = now - _aware(newest.occurred_at)
+        if quiet_for < REPO_SILENCE_THRESHOLD:
+            continue  # still active - resuming commits is exactly how this resolves
+
+        days = quiet_for.days
+        # More severe the longer it has been silent, capped so a long-dead
+        # critical repo does not dominate everything else.
+        importance = round(min(0.9, 0.6 + days / 60), 3)
+        candidates.append(Candidate(
+            key=f"repo_stalled:{connection.id}",
+            kind=SituationKind.REPO_STALLED,
+            title=f"{connection.full_name} has gone quiet",
+            evidence=[_evidence(newest, "last_commit")],
+            importance=importance,
+            confidence=0.85,  # it is a fact, not an inference - the repo is silent
+        ))
+    return candidates
 
 
 def _detect_unprepared_meetings(signals: list[Signal]) -> list[Candidate]:

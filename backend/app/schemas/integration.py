@@ -44,8 +44,15 @@ class GitHubRepositoryOut(BaseModel):
     # connection is failing - that gap is the point of showing both.
     last_success_at: datetime | None
     signal_count: int
+    # How much this repository matters, set by a person. Drives whether a
+    # critical-repo-gone-quiet situation fires for it.
+    priority: str
 
 
 class GitHubRepoSelect(BaseModel):
     org: str = Field(min_length=1, max_length=200)
     repo: str = Field(min_length=1, max_length=200)
+
+
+class GitHubPrioritySet(BaseModel):
+    priority: str = Field(pattern="^(critical|normal|low|archived|experimental)$")

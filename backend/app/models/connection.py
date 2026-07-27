@@ -15,6 +15,30 @@ class Provider(str, enum.Enum):
     GOOGLE_DRIVE = "google_drive"
 
 
+class ResourcePriority(str, enum.Enum):
+    """How much a monitored resource matters, set by a person.
+
+    This is the *context* that turns raw activity into operational meaning.
+    "This repository has gone quiet" is not a finding on its own - most quiet
+    repositories are simply finished or dormant, and alerting on all of them
+    is noise. The same silence on a repository a human marked CRITICAL is a
+    real risk, because the human supplied the judgment the data cannot.
+
+    So classification does not describe the resource; it declares how Sentinel
+    should reason about it. Only CRITICAL makes silence worth surfacing; the
+    others are progressively quieter, and ARCHIVED/EXPERIMENTAL opt out of
+    activity-based attention entirely. The field is provider-agnostic on
+    purpose - the same five levels will weight a Jira project or a Slack
+    channel when those arrive.
+    """
+
+    CRITICAL = "critical"
+    NORMAL = "normal"
+    LOW = "low"
+    ARCHIVED = "archived"
+    EXPERIMENTAL = "experimental"
+
+
 class Connection(Base, UUIDPk, TimestampMixin):
     """A workspace's authorization to read one external system.
 
@@ -92,6 +116,14 @@ class Connection(Base, UUIDPk, TimestampMixin):
     # and the old account's repositories would be silently attributed to the
     # new token. NULL for non-GitHub providers.
     github_login: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # How much this resource matters, as a person judged it. Drives whether
+    # activity-based attention (a critical repo gone silent) fires at all -
+    # see services/github_attention.py. NORMAL for everything until set.
+    priority: Mapped[ResourcePriority] = mapped_column(
+        Enum(ResourcePriority, name="resource_priority"), nullable=False, default=ResourcePriority.NORMAL,
+        server_default=ResourcePriority.NORMAL.value,
+    )
 
     paused_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     # When the most recent sync actually succeeded, as opposed to last_synced_at

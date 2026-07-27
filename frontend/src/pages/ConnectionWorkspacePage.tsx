@@ -364,6 +364,17 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
     }
   }
 
+  async function setPriority(id: string, priority: string) {
+    setBusy(id);
+    setError(null);
+    try {
+      await api.patch(`/integrations/github/repositories/${id}/priority`, { priority });
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function repoAction(id: string, verb: "pause" | "resume" | "sync" | "remove") {
     setBusy(id);
     setError(null);
@@ -447,6 +458,22 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
                 </div>
               </div>
               <div className="flex flex-none items-center gap-2.5 text-caption">
+                {/* Classification is the context that decides whether this
+                    repo's silence becomes a finding - critical is the only
+                    level that does. */}
+                <select
+                  value={r.priority}
+                  onChange={(e) => setPriority(r.connection_id, e.target.value)}
+                  disabled={busy === r.connection_id}
+                  title="How much this repository matters. Only Critical surfaces its silence as a finding."
+                  className="rounded-md border border-border bg-transparent px-1.5 py-1 text-micro text-ink-dim outline-none focus:border-border-strong disabled:opacity-50"
+                >
+                  <option value="critical">Critical</option>
+                  <option value="normal">Normal</option>
+                  <option value="low">Low</option>
+                  <option value="experimental">Experimental</option>
+                  <option value="archived">Archived</option>
+                </select>
                 {r.state !== "paused" && (
                   <button onClick={() => repoAction(r.connection_id, "sync")} disabled={busy === r.connection_id} className="text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50">
                     Sync now

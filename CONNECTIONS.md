@@ -278,3 +278,56 @@ expander, rather than `JSON.stringify`.
   `security_events`) this OAuth App does not request. The signal-type
   architecture is ready for them.
 - **Webhooks / real-time.** Polling only for now.
+
+---
+
+## The Provider Contract
+
+Every provider — Google and GitHub today, Slack/Jira/Notion/Microsoft/Zoom
+later — implements the same lifecycle. This is not a new framework to build;
+it is the shape the existing pieces already form, written down so that adding
+a provider is filling in a contract rather than inventing a structure.
+
+```
+Provider
+│
+├── Connection      one Connection row per (workspace, user, provider, resource);
+│                   the OAuth grant lives here (routes/integrations.py)
+├── Resources       what is watched - a mailbox, a repository, a page. GitHub
+│                   makes each resource its own Connection so it inherits the
+│                   whole pipeline; per-provider detail lives in the resource
+├── Sync            ingestion.py fetches since last sync; poll fans out per
+│                   connection; paused connections are skipped
+├── Signals         provider data normalized to Signal rows (SignalType), the
+│                   one shape every intelligence module reads
+├── Findings        attention items, proactive situations, commitments and
+│                   goal evidence - all keyed on connection_id, so a provider
+│                   feeds them by emitting signals, not by adding logic
+├── History         the signals and findings a resource produced over time
+├── Health          per-resource state (ready/syncing/error/paused/…), derived
+│                   from stored timestamps + revocation, never guessed
+├── Classification  ResourcePriority - the human context that decides whether
+│                   activity-based attention fires (critical repo gone quiet)
+└── Settings        add / remove / pause / reconnect / classify per resource
+```
+
+The load-bearing rule underneath it: **a provider contributes intelligence by
+emitting normalized signals, never by adding provider-specific logic through
+the app.** GitHub's stalled-critical-repo detector reads Signals and a
+priority flag; it does not teach attention, goals or investigation anything
+about GitHub. That is what keeps the intelligence engine provider-agnostic,
+and what will let the sixth provider plug in without touching the first five.
+
+### Repository (resource) classification
+
+`ResourcePriority` — CRITICAL / NORMAL / LOW / ARCHIVED / EXPERIMENTAL — is
+the contract's answer to "silence alone is not a finding." Most quiet
+repositories are simply finished; alerting on all of them is noise. A person
+marking one CRITICAL supplies the judgment the data cannot, and only then
+does its silence become a proactive situation (`REPO_STALLED`). The levels are
+provider-agnostic by design — the same field will weight a Jira project or a
+Slack channel when they arrive.
+
+**Real-data verified:** a real repository silent 46 days produces zero
+findings at NORMAL and one at CRITICAL, resolving on its own the moment
+commits resume.

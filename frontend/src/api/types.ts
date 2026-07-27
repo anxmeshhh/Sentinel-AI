@@ -34,6 +34,9 @@ export interface GitHubRepository {
   last_synced_at: string | null;
   last_success_at: string | null;
   signal_count: number;
+  /** How much this repo matters, set by a person. Only 'critical' makes a
+   *  repo's silence a proactive finding. */
+  priority: "critical" | "normal" | "low" | "archived" | "experimental";
 }
 
 export interface Finding {

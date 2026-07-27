@@ -62,10 +62,18 @@ def ingest_connection(session: Session, connection: Connection) -> int:
 
     now = datetime.now(timezone.utc)
     ConnectionRepository(session, connection.workspace_id).mark_synced(connection, now)
-    # last_synced_at advances on every attempt; last_success_at only when the
-    # fetch actually completed without raising. The gap between them is what
-    # tells a user "it's been trying but failing", which last_synced_at alone
-    # would hide.
+    # Both timestamps advance here, together, and only on success - the provider
+    # ingest above raises on failure, so a failed sync reaches neither line.
+    # last_synced_at deliberately doubles as the ingestion cursor (`since`,
+    # above): advancing it on a *failed* attempt would move the cursor past a
+    # window we never fetched, silently dropping those signals. That is why it
+    # cannot advance on every attempt. The consequence for health: a
+    # persistently failing connection is surfaced by growing staleness (an old
+    # last_synced_at) and, for lost auth, by revoked_at - not by a
+    # last_synced/last_success gap, which this coupling never produces. A
+    # distinct "trying but failing" state would need its own attempt column,
+    # separate from the cursor; connection_state()'s ERROR branch is otherwise
+    # only reached by rows synced before last_success_at existed.
     connection.last_success_at = now
     session.commit()
 

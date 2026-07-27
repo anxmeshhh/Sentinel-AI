@@ -553,14 +553,14 @@ def _sync_one(session: Session, connection: Connection) -> None:
 
 
 def _repository_out(session: Session, connection: Connection) -> "GitHubRepositoryOut":
-    from app.services.github_state import github_repository_state
+    from app.services.connection_state import connection_state
 
     return GitHubRepositoryOut(
         connection_id=connection.id,
         org=connection.org,
         repo=connection.repo,
         full_name=connection.full_name,
-        state=github_repository_state(connection).value,
+        state=connection_state(connection).value,
         priority=connection.priority.value,
         paused=connection.paused_at is not None,
         last_synced_at=connection.last_synced_at,

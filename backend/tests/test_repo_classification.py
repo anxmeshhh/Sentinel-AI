@@ -26,7 +26,7 @@ from app.models.situation import SituationKind, SituationStatus
 from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
 from app.services.investigation import personal_scope
-from app.services.proactive import REPO_SILENCE_THRESHOLD, _detect_stalled_critical_repos, refresh_situations
+from app.services.proactive import RESOURCE_SILENCE_THRESHOLD, _detect_stalled_critical_resources, refresh_situations
 
 NOW = datetime.now(timezone.utc)
 
@@ -87,7 +87,7 @@ def _detect(session, env):
     scope = _scope(session, env)
     from app.services.proactive import _authorized_signals
 
-    return _detect_stalled_critical_repos(session, scope, _authorized_signals(session, scope))
+    return _detect_stalled_critical_resources(session, scope, _authorized_signals(session, scope))
 
 
 # --- the finding fires only with context ----------------------------------
@@ -97,11 +97,11 @@ def test_a_silent_critical_repo_is_a_situation(session, env):
     """The one case that should fire: a repo a human marked CRITICAL, with
     real prior activity, gone quiet past the threshold."""
     repo = _repo(session, env, priority=ResourcePriority.CRITICAL)
-    _commit(session, env, repo, days_ago=REPO_SILENCE_THRESHOLD.days + 5)
+    _commit(session, env, repo, days_ago=RESOURCE_SILENCE_THRESHOLD.days + 5)
 
     [candidate] = _detect(session, env)
 
-    assert candidate.kind == SituationKind.REPO_STALLED
+    assert candidate.kind == SituationKind.RESOURCE_STALLED
     assert "acme/api" in candidate.title
     assert candidate.evidence  # the last commit, as evidence
 
@@ -114,7 +114,7 @@ def test_silence_is_not_a_finding_without_critical_context(session, env, priorit
     """The rule, tested at every level except critical. Same silence, same
     history - no finding, because nobody said this repo mattered that much."""
     repo = _repo(session, env, priority=priority)
-    _commit(session, env, repo, days_ago=REPO_SILENCE_THRESHOLD.days + 30)
+    _commit(session, env, repo, days_ago=RESOURCE_SILENCE_THRESHOLD.days + 30)
 
     assert _detect(session, env) == []
 
@@ -140,16 +140,38 @@ def test_a_paused_critical_repo_does_not_fire(session, env):
     """Pausing is a deliberate silence. It must not then be surfaced as an
     unexpected one."""
     repo = _repo(session, env, priority=ResourcePriority.CRITICAL, paused=True)
-    _commit(session, env, repo, days_ago=REPO_SILENCE_THRESHOLD.days + 10)
+    _commit(session, env, repo, days_ago=RESOURCE_SILENCE_THRESHOLD.days + 10)
 
     assert _detect(session, env) == []
+
+
+def test_activity_of_any_kind_is_a_baseline_not_only_commits(session, env):
+    """The detector reads a resource's last *sign of life*, not commits
+    specifically. A critical repo whose most recent activity was an issue - and
+    which then went quiet - is stalled just the same. This is what makes the
+    detector provider-agnostic: it never asks what the signal was, only when the
+    resource last did anything. It would have failed under a commit-only filter.
+    """
+    repo = _repo(session, env, priority=ResourcePriority.CRITICAL)
+    sig = Signal(
+        workspace_id=env["workspace"].id, connection_id=repo.id, type=SignalType.ISSUE,
+        external_id=f"i{uuid.uuid4().hex[:8]}", actor="dev",
+        occurred_at=NOW - timedelta(days=RESOURCE_SILENCE_THRESHOLD.days + 6), payload={"title": "bug"},
+    )
+    session.add(sig)
+    session.commit()
+
+    [candidate] = _detect(session, env)
+
+    assert candidate.kind == SituationKind.RESOURCE_STALLED
+    assert "acme/api" in candidate.title
 
 
 def test_longer_silence_is_more_important(session, env):
     a = _repo(session, env, repo="a", priority=ResourcePriority.CRITICAL)
     b = _repo(session, env, repo="b", priority=ResourcePriority.CRITICAL)
-    _commit(session, env, a, days_ago=REPO_SILENCE_THRESHOLD.days + 2)
-    _commit(session, env, b, days_ago=REPO_SILENCE_THRESHOLD.days + 40)
+    _commit(session, env, a, days_ago=RESOURCE_SILENCE_THRESHOLD.days + 2)
+    _commit(session, env, b, days_ago=RESOURCE_SILENCE_THRESHOLD.days + 40)
 
     found = {c.title: c.importance for c in _detect(session, env)}
     a_imp = next(v for k, v in found.items() if "/a" in k)
@@ -164,11 +186,11 @@ def test_it_surfaces_as_a_live_situation_through_refresh(session, env):
     """End to end: a stalled critical repo becomes a stored, live situation
     with all the scope and lifecycle machinery every other situation has."""
     repo = _repo(session, env, priority=ResourcePriority.CRITICAL)
-    _commit(session, env, repo, days_ago=REPO_SILENCE_THRESHOLD.days + 12)
+    _commit(session, env, repo, days_ago=RESOURCE_SILENCE_THRESHOLD.days + 12)
 
     live = refresh_situations(session, env["workspace"].id, _scope(session, env))
 
-    stalled = [s for s in live if s.kind == SituationKind.REPO_STALLED]
+    stalled = [s for s in live if s.kind == SituationKind.RESOURCE_STALLED]
     assert len(stalled) == 1
     assert stalled[0].scope_key == _scope(session, env).key  # scoped like everything else
 
@@ -178,21 +200,21 @@ def test_resuming_commits_resolves_the_situation(session, env):
     life stops being flagged, because the detector no longer emits it and the
     reconcile pass resolves the orphan."""
     repo = _repo(session, env, priority=ResourcePriority.CRITICAL)
-    old = _commit(session, env, repo, days_ago=REPO_SILENCE_THRESHOLD.days + 12)
+    old = _commit(session, env, repo, days_ago=RESOURCE_SILENCE_THRESHOLD.days + 12)
     scope = _scope(session, env)
-    assert any(s.kind == SituationKind.REPO_STALLED for s in refresh_situations(session, env["workspace"].id, scope))
+    assert any(s.kind == SituationKind.RESOURCE_STALLED for s in refresh_situations(session, env["workspace"].id, scope))
 
     # A fresh commit lands - the repo is active again.
     _commit(session, env, repo, days_ago=0)
     live = refresh_situations(session, env["workspace"].id, scope)
 
-    assert not any(s.kind == SituationKind.REPO_STALLED for s in live)
+    assert not any(s.kind == SituationKind.RESOURCE_STALLED for s in live)
     # ...and the stored row is marked resolved, not deleted.
     from sqlalchemy import select
     from app.models.situation import Situation
 
     stored = session.execute(
-        select(Situation).where(Situation.situation_key == f"repo_stalled:{repo.id}")
+        select(Situation).where(Situation.situation_key == f"resource_stalled:{repo.id}")
     ).scalars().one()
     assert stored.status == SituationStatus.RESOLVED
 
@@ -202,16 +224,16 @@ def test_lowering_priority_silences_an_existing_finding(session, env):
     it being surfaced, which is how a person tells Sentinel to stop worrying
     about it."""
     repo = _repo(session, env, priority=ResourcePriority.CRITICAL)
-    _commit(session, env, repo, days_ago=REPO_SILENCE_THRESHOLD.days + 12)
+    _commit(session, env, repo, days_ago=RESOURCE_SILENCE_THRESHOLD.days + 12)
     scope = _scope(session, env)
-    assert any(s.kind == SituationKind.REPO_STALLED for s in refresh_situations(session, env["workspace"].id, scope))
+    assert any(s.kind == SituationKind.RESOURCE_STALLED for s in refresh_situations(session, env["workspace"].id, scope))
 
     from app.services.github_connections import set_priority
 
     set_priority(session, repo, ResourcePriority.NORMAL)
     live = refresh_situations(session, env["workspace"].id, scope)
 
-    assert not any(s.kind == SituationKind.REPO_STALLED for s in live)
+    assert not any(s.kind == SituationKind.RESOURCE_STALLED for s in live)
 
 
 # --- the boundary holds ----------------------------------------------------

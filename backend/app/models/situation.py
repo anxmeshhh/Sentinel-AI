@@ -49,11 +49,13 @@ class SituationKind(str, enum.Enum):
     SERVICE_JEOPARDY = "service_jeopardy"
     # A meeting is imminent and something it depends on is still unresolved.
     MEETING_UNPREPARED = "meeting_unprepared"
-    # A repository a human marked CRITICAL has gone quiet - had commit
-    # activity, then stopped past a threshold. Only critical repos qualify:
-    # the classification is the context that makes silence meaningful rather
-    # than noise (see models/connection.py ResourcePriority).
-    REPO_STALLED = "repo_stalled"
+    # A resource a human marked CRITICAL has gone quiet - had activity, then
+    # stopped past a threshold. Provider-agnostic: a repository that stopped
+    # committing, a channel that went silent, a project that stopped moving all
+    # look the same to the engine. Only CRITICAL resources qualify: the
+    # classification is the context that makes silence meaningful rather than
+    # noise (see models/connection.py ResourcePriority).
+    RESOURCE_STALLED = "resource_stalled"
 
 
 class Situation(Base, UUIDPk, TimestampMixin):

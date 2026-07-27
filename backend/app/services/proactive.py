@@ -233,7 +233,7 @@ def refresh_situations(session: Session, workspace_id: uuid.UUID, scope: Scope) 
     candidates = (
         _detect_service_jeopardy(signals)
         + _detect_unprepared_meetings(signals)
-        + _detect_stalled_critical_repos(session, scope, signals)
+        + _detect_stalled_critical_resources(session, scope, signals)
     )
     surfaced = [c for c in candidates if c.importance >= MIN_IMPORTANCE or c.resolved]
 
@@ -471,31 +471,42 @@ def _entity_in(subject: str) -> str:
     return candidate if looks_like_a_name else ""
 
 
-# A critical repository untouched for this long is worth a look. Deliberately
+# A critical resource untouched for this long is worth a look. Deliberately
 # generous - "quiet for a week and a half" is a real operational pause, not a
 # long weekend - so the signal stays rare and trustworthy.
-REPO_SILENCE_THRESHOLD = timedelta(days=10)
+RESOURCE_SILENCE_THRESHOLD = timedelta(days=10)
 
 
-def _detect_stalled_critical_repos(session: Session, scope: Scope, signals: list[Signal]) -> list[Candidate]:
-    """A repository a human marked CRITICAL has gone quiet.
+def _detect_stalled_critical_resources(session: Session, scope: Scope, signals: list[Signal]) -> list[Candidate]:
+    """A resource a human marked CRITICAL has gone quiet.
 
     This is the whole point of classification, made concrete: silence is not a
-    finding on its own - most quiet repositories are simply finished, and
-    alerting on all of them is noise. A human marking one CRITICAL supplies
-    the judgment the data cannot, so *that* repository's silence is worth
-    surfacing and no other's is.
+    finding on its own - most quiet resources are simply finished or calm, and
+    alerting on all of them is noise. A human marking one CRITICAL supplies the
+    judgment the data cannot, so *that* resource's silence is worth surfacing
+    and no other's is.
 
-    "Went quiet" requires a baseline: there must have been commit activity
-    that then stopped. A critical repo with no commits at all is not stalled -
-    it is new, or empty - and is left alone rather than flagged on a guess.
+    Provider-agnostic by construction. It reads two generic things - a
+    connection's `priority` and its signals - and knows nothing about what the
+    resource is. A repository that stopped committing and (when Slack lands) a
+    channel that went silent are the same situation to this detector; the only
+    reason it fires on GitHub today is that GitHub is the only provider yet
+    emitting signals. A new ingesting provider inherits this for free, without a
+    line here changing.
+
+    "Went quiet" requires a baseline: there must have been activity of *any*
+    kind that then stopped. A critical resource with no signals at all is not
+    stalled - it is new, or empty - and is left alone rather than flagged on a
+    guess. Live providers, which store no signals, never have a baseline and so
+    are silently and correctly excluded.
     """
-    from app.models.connection import Connection, Provider, ResourcePriority
+    from app.models.connection import Connection, ResourcePriority
+    from app.providers.registry import INGESTABLE_PROVIDERS
 
     critical = session.execute(
         select(Connection).where(
             Connection.id.in_(scope.connection_ids),
-            Connection.provider == Provider.GITHUB,
+            Connection.provider.in_(INGESTABLE_PROVIDERS),
             Connection.priority == ResourcePriority.CRITICAL,
             Connection.paused_at.is_(None),
             Connection.repo != "",
@@ -508,34 +519,36 @@ def _detect_stalled_critical_repos(session: Session, scope: Scope, signals: list
     candidates = []
     for connection in critical:
         # Queried directly, not filtered from the windowed `signals`: the
-        # question is "when did this repo last commit", and a repo silent
+        # question is "when did this resource last do anything", and one silent
         # longer than the proactive lookback is *more* stalled, not invisible.
-        # Reading it from the windowed list would make a repo silent for two
-        # months vanish exactly when it most deserves flagging.
+        # Reading it from the windowed list would make a resource silent for two
+        # months vanish exactly when it most deserves flagging. Newest signal of
+        # *any* type is the resource's last sign of life - a repo with recent
+        # issues but no commits is not stalled.
         newest = session.execute(
             select(Signal)
-            .where(Signal.connection_id == connection.id, Signal.type == SignalType.COMMIT)
+            .where(Signal.connection_id == connection.id)
             .order_by(Signal.occurred_at.desc())
             .limit(1)
         ).scalars().first()
         if newest is None:
-            continue  # no baseline - cannot call a repo with no history "stalled"
+            continue  # no baseline - cannot call a resource with no history "stalled"
 
         quiet_for = now - _aware(newest.occurred_at)
-        if quiet_for < REPO_SILENCE_THRESHOLD:
-            continue  # still active - resuming commits is exactly how this resolves
+        if quiet_for < RESOURCE_SILENCE_THRESHOLD:
+            continue  # still active - resuming activity is exactly how this resolves
 
         days = quiet_for.days
         # More severe the longer it has been silent, capped so a long-dead
-        # critical repo does not dominate everything else.
+        # critical resource does not dominate everything else.
         importance = round(min(0.9, 0.6 + days / 60), 3)
         candidates.append(Candidate(
-            key=f"repo_stalled:{connection.id}",
-            kind=SituationKind.REPO_STALLED,
+            key=f"resource_stalled:{connection.id}",
+            kind=SituationKind.RESOURCE_STALLED,
             title=f"{connection.full_name} has gone quiet",
-            evidence=[_evidence(newest, "last_commit")],
+            evidence=[_evidence(newest, "last_activity")],
             importance=importance,
-            confidence=0.85,  # it is a fact, not an inference - the repo is silent
+            confidence=0.85,  # it is a fact, not an inference - the resource is silent
         ))
     return candidates
 

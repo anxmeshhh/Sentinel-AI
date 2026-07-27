@@ -324,10 +324,72 @@ and what will let the sixth provider plug in without touching the first five.
 the contract's answer to "silence alone is not a finding." Most quiet
 repositories are simply finished; alerting on all of them is noise. A person
 marking one CRITICAL supplies the judgment the data cannot, and only then
-does its silence become a proactive situation (`REPO_STALLED`). The levels are
-provider-agnostic by design — the same field will weight a Jira project or a
-Slack channel when they arrive.
+does its silence become a proactive situation (`RESOURCE_STALLED`). The levels
+are provider-agnostic by design — the same field will weight a Jira project or
+a Slack channel when they arrive.
 
 **Real-data verified:** a real repository silent 46 days produces zero
 findings at NORMAL and one at CRITICAL, resolving on its own the moment
 commits resume.
+
+## Pre-Slack architecture review
+
+Before building the second provider, GitHub was audited with one question:
+*what here is provider-specific but should belong to a generic layer, so that
+Slack — and Notion, Jira, Microsoft, Zoom after it — is filled in against
+existing abstractions rather than copied from GitHub?* The finding was that the
+intelligence engine was already clean (no generic module branches on provider),
+but two things were generic logic wearing GitHub names, and both were lifted.
+
+### Lifted to the generic layer
+
+- **Connection health.** `github_state.py` derived a repository's state
+  (ready / syncing / error / paused / token_revoked / needs_setup) entirely
+  from generic `Connection` columns — it read nothing GitHub-specific. It now
+  lives in `services/connection_state.py` as `ConnectionState` /
+  `connection_state()`, and every future provider gets resource health for
+  free. `github_state.py` remains only as a thin re-export in GitHub's
+  vocabulary; delete it and nothing but the names would change.
+
+- **The stalled-resource detector.** The proactive detector hard-coded
+  `Provider.GITHUB` and `SignalType.COMMIT` — the one place a provider name had
+  leaked into the generic engine. It now selects any CRITICAL resource of any
+  *ingesting* provider and reads its newest signal of *any* type as the last
+  sign of life. The stored kind was renamed `REPO_STALLED → RESOURCE_STALLED`
+  to match. The consequence is the point of the whole review: when Slack lands,
+  a silent critical channel fires the **same detector with no new code** — the
+  abstraction is proven, not asserted. (A regression test now pins that the
+  detector is not commit-specific.)
+
+### Provider-specific *by design* — deliberately not generalized
+
+Not everything GitHub-shaped is a leak. Two things stay provider-specific on
+purpose, because generalizing them from a single example would guess the wrong
+abstraction:
+
+- **API vocabulary.** `/integrations/github/repositories`, `GitHubRepositoryOut`,
+  `org`/`repo` — the routes and schemas name resources in the provider's own
+  terms. Slack's will speak channels, Jira's projects. The *shape* is the
+  contract (a resource with health, priority, sync timestamps, a signal count);
+  the *nouns* rightly differ, and flattening them into a generic
+  `MonitoredResourceOut` would trade clarity for a false uniformity.
+
+- **The multi-resource-account service** (`github_connections.py`) — one OAuth
+  grant, many monitored resources, each its own Connection row sharing a token,
+  with account-switch detection via `github_login`. This is a genuinely
+  reusable *pattern* (one Slack workspace → many channels; one Jira site → many
+  projects), but it is not yet a generic *module*. Extracting a base from N=1
+  would bake in GitHub's assumptions — its per-row token duplication, its login
+  as identity — when Slack's bot-token model and workspace-id identity may
+  differ. This is generalized at the second instance, where the shared shape is
+  observed rather than predicted. Until then it is documented, not abstracted.
+
+### What building Slack now looks like
+
+Fill in the contract, do not copy GitHub: a `ProviderSpec` (ingests, signal
+types), an OAuth client, an ingestion handler that normalizes Slack events into
+`Signal` rows, and provider-named routes for its resources. Health,
+classification, the stalled-resource situation, scope/privacy, attention,
+goals, investigation and dedup are already generic and require nothing new. If
+Slack's account model matches the multi-resource pattern above, that becomes
+the moment to lift it into a shared helper — with two real callers to shape it.

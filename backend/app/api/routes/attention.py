@@ -8,7 +8,7 @@ import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, get_workspace_id
@@ -16,8 +16,17 @@ from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionS
 from app.models.connection import Connection
 from app.models.signal import Signal, SignalType
 from app.models.user import User
+from app.providers.registry import spec_for
+from app.services.connection_state import ConnectionState, connection_state
 from app.services.mail_signals import noise_reason, sender_counts
-from app.schemas.attention import AttentionItemOut, AttentionStateUpdate, CalendarPlanOut, ManualReminderCreate
+from app.schemas.attention import (
+    AttentionItemOut,
+    AttentionStateUpdate,
+    CalendarPlanOut,
+    ManualReminderCreate,
+    ProviderStatusOut,
+    SentinelStatusOut,
+)
 from app.services.attention_engine import list_attention, refresh_attention
 from app.services.catchup import build_catchup
 
@@ -119,6 +128,102 @@ def attention_context(
         "considered": considered,
         "filtered_as_noise": filtered,
     }
+
+
+# Severity order for collapsing one provider's several resources into a single
+# line: the worst thing true of any of them is what the card must show.
+_STATE_SEVERITY = {
+    ConnectionState.TOKEN_REVOKED: 5,
+    ConnectionState.ERROR: 4,
+    ConnectionState.NEEDS_SETUP: 3,
+    ConnectionState.SYNCING: 2,
+    ConnectionState.PAUSED: 1,
+    ConnectionState.READY: 0,
+}
+_STATE_ERROR = {
+    ConnectionState.TOKEN_REVOKED: "authentication expired — reconnect needed",
+    ConnectionState.ERROR: "last sync failed",
+}
+
+
+@router.get("/status", response_model=SentinelStatusOut)
+def sentinel_status(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> SentinelStatusOut:
+    """"Is Sentinel working?" - the trust card at the top of Attention.
+
+    Everything here is a deterministic count over the caller's own
+    connections; no LLM, no provider round trips. Per-provider health reuses
+    the generic ``connection_state`` so this card and every other surface
+    agree on what "ready" or "failing" means. A provider is shown as failing
+    only for the two states a person must act on - a dead grant or a sync that
+    has never succeeded - so a green card is a green card.
+    """
+    connections = session.execute(
+        select(Connection).where(Connection.workspace_id == workspace_id, Connection.user_id == user.id)
+    ).scalars().all()
+
+    signal_counts = dict(session.execute(
+        select(Connection.provider, func.count(Signal.id))
+        .join(Signal, Signal.connection_id == Connection.id)
+        .where(Connection.workspace_id == workspace_id, Connection.user_id == user.id)
+        .group_by(Connection.provider)
+    ).all())
+
+    # Group by provider, then collapse each provider's resources to one line.
+    by_provider: dict = {}
+    for c in connections:
+        by_provider.setdefault(c.provider, []).append(c)
+
+    providers: list[ProviderStatusOut] = []
+    errors: list[str] = []
+    for provider, group in by_provider.items():
+        spec = spec_for(provider)
+        resources = [c for c in group if c.repo]  # a chosen resource, not a bare anchor
+        worst = max((connection_state(c) for c in resources), key=lambda s: _STATE_SEVERITY[s], default=ConnectionState.NEEDS_SETUP)
+        # A live-query provider never ingests, so the sync-timestamp states
+        # (syncing/error) are meaningless for it - with a resource chosen and a
+        # live grant, it is simply ready to answer a query. Revoked and paused
+        # still matter and are left as computed.
+        if spec.live_query and worst in (ConnectionState.SYNCING, ConnectionState.ERROR):
+            worst = ConnectionState.READY
+        ok = worst not in (ConnectionState.ERROR, ConnectionState.TOKEN_REVOKED)
+        reason = _STATE_ERROR.get(worst)
+        error = None if ok else f"{spec.label} {reason}"
+        if error:
+            errors.append(error)
+        last = max((c.last_synced_at for c in group if c.last_synced_at is not None), default=None)
+        providers.append(ProviderStatusOut(
+            provider=provider.value,
+            label=spec.label,
+            ok=ok,
+            state=worst.value,
+            resource_count=len(resources),
+            signal_count=int(signal_counts.get(provider, 0)),
+            live=spec.live_query,
+            error=error,
+            last_synced_at=last,
+        ))
+
+    providers.sort(key=lambda p: p.label.lower())
+    # Findings = what Sentinel detected and is still open - the same items the
+    # list shows, counted the same way, so the card can never disagree with it.
+    open_items = list_attention(session, workspace_id, viewer_user_id=user.id)
+    findings_count = sum(1 for i in open_items if i.origin == AttentionOrigin.DETECTED)
+    last_synced = max((c.last_synced_at for c in connections if c.last_synced_at is not None), default=None)
+
+    return SentinelStatusOut(
+        healthy=not errors,
+        provider_count=len(providers),
+        resource_count=sum(p.resource_count for p in providers),
+        signals_analysed=sum(p.signal_count for p in providers),
+        findings_count=findings_count,
+        last_synced_at=last_synced,
+        providers=providers,
+        errors=errors,
+    )
 
 
 @router.get("/catchup")

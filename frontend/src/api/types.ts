@@ -610,6 +610,29 @@ export interface AttentionContext {
   filtered_as_noise: number;
 }
 
+export interface ProviderStatus {
+  provider: string;
+  label: string;
+  ok: boolean;
+  state: string;
+  resource_count: number;
+  signal_count: number;
+  live: boolean;
+  error: string | null;
+  last_synced_at: string | null;
+}
+
+export interface SentinelStatus {
+  healthy: boolean;
+  provider_count: number;
+  resource_count: number;
+  signals_analysed: number;
+  findings_count: number;
+  last_synced_at: string | null;
+  providers: ProviderStatus[];
+  errors: string[];
+}
+
 export interface CatchUp {
   since: string;
   gap_hours: number;

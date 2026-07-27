@@ -24,6 +24,38 @@ class AttentionStateUpdate(BaseModel):
     snoozed_until: datetime | None = None  # required when state == snoozed
 
 
+class ProviderStatusOut(BaseModel):
+    """One provider's line in the Sentinel-status card: is it healthy, and
+    what did it actually contribute. `ok` is the trust signal; `error` carries
+    the plain-language reason when it is False (auth expired, sync failing)."""
+
+    provider: str
+    label: str
+    ok: bool
+    state: str  # generic ConnectionState value - ready|syncing|error|token_revoked|needs_setup|paused
+    resource_count: int
+    signal_count: int  # 0 for live-query providers, which store nothing
+    live: bool  # queried live at request time (Drive), never ingested into signals
+    error: str | None  # human-readable reason when not ok
+    last_synced_at: datetime | None
+
+
+class SentinelStatusOut(BaseModel):
+    """The first thing the Attention page shows: is Sentinel working, did it
+    check everything, is anything wrong. Deterministic counts over the
+    caller's own connections - no LLM, no provider calls. `healthy` is the
+    single glance answer; `providers` and `errors` are the detail behind it."""
+
+    healthy: bool
+    provider_count: int
+    resource_count: int
+    signals_analysed: int
+    findings_count: int  # open, Sentinel-detected items - the operational findings
+    last_synced_at: datetime | None
+    providers: list[ProviderStatusOut]
+    errors: list[str]  # every provider error, flattened, for the status banner
+
+
 class ChannelBriefingOut(BaseModel):
     """Read-only by design - lifecycle actions live in the personal
     Attention hub (see services/channel_briefing.py's docstring)."""

@@ -2,9 +2,8 @@ import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 
 import { api, ApiError } from "../api/client";
-import type { AttentionContext, AttentionItem, CalendarPlan } from "../api/types";
-import { AttentionEmptyState } from "../components/AttentionEmptyState";
-import { attentionIcon, EvidenceLink } from "../components/AttentionStrip";
+import type { AttentionItem, CalendarPlan, Commitment, Goal, SentinelStatus, Situation } from "../api/types";
+import { EvidenceLink } from "../components/AttentionStrip";
 import { BackNav } from "../components/BackNav";
 import { SentinelPanel } from "../components/SentinelPanel";
 import { workspaceContext } from "../components/context";
@@ -12,6 +11,12 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
 import { InvestigationPanel, useInvestigation } from "../components/InvestigationPanel";
 import { IntelligenceTabs } from "../components/IntelligenceTabs";
+import {
+  FindingsEmptyState,
+  ProvidersChecked,
+  SentinelStatusCard,
+  TodaysAttention,
+} from "../components/SentinelStatusPanel";
 import { LoadingBlock } from "../components/ui";
 
 const STATE_FILTERS = [
@@ -27,6 +32,38 @@ const SNOOZE_OPTIONS = [
   { label: "Next week", hours: 24 * 7 },
 ];
 
+const PROVIDER_LABELS: Record<string, string> = {
+  gmail: "Gmail",
+  google_calendar: "Calendar",
+  google_drive: "Drive",
+  github: "GitHub",
+  agent: "Sentinel",
+};
+
+function providerLabel(src: string | null): string | null {
+  if (!src) return null;
+  return PROVIDER_LABELS[src] ?? src;
+}
+
+/** SECTION 8: the finding's severity, read straight from its priority so the
+ *  card leads with "how serious" before anything else. Manual reminders are
+ *  never "critical" - they are the user's own notes. */
+function severityOf(item: AttentionItem): { dot: string; label: string } {
+  if (item.origin === "manual") return { dot: "bg-watch", label: "Reminder" };
+  if (item.priority >= 0.8) return { dot: "bg-crit", label: "Critical" };
+  if (item.priority >= 0.5) return { dot: "bg-warn", label: "Needs review" };
+  return { dot: "bg-watch", label: "FYI" };
+}
+
+function shortTime(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 export function AttentionPage() {
   const { active } = useWorkspace();
   const [stateFilter, setStateFilter] = useState("new");
@@ -36,8 +73,6 @@ export function AttentionPage() {
   const [snoozeMenuFor, setSnoozeMenuFor] = useState<string | null>(null);
   const [askItem, setAskItem] = useState<AttentionItem | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Add-to-Calendar is propose-then-confirm: the plan is shown, and nothing
-  // is written until the user explicitly confirms it.
   const [plan, setPlan] = useState<{ item: AttentionItem; plan: CalendarPlan } | null>(null);
   const [planBusy, setPlanBusy] = useState(false);
   const [planResult, setPlanResult] = useState<string | null>(null);
@@ -45,7 +80,15 @@ export function AttentionPage() {
   const meetingBrief = useMeetingBrief();
   const [investigateItemId, setInvestigateItemId] = useState<string | null>(null);
   const investigation = useInvestigation();
-  const [context, setContext] = useState<AttentionContext | null>(null);
+
+  // Page-level "is Sentinel working, and how much needs me" state, kept
+  // separate from the visible filter list so the status card and summary
+  // always reflect the open picture regardless of which filter is shown.
+  const [status, setStatus] = useState<SentinelStatus | null>(null);
+  const [openItems, setOpenItems] = useState<AttentionItem[]>([]);
+  const [dismissedCount, setDismissedCount] = useState(0);
+  const [tabCounts, setTabCounts] = useState<{ risks?: number; commitments?: number; goals?: number }>({});
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const [newTitle, setNewTitle] = useState("");
   const [newDue, setNewDue] = useState("");
@@ -54,9 +97,6 @@ export function AttentionPage() {
     setLoading(true);
     try {
       setItems(await api.get<AttentionItem[]>(`/attention?state=${filter}`));
-      // Fetched alongside the list so an empty result can explain itself
-      // rather than looking broken. Never fatal - the list still renders.
-      api.get<AttentionContext>("/attention/context").then(setContext).catch(() => setContext(null));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to load");
     } finally {
@@ -64,14 +104,43 @@ export function AttentionPage() {
     }
   }
 
+  /** Everything the status card, summary and tab badges need. All non-fatal:
+   *  the findings list stands on its own if any of these fail. */
+  async function loadMeta() {
+    api.get<SentinelStatus>("/attention/status").then(setStatus).catch(() => setStatus(null));
+    api.get<AttentionItem[]>("/attention?state=new").then(setOpenItems).catch(() => setOpenItems([]));
+    api.get<AttentionItem[]>("/attention?state=dismissed").then((d) => setDismissedCount(d.length)).catch(() => {});
+    Promise.allSettled([
+      api.get<Situation[]>("/proactive"),
+      api.get<Commitment[]>("/commitments"),
+      api.get<Goal[]>("/goals"),
+    ]).then(([r, c, g]) =>
+      setTabCounts({
+        risks: r.status === "fulfilled" ? r.value.length : undefined,
+        commitments: c.status === "fulfilled" ? c.value.length : undefined,
+        goals: g.status === "fulfilled" ? g.value.length : undefined,
+      }),
+    );
+  }
+
   useEffect(() => {
     void load(stateFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateFilter]);
 
-  /** Investigate runs in the *personal* scope from this page - the hub is
-   *  one person's own attention. A channel investigation is a different
-   *  endpoint with a different authorization scope. */
+  useEffect(() => {
+    void loadMeta();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // SECTION 5: the assistant expands on its own the moment there are findings,
+  // so a busy page puts the AI within reach - but on a clear page it stays a
+  // quiet "Need help?" that never competes with the all-clear.
+  const findingsCount = status?.findings_count ?? 0;
+  useEffect(() => {
+    if (findingsCount > 0) setAssistantOpen(true);
+  }, [findingsCount]);
+
   function investigateFor(item: AttentionItem) {
     if (investigateItemId === item.id) {
       setInvestigateItemId(null);
@@ -90,6 +159,7 @@ export function AttentionPage() {
         state,
         ...(snoozeHours ? { snoozed_until: new Date(Date.now() + snoozeHours * 3600 * 1000).toISOString() } : {}),
       });
+      void loadMeta();
     } catch {
       setItems((list) => [item, ...list]);
     }
@@ -100,6 +170,7 @@ export function AttentionPage() {
     try {
       await api.post<AttentionItem[]>("/attention/refresh");
       await load();
+      await loadMeta();
     } finally {
       setRefreshing(false);
     }
@@ -125,8 +196,6 @@ export function AttentionPage() {
     if (!plan) return;
     setPlanBusy(true);
     try {
-      // Reuses the same execute endpoint every other confirmed write goes
-      // through - one confirm-before-write path, not a second one.
       await api.post("/connections/google/command/execute", {
         name: "create_calendar_event",
         arguments: { title: plan.plan.title, start: plan.plan.start, end: plan.plan.end },
@@ -150,79 +219,290 @@ export function AttentionPage() {
     setNewTitle("");
     setNewDue("");
     if (stateFilter === "new") await load();
+    void loadMeta();
   }
+
+  // SECTION 2: the buckets, derived from the open list. Detected items split
+  // by severity; reminders are the user's own; dismissed is counted apart.
+  const detectedOpen = openItems.filter((i) => i.origin === "detected");
+  const critical = detectedOpen.filter((i) => i.priority >= 0.8).length;
+  const needsReview = detectedOpen.length - critical;
+  const reminders = openItems.filter((i) => i.origin === "manual").length;
+
+  // SECTION 3: the all-clear only reassures if the sync genuinely ran. Show it
+  // only for the open filter with nothing detected; other filters get a plain
+  // "nothing here" so an empty Done tab doesn't read as an all-clear.
+  const showAllClear = stateFilter === "new" && status !== null && findingsCount === 0;
+
+  const findingsList =
+    loading ? (
+      <LoadingBlock />
+    ) : items.length === 0 ? (
+      showAllClear ? (
+        <FindingsEmptyState status={status} />
+      ) : (
+        <p className="rounded-md border border-border px-4 py-6 text-center text-small text-ink-faint">
+          Nothing in {STATE_FILTERS.find((f) => f.key === stateFilter)?.label.toLowerCase()}.
+        </p>
+      )
+    ) : (
+      <div className="flex flex-col gap-2">
+        {items.map((item) => {
+          const sev = severityOf(item);
+          const src = providerLabel(item.source_provider);
+          return (
+            <div
+              key={item.id}
+              className={`rounded-md border bg-surface p-3.5 ${askItem?.id === item.id ? "border-border-strong" : "border-border"}`}
+            >
+              <div className="flex items-start gap-3">
+                <span aria-hidden className={`mt-1.5 inline-block h-2 w-2 flex-none rounded-full ${sev.dot}`} title={sev.label} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className={`text-body font-semibold ${item.state === "done" ? "text-ink-faint line-through" : "text-ink"}`}>
+                      {item.title}
+                    </div>
+                    <div className="flex flex-none items-center gap-2 pt-0.5 text-micro text-ink-faint">
+                      {src && <span>{src}</span>}
+                      <span aria-hidden>·</span>
+                      <span title={new Date(item.created_at).toLocaleString()}>{shortTime(item.created_at)}</span>
+                    </div>
+                  </div>
+                  {/* SECTION 8: why Sentinel surfaced this - a fact, labelled as one. */}
+                  <div className="mt-1 text-caption text-ink-dim">
+                    {item.why}
+                    {item.origin === "detected" ? " · ✨ detected" : " · 📌 reminder"}
+                    {item.due_at && ` · due ${new Date(item.due_at).toLocaleString()}`}
+                    {item.state === "snoozed" && item.snoozed_until && ` · snoozed until ${new Date(item.snoozed_until).toLocaleString()}`}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-2.5 flex flex-wrap items-center gap-3 pl-5 text-caption">
+                {item.state === "new" && (
+                  <>
+                    <button onClick={() => setState(item, "done")} className="text-ink-faint underline underline-offset-2 hover:text-good">
+                      Mark done
+                    </button>
+                    <span className="relative">
+                      <button
+                        onClick={() => setSnoozeMenuFor(snoozeMenuFor === item.id ? null : item.id)}
+                        className="text-ink-faint underline underline-offset-2 hover:text-watch"
+                      >
+                        Snooze &#9662;
+                      </button>
+                      {snoozeMenuFor === item.id && (
+                        <span className="absolute left-0 top-5 z-10 flex flex-col rounded-md border border-border bg-surface-2 p-1 shadow-overlay">
+                          {SNOOZE_OPTIONS.map((o) => (
+                            <button
+                              key={o.label}
+                              onClick={() => setState(item, "snoozed", o.hours)}
+                              className="px-3 py-1.5 text-left text-caption text-ink-dim hover:bg-surface-3 hover:text-ink"
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                    <button onClick={() => setState(item, "dismissed")} className="text-ink-faint underline underline-offset-2 hover:text-crit">
+                      Dismiss
+                    </button>
+                    {item.type === "upcoming_meeting" && (
+                      <button
+                        onClick={() => prepareFor(item)}
+                        disabled={meetingBrief.loading && prepItemId === item.id}
+                        className={`underline underline-offset-2 disabled:opacity-50 ${prepItemId === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"}`}
+                      >
+                        {meetingBrief.loading && prepItemId === item.id ? "Preparing…" : "Prepare Me ✨"}
+                      </button>
+                    )}
+                    {item.due_at && item.type !== "upcoming_meeting" && (
+                      <button onClick={() => proposeCalendar(item)} className="text-ink-faint underline underline-offset-2 hover:text-ink">
+                        Add to Calendar
+                      </button>
+                    )}
+                    {item.origin === "detected" && (
+                      <button
+                        onClick={() => investigateFor(item)}
+                        disabled={investigation.loading && investigateItemId === item.id}
+                        className={`underline underline-offset-2 disabled:opacity-50 ${investigateItemId === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"}`}
+                      >
+                        {investigation.loading && investigateItemId === item.id ? "Investigating…" : "Investigate ✨"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setAskItem(askItem?.id === item.id ? null : item)}
+                      className={`underline underline-offset-2 ${askItem?.id === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"}`}
+                    >
+                      Ask Sentinel ✨
+                    </button>
+                  </>
+                )}
+                {(item.state === "snoozed" || item.state === "dismissed" || item.state === "done") && (
+                  <button onClick={() => setState(item, "new")} className="text-ink-faint underline underline-offset-2 hover:text-ink">
+                    Reopen
+                  </button>
+                )}
+                <EvidenceLink item={item} className="font-semibold text-accent-text hover:underline" />
+              </div>
+
+              {prepItemId === item.id && (meetingBrief.brief || meetingBrief.error) && (
+                <div className="mt-3">
+                  {meetingBrief.error ? (
+                    <p className="text-small text-crit">{meetingBrief.error}</p>
+                  ) : (
+                    <MeetingBriefPanel
+                      brief={meetingBrief.brief!}
+                      refreshing={meetingBrief.refreshing}
+                      onRefresh={() => meetingBrief.load(`/attention/${item.id}/prepare`, { refresh: true })}
+                      onClose={() => {
+                        setPrepItemId(null);
+                        meetingBrief.clear();
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+
+              {investigateItemId === item.id && (investigation.investigation || investigation.error) && (
+                <div className="mt-3">
+                  {investigation.error ? (
+                    <p className="text-small text-crit">{investigation.error}</p>
+                  ) : (
+                    <InvestigationPanel
+                      investigation={investigation.investigation!}
+                      refreshing={investigation.refreshing}
+                      onRefresh={() => investigation.load(`/attention/${item.id}/investigate`, { refresh: true })}
+                      onClose={() => {
+                        setInvestigateItemId(null);
+                        investigation.clear();
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+
+              {askItem?.id === item.id && (
+                <div className="mt-3 border-t border-border pt-3">
+                  <SentinelPanel
+                    contextLabel="This finding"
+                    identity={workspaceContext(active)}
+                    contextPrefix={`Regarding this attention item: "${item.title}" (${item.why}).`}
+                    placeholder="Why does this matter? What should I do?"
+                    suggestions={["Why does this matter?", "What should I do about it?"]}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+
+  // SECTION 9: the Now tab reads top-to-bottom as the spec's flow -
+  // findings, then the provider verification that backs them, then the
+  // assistant, then the user's own reminders last.
+  const nowContent = (
+    <div className="flex flex-col gap-6">
+      <div>
+        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-micro uppercase tracking-wide text-ink-faint">Findings</h3>
+          <div className="flex flex-wrap gap-1">
+            {STATE_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setStateFilter(f.key)}
+                className={`rounded-full px-2.5 py-1 font-mono text-micro transition-colors ${
+                  stateFilter === f.key ? "bg-surface-3 text-ink" : "text-ink-faint hover:text-ink-dim"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {findingsList}
+      </div>
+
+      {/* SECTION 4 */}
+      <ProvidersChecked status={status} />
+
+      {/* SECTION 5 */}
+      <section>
+        <h3 className="mb-2.5 text-micro uppercase tracking-wide text-ink-faint">Sentinel assistant</h3>
+        {assistantOpen ? (
+          <div className="card p-3.5">
+            <SentinelPanel
+              contextLabel="Sentinel"
+              identity={workspaceContext(active)}
+              placeholder="Ask Sentinel about your operations…"
+              suggestions={["What needs my attention?", "Summarise what changed today"]}
+            />
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 rounded-md border border-border px-4 py-3">
+            <span className="text-small text-ink-dim">Need help making sense of something?</span>
+            <button onClick={() => setAssistantOpen(true)} className="text-small font-medium text-accent-text hover:underline">
+              Ask Sentinel ✨
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* SECTION 6: reminders are the user's own notes - below the operational
+          findings, never above them. */}
+      <section>
+        <h3 className="mb-2.5 text-micro uppercase tracking-wide text-ink-faint">Add a reminder</h3>
+        <form onSubmit={addReminder} className="flex flex-wrap gap-2">
+          <input
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="e.g. Follow up with the design team"
+            className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-border-strong"
+          />
+          <input
+            type="datetime-local"
+            value={newDue}
+            onChange={(e) => setNewDue(e.target.value)}
+            aria-label="Due (optional)"
+            className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink outline-none transition-colors focus:border-border-strong"
+          />
+          <button type="submit" disabled={!newTitle.trim()} className="btn-primary">
+            Add
+          </button>
+        </form>
+      </section>
+    </div>
+  );
 
   return (
     <div className="max-w-5xl">
       <BackNav back={{ to: "/", label: "Dashboard" }} />
-      <div className="mb-1 flex items-center justify-between">
-        <h1 className="text-h2 font-medium text-balance">Attention</h1>
-        <button
-          onClick={refresh}
-          disabled={refreshing}
-          className="card px-3 py-1.5 text-caption text-ink-dim hover:border-accent hover:text-ink disabled:opacity-50"
-        >
-          {refreshing ? "Checking…" : "↻ Re-check now"}
-        </button>
-      </div>
+      <h1 className="mb-1 text-h2 font-medium text-balance">Attention</h1>
       <p className="mb-5 text-body text-ink-dim">
-        Everything that needs you, across every connection. ✨ items were detected by Sentinel — the reason shown is a
-        fact, not a guess. 📌 items are reminders you created.
+        What matters, why it matters, and what to do next — across every connection.
       </p>
 
-      <form onSubmit={addReminder} className="mb-5 flex gap-2">
-        <input
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-          placeholder="Add a reminder — e.g. Follow up with the design team"
-          className="flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
-        />
-        <input
-          type="datetime-local"
-          value={newDue}
-          onChange={(e) => setNewDue(e.target.value)}
-          aria-label="Due (optional)"
-          className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
-        />
-        <button type="submit" disabled={!newTitle.trim()} className="btn-primary">
-          Add
-        </button>
-      </form>
+      {/* SECTION 1 — always visible */}
+      <SentinelStatusCard status={status} onSync={refresh} syncing={refreshing} />
 
-      <div className="mb-5 flex flex-wrap gap-1.5">
-        {STATE_FILTERS.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => setStateFilter(f.key)}
-            className={`rounded-full border px-3 py-1.5 font-mono text-caption transition-colors ${
-              stateFilter === f.key ? "border-accent bg-accent/15 text-accent-text" : "border-border text-ink-faint hover:text-ink"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+      {/* SECTION 2 */}
+      <TodaysAttention critical={critical} needsReview={needsReview} reminders={reminders} dismissed={dismissedCount} />
 
       {error && <p className="mb-4 text-small text-crit">{error}</p>}
       {planResult && (
         <p className={`mb-4 text-small ${planResult.startsWith("Added") ? "text-good" : "text-crit"}`}>{planResult}</p>
       )}
-
       {plan && (
         <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 p-3.5">
-          <div className="label-sub mb-2 font-bold text-watch">
-            Sentinel plans to create this event
-          </div>
+          <div className="label-sub mb-2 font-bold text-watch">Sentinel plans to create this event</div>
           <div className="mb-1 text-body font-semibold text-ink">{plan.plan.title}</div>
           <div className="mb-3 text-caption text-ink-dim">
             {new Date(plan.plan.start).toLocaleString()} — {new Date(plan.plan.end).toLocaleTimeString()}
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={confirmCalendar}
-              disabled={planBusy}
-              className="btn-primary"
-            >
+            <button onClick={confirmCalendar} disabled={planBusy} className="btn-primary">
               {planBusy ? "Adding…" : "Confirm & Add"}
             </button>
             <button
@@ -236,179 +516,12 @@ export function AttentionPage() {
         </div>
       )}
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        <div className="min-w-0 flex-1">
-          {/* One question per tab. Stacking these as four panels put five
-              surfaces in competition for the top of the page and buried the
-              attention list - the thing people open this page for. */}
-          <IntelligenceTabs
-            scope="personal"
-            counts={{ attention: items.filter((i) => i.state === "new").length }}
-            attention={
-              loading ? (
-            <LoadingBlock />
-          ) : items.length === 0 ? (
-            <AttentionEmptyState context={context} filter={stateFilter} />
-          ) : (
-            <div className="flex flex-col gap-2">
-              {items.map((item) => (
-                <div key={item.id} className={`rounded-md border bg-surface p-3.5 ${askItem?.id === item.id ? "border-accent" : "border-border"}`}>
-                  <div className="flex items-start gap-3">
-                    <span className="mt-0.5 flex-none text-h3">{attentionIcon(item)}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className={`text-body font-semibold ${item.state === "done" ? "text-ink-faint line-through" : "text-ink"}`}>
-                        {item.title}
-                      </div>
-                      <div className="mt-0.5 text-caption text-ink-faint">
-                        {item.why}
-                        {item.origin === "detected" ? " · ✨ AI-detected" : " · 📌 manual"}
-                        {item.due_at && ` · due ${new Date(item.due_at).toLocaleString()}`}
-                        {item.state === "snoozed" && item.snoozed_until && ` · snoozed until ${new Date(item.snoozed_until).toLocaleString()}`}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-2.5 flex flex-wrap items-center gap-3 pl-8 text-caption">
-                    {item.state === "new" && (
-                      <>
-                        <button onClick={() => setState(item, "done")} className="text-ink-faint underline underline-offset-2 hover:text-good">
-                          Mark done
-                        </button>
-                        <span className="relative">
-                          <button
-                            onClick={() => setSnoozeMenuFor(snoozeMenuFor === item.id ? null : item.id)}
-                            className="text-ink-faint underline underline-offset-2 hover:text-watch"
-                          >
-                            Snooze &#9662;
-                          </button>
-                          {snoozeMenuFor === item.id && (
-                            <span className="absolute left-0 top-5 z-10 flex flex-col rounded-md border border-border bg-surface-2 p-1 shadow-overlay">
-                              {SNOOZE_OPTIONS.map((o) => (
-                                <button
-                                  key={o.label}
-                                  onClick={() => setState(item, "snoozed", o.hours)}
-                                  className="px-3 py-1.5 text-left text-caption text-ink-dim hover:bg-surface-2 hover:text-ink"
-                                >
-                                  {o.label}
-                                </button>
-                              ))}
-                            </span>
-                          )}
-                        </span>
-                        <button onClick={() => setState(item, "dismissed")} className="text-ink-faint underline underline-offset-2 hover:text-crit">
-                          Dismiss
-                        </button>
-                        {item.type === "upcoming_meeting" && (
-                          <button
-                            onClick={() => prepareFor(item)}
-                            disabled={meetingBrief.loading && prepItemId === item.id}
-                            className={`underline underline-offset-2 disabled:opacity-50 ${
-                              prepItemId === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
-                            }`}
-                          >
-                            {meetingBrief.loading && prepItemId === item.id ? "Preparing…" : "Prepare Me ✨"}
-                          </button>
-                        )}
-                        {item.due_at && item.type !== "upcoming_meeting" && (
-                          <button
-                            onClick={() => proposeCalendar(item)}
-                            className="text-ink-faint underline underline-offset-2 hover:text-ink"
-                          >
-                            Add to Calendar
-                          </button>
-                        )}
-                        {item.origin === "detected" && (
-                          <button
-                            onClick={() => investigateFor(item)}
-                            disabled={investigation.loading && investigateItemId === item.id}
-                            className={`underline underline-offset-2 disabled:opacity-50 ${
-                              investigateItemId === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
-                            }`}
-                          >
-                            {investigation.loading && investigateItemId === item.id ? "Investigating…" : "Investigate This ✨"}
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setAskItem(askItem?.id === item.id ? null : item)}
-                          className={`underline underline-offset-2 ${askItem?.id === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"}`}
-                        >
-                          Ask Sentinel ✨
-                        </button>
-                      </>
-                    )}
-                    {(item.state === "snoozed" || item.state === "dismissed" || item.state === "done") && (
-                      <button onClick={() => setState(item, "new")} className="text-ink-faint underline underline-offset-2 hover:text-ink">
-                        Reopen
-                      </button>
-                    )}
-                    <EvidenceLink item={item} className="font-semibold text-accent-text hover:underline" />
-                  </div>
-
-                  {prepItemId === item.id && (meetingBrief.brief || meetingBrief.error) && (
-                    <div className="mt-3">
-                      {meetingBrief.error ? (
-                        <p className="text-small text-crit">{meetingBrief.error}</p>
-                      ) : (
-                        <MeetingBriefPanel
-                          brief={meetingBrief.brief!}
-                          refreshing={meetingBrief.refreshing}
-                          onRefresh={() => meetingBrief.load(`/attention/${item.id}/prepare`, { refresh: true })}
-                          onClose={() => {
-                            setPrepItemId(null);
-                            meetingBrief.clear();
-                          }}
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  {investigateItemId === item.id && (investigation.investigation || investigation.error) && (
-                    <div className="mt-3">
-                      {investigation.error ? (
-                        <p className="text-small text-crit">{investigation.error}</p>
-                      ) : (
-                        <InvestigationPanel
-                          investigation={investigation.investigation!}
-                          refreshing={investigation.refreshing}
-                          onRefresh={() => investigation.load(`/attention/${item.id}/investigate`, { refresh: true })}
-                          onClose={() => {
-                            setInvestigateItemId(null);
-                            investigation.clear();
-                          }}
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-              )
-            }
-          />
-        </div>
-
-        {askItem && (
-          <div className="w-full flex-none lg:sticky lg:top-6 lg:w-[380px]">
-            <div className="card">
-              <div className="flex items-center justify-between border-b border-border p-3.5">
-                <div className="min-w-0">
-                  <div className="text-caption text-ink-faint">Investigating</div>
-                  <div className="truncate text-body font-semibold text-ink">{askItem.title}</div>
-                </div>
-                <button onClick={() => setAskItem(null)} aria-label="Close" className="ml-2 flex-none rounded-md px-2 py-1 text-body text-ink-faint hover:bg-surface-2 hover:text-ink">
-                  &times;
-                </button>
-              </div>
-              <SentinelPanel
-                contextLabel="This attention item"
-                identity={workspaceContext(active)}
-                contextPrefix={`Regarding this attention item: "${askItem.title}" (${askItem.why}).`}
-                placeholder="Why does this matter? What should I do?"
-                suggestions={["Why does this matter?", "What should I do about it?"]}
-              />
-            </div>
-          </div>
-        )}
-      </div>
+      {/* SECTION 7 — tabs carry live counts; zero tabs de-emphasise themselves. */}
+      <IntelligenceTabs
+        scope="personal"
+        counts={{ attention: findingsCount, ...tabCounts }}
+        attention={nowContent}
+      />
     </div>
   );
 }

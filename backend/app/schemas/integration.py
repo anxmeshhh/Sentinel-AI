@@ -56,3 +56,18 @@ class GitHubRepoSelect(BaseModel):
 
 class GitHubPrioritySet(BaseModel):
     priority: str = Field(pattern="^(critical|normal|low|archived|experimental)$")
+
+
+class SlackChannelOut(BaseModel):
+    """One public channel the connected workspace has. `is_member` is the
+    operational fact: the bot can list any channel, but can only monitor one it
+    has been invited to (that is what grants history access). `monitored` will
+    mark channels Sentinel already watches once channel management lands."""
+
+    id: str
+    name: str
+    is_member: bool
+    num_members: int | None = None
+    topic: str = ""
+    purpose: str = ""
+    monitored: bool = False

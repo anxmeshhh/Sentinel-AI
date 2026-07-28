@@ -610,6 +610,16 @@ export interface AttentionContext {
   filtered_as_noise: number;
 }
 
+export interface SlackChannel {
+  id: string;
+  name: string;
+  is_member: boolean;
+  num_members: number | null;
+  topic: string;
+  purpose: string;
+  monitored: boolean;
+}
+
 export interface ProviderStatus {
   provider: string;
   label: string;

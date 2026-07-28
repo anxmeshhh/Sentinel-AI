@@ -38,6 +38,7 @@ from app.schemas.integration import (
     GitHubPrioritySet,
     GitHubRepositoryOut,
     GitHubRepoSelect,
+    SlackChannelOut,
 )
 from app.services.github_connections import (
     account_connections,
@@ -49,7 +50,7 @@ from app.services.github_connections import (
     set_priority,
 )
 from app.integrations import slack_auth
-from app.services.slack_connections import connect_slack_workspace
+from app.services.slack_connections import connect_slack_workspace, slack_workspace
 
 logger = structlog.get_logger("sentinel.integrations")
 
@@ -457,6 +458,36 @@ def slack_connect_callback(request: Request, session: Session = Depends(get_db))
 
     separator = "&" if "?" in return_to else "?"
     return RedirectResponse(f"{frontend}{return_to}{separator}connected=slack")
+
+
+@router.get("/slack/channels", response_model=list[SlackChannelOut])
+def list_slack_channels(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> list[SlackChannelOut]:
+    """The public channels this workspace has, each flagged with whether the
+    bot is a member (the prerequisite for monitoring it). Phase 1 discovery -
+    the picker channel management will be built on. Scoped to the caller's own
+    Slack grant; one member's workspace is never listed for another."""
+    from app.core.security import decrypt_token
+    from app.integrations.slack_client import SlackClient, SlackClientError
+
+    conn = slack_workspace(session, workspace_id, user.id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Connect Slack first")
+
+    try:
+        with SlackClient(decrypt_token(conn.encrypted_token)) as client:
+            channels = client.list_channels()
+    except SlackClientError as exc:
+        # A revoked/invalid token surfaces here as Slack's own error string.
+        raise HTTPException(status_code=409, detail=f"Slack: {exc}") from exc
+    except Exception as exc:
+        logger.warning("slack_channel_list_failed", error=str(exc)[:200])
+        raise HTTPException(status_code=502, detail="Slack could not be reached just now") from exc
+
+    return [SlackChannelOut(**ch) for ch in channels]
 
 
 @router.get("/github/repos", response_model=list[GitHubRepoOut])

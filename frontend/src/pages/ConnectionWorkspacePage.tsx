@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
-import type { Connection, GitHubRepo, GitHubRepository } from "../api/types";
+import type { Connection, GitHubRepo, GitHubRepository, SlackChannel } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { ConnectScopeDialog } from "../components/ConnectScopeDialog";
 import { SentinelPanel, type SuggestionGroup } from "../components/SentinelPanel";
@@ -599,6 +599,16 @@ function SlackWorkspace({ connections }: { connections: Connection[] }) {
   const slack = connections.find((c) => c.provider === "slack");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [channels, setChannels] = useState<SlackChannel[] | null>(null);
+  const [channelsError, setChannelsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!slack) return;
+    api
+      .get<SlackChannel[]>("/integrations/slack/channels")
+      .then(setChannels)
+      .catch((e) => setChannelsError(e instanceof ApiError ? e.message : "Couldn't load channels"));
+  }, [slack]);
 
   async function connect() {
     setBusy(true);
@@ -629,24 +639,69 @@ function SlackWorkspace({ connections }: { connections: Connection[] }) {
     );
   }
 
+  const memberCount = channels?.filter((c) => c.is_member).length ?? 0;
   return (
-    <div className="rounded-md border border-border p-6">
-      <div className="flex items-center gap-2.5">
-        <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-good" />
-        <p className="text-body font-medium text-ink">Connected to {slack.org || "your Slack workspace"}</p>
+    <div className="flex flex-col gap-5">
+      <div className="rounded-md border border-border p-6">
+        <div className="flex items-center gap-2.5">
+          <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-good" />
+          <p className="text-body font-medium text-ink">Connected to {slack.org || "your Slack workspace"}</p>
+        </div>
+        <p className="mt-2 max-w-lg text-small leading-relaxed text-ink-dim">
+          Sentinel can see this workspace's channels. To monitor a channel, invite the bot to it —
+          <span className="font-mono text-ink"> /invite @sentinel</span> — then classification and operational
+          intelligence follow.
+        </p>
+        {error && <p className="mt-3 text-small text-crit">{error}</p>}
+        <button
+          onClick={connect}
+          disabled={busy}
+          className="mt-4 rounded-md border border-border px-3 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
+        >
+          {busy ? "Starting…" : "Reconnect"}
+        </button>
       </div>
-      <p className="mt-2 max-w-lg text-small leading-relaxed text-ink-dim">
-        Sentinel can now reach this workspace. Channel discovery, classification and operational
-        intelligence arrive next (Phase 1).
-      </p>
-      {error && <p className="mt-3 text-small text-crit">{error}</p>}
-      <button
-        onClick={connect}
-        disabled={busy}
-        className="mt-4 rounded-md border border-border px-3 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
-      >
-        {busy ? "Starting…" : "Reconnect"}
-      </button>
+
+      {/* Phase 1 — channel discovery. Management (classify / monitor) builds on this. */}
+      <div>
+        <div className="mb-2.5 flex items-baseline justify-between">
+          <h3 className="text-micro uppercase tracking-wide text-ink-faint">Channels discovered</h3>
+          {channels && (
+            <span className="text-caption text-ink-faint">
+              {channels.length} channel{channels.length === 1 ? "" : "s"} · bot in {memberCount}
+            </span>
+          )}
+        </div>
+        {channelsError ? (
+          <p className="rounded-md border border-border px-4 py-3 text-small text-crit">{channelsError}</p>
+        ) : channels === null ? (
+          <LoadingBlock />
+        ) : channels.length === 0 ? (
+          <p className="rounded-md border border-border px-4 py-6 text-center text-small text-ink-faint">
+            No public channels found in this workspace.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {channels.map((ch) => (
+              <div key={ch.id} className="flex items-center gap-3 rounded-md border border-border bg-surface px-3.5 py-2.5">
+                <span className="min-w-0 flex-1 truncate text-small text-ink">
+                  <span className="text-ink-faint">#</span>
+                  {ch.name}
+                  {ch.topic && <span className="ml-2 text-caption text-ink-faint">{ch.topic}</span>}
+                </span>
+                {ch.num_members != null && (
+                  <span className="flex-none text-micro tabular-nums text-ink-faint">{ch.num_members} members</span>
+                )}
+                {ch.is_member ? (
+                  <span className="flex-none rounded-sm border border-good/40 px-1.5 py-px text-micro text-good">bot in channel</span>
+                ) : (
+                  <span className="flex-none rounded-sm border border-border px-1.5 py-px text-micro text-ink-faint">invite to monitor</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

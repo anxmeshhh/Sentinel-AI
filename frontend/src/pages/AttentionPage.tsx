@@ -244,12 +244,10 @@ export function AttentionPage() {
     void loadMeta();
   }
 
-  // SECTION 2: the buckets, derived from the open list. Detected items split
-  // by severity; reminders are the user's own; dismissed is counted apart.
-  const detectedOpen = openItems.filter((i) => i.origin === "detected");
-  const critical = detectedOpen.filter((i) => i.priority >= 0.8).length;
-  const needsReview = detectedOpen.length - critical;
-  const reminders = openItems.filter((i) => i.origin === "manual").length;
+  // The Now tab holds attention items only - situations live in Risks - so its
+  // badge counts attention items, while the verdict and Today's summary count
+  // the full operational state (attention + situations) from the backend.
+  const nowCount = openItems.filter((i) => i.origin === "detected").length;
 
   // SECTION 3: the all-clear only reassures if the sync genuinely ran. Show it
   // only for the open filter with nothing detected; other filters get a plain
@@ -516,16 +514,16 @@ export function AttentionPage() {
       </p>
 
       {/* SECTION 1 — always visible */}
-      <SentinelStatusCard
-        status={status}
-        onSync={refresh}
-        syncing={refreshing}
-        findingsCount={findingsCount}
-        criticalCount={critical}
-      />
+      <SentinelStatusCard status={status} onSync={refresh} syncing={refreshing} />
 
-      {/* SECTION 2 */}
-      <TodaysAttention critical={critical} needsReview={needsReview} reminders={reminders} dismissed={dismissedCount} />
+      {/* SECTION 2 — the same operational counts the verdict uses (attention
+          items AND situations), so the summary can never disagree with it. */}
+      <TodaysAttention
+        critical={status?.critical_count ?? 0}
+        needsReview={status?.review_count ?? 0}
+        reminders={status?.reminder_count ?? 0}
+        dismissed={dismissedCount}
+      />
 
       {error && <p className="mb-4 text-small text-crit">{error}</p>}
       {planResult && (
@@ -556,7 +554,7 @@ export function AttentionPage() {
       {/* SECTION 7 — tabs carry live counts; zero tabs de-emphasise themselves. */}
       <IntelligenceTabs
         scope="personal"
-        counts={{ attention: findingsCount, ...tabCounts }}
+        counts={{ attention: nowCount, ...tabCounts }}
         attention={nowContent}
       />
     </div>

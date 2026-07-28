@@ -51,7 +51,14 @@ class SentinelStatusOut(BaseModel):
     provider_count: int
     resource_count: int
     signals_analysed: int
-    findings_count: int  # open, Sentinel-detected items - the operational findings
+    findings_count: int  # total operational findings = critical + review (attention items AND situations)
+    # The operational state, spanning BOTH surfaces the page shows - attention
+    # items and proactive situations - so the verdict computed from these can
+    # never contradict the findings below it.
+    critical_count: int  # needs prompt action
+    review_count: int  # operational risks worth reviewing (stalled repos, at-risk services)
+    reminder_count: int  # the user's own open reminders
+    summary: str | None  # a phrase naming what was found, for the verdict's second line
     last_synced_at: datetime | None
     providers: list[ProviderStatusOut]
     errors: list[str]  # every provider error, flattened, for the status banner

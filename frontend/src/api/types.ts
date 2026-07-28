@@ -629,6 +629,10 @@ export interface SentinelStatus {
   resource_count: number;
   signals_analysed: number;
   findings_count: number;
+  critical_count: number;
+  review_count: number;
+  reminder_count: number;
+  summary: string | null;
   last_synced_at: string | null;
   providers: ProviderStatus[];
   errors: string[];

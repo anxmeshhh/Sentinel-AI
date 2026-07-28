@@ -5,6 +5,7 @@ actions (done/snooze/dismiss), manual reminders, and an on-demand refresh.
 """
 
 import uuid
+from collections import Counter
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,6 +16,7 @@ from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState, AttentionType
 from app.models.connection import Connection, Provider
 from app.models.signal import Signal, SignalType
+from app.models.situation import SituationKind
 from app.models.user import User
 from app.providers.registry import spec_for
 from app.services.connection_state import ConnectionState, connection_state
@@ -29,6 +31,8 @@ from app.schemas.attention import (
 )
 from app.services.attention_engine import list_attention, refresh_attention
 from app.services.catchup import build_catchup
+from app.services.investigation import personal_scope
+from app.services.proactive import list_situations
 
 router = APIRouter(prefix="/attention", tags=["attention"])
 
@@ -146,6 +150,48 @@ _STATE_ERROR = {
 }
 
 
+def _situation_is_critical(sit) -> bool:
+    """A stalled repository is never an emergency, however long it has been
+    quiet - it is always "review". Other situations become critical only at
+    the very top of the importance scale (a service being torn down, not
+    merely paused). Keeps the critical tier meaningful rather than firing on
+    every high-importance-but-not-urgent finding."""
+    return sit.importance >= 0.9 and sit.kind is not SituationKind.RESOURCE_STALLED
+
+
+def _operational_summary(situations: list, detected: list) -> str | None:
+    """A plain phrase naming what Sentinel found, for the verdict's second
+    line. Deterministic - it reads the counts, never an LLM."""
+    def n_of(count: int, one: str, many: str) -> str:
+        return f"{count} {one if count == 1 else many}"
+
+    parts: list[str] = []
+    kinds = Counter(s.kind for s in situations)
+    if kinds.get(SituationKind.RESOURCE_STALLED):
+        parts.append(n_of(kinds[SituationKind.RESOURCE_STALLED], "stalled repository", "stalled repositories"))
+    if kinds.get(SituationKind.SERVICE_JEOPARDY):
+        parts.append(n_of(kinds[SituationKind.SERVICE_JEOPARDY], "service at risk", "services at risk"))
+    if kinds.get(SituationKind.MEETING_UNPREPARED):
+        parts.append(n_of(kinds[SituationKind.MEETING_UNPREPARED], "unprepared meeting", "unprepared meetings"))
+
+    types = Counter(i.type for i in detected)
+    type_phrase = {
+        AttentionType.IMPORTANT_EMAIL: ("important email", "important emails"),
+        AttentionType.STALE_PR: ("stalled pull request", "stalled pull requests"),
+        AttentionType.DEADLINE: ("approaching deadline", "approaching deadlines"),
+        AttentionType.UPCOMING_MEETING: ("upcoming meeting", "upcoming meetings"),
+        AttentionType.FINDING: ("flagged finding", "flagged findings"),
+    }
+    for t, (one, many) in type_phrase.items():
+        if types.get(t):
+            parts.append(n_of(types[t], one, many))
+
+    if not parts:
+        return None
+    body = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    return f"Sentinel detected {body}."
+
+
 @router.get("/status", response_model=SentinelStatusOut)
 def sentinel_status(
     session: Session = Depends(get_db),
@@ -238,10 +284,24 @@ def sentinel_status(
         ))
 
     providers.sort(key=lambda p: p.label.lower())
-    # Findings = what Sentinel detected and is still open - the same items the
-    # list shows, counted the same way, so the card can never disagree with it.
+
+    # The operational state is the UNION of both surfaces this page shows:
+    # attention items (Now) AND proactive situations (Risks). Counting only
+    # attention items is the bug this fixes - it let the verdict say "all
+    # clear" while stalled repos and an at-risk service sat in the Risks tab.
+    # Situations are scoped exactly like the Risks tab that displays them.
     open_items = list_attention(session, workspace_id, viewer_user_id=user.id)
-    findings_count = sum(1 for i in open_items if i.origin == AttentionOrigin.DETECTED)
+    detected = [i for i in open_items if i.origin == AttentionOrigin.DETECTED]
+    reminders_open = [i for i in open_items if i.origin == AttentionOrigin.MANUAL]
+    situations = list_situations(session, personal_scope(session, workspace_id, user.id))
+
+    # 0.8 is the same cutoff the finding card uses for its red "Critical"
+    # severity dot, so a card and the verdict never disagree on what critical is.
+    critical_count = sum(1 for i in detected if i.priority >= 0.8) + sum(1 for s in situations if _situation_is_critical(s))
+    review_count = sum(1 for i in detected if i.priority < 0.8) + sum(1 for s in situations if not _situation_is_critical(s))
+    reminder_count = len(reminders_open)
+    findings_count = critical_count + review_count
+    summary = _operational_summary(situations, detected)
     last_synced = max((c.last_synced_at for c in connections if c.last_synced_at is not None), default=None)
 
     return SentinelStatusOut(
@@ -253,6 +313,10 @@ def sentinel_status(
         # its own line without being added to the total twice.
         signals_analysed=sum(int(v) for v in signal_counts.values()),
         findings_count=findings_count,
+        critical_count=critical_count,
+        review_count=review_count,
+        reminder_count=reminder_count,
+        summary=summary,
         last_synced_at=last_synced,
         providers=providers,
         errors=errors,

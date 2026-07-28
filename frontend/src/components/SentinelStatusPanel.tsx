@@ -11,32 +11,66 @@ function plural(n: number, one: string, many: string): string {
 }
 
 /**
- * The verdict - a briefing leads with its conclusion, not its metrics. One
- * sentence that answers all four questions at once, so the page is understood
- * before the eye moves. Everything below it is the reader choosing to go
- * deeper. Health outranks findings: a broken sense is reported first, because
- * "is Sentinel working" must be answered before "what did it find".
+ * The verdict - Sentinel's executive summary, the first sentence read every
+ * morning. It summarises the highest-priority state that exists ON THE PAGE,
+ * across BOTH surfaces (attention items and situations), so it can never
+ * contradict the findings below it. The strict hierarchy is:
+ *
+ *   1. Provider health   - if a sense failed, findings may be incomplete, so
+ *                          nothing below can be fully trusted; say so first.
+ *   2. Critical findings - something needs prompt action.
+ *   3. Review findings   - operational risks worth a look (stalled repos,
+ *                          at-risk services). This is where situations land.
+ *   4. Reminders         - the user's own notes, nothing operational.
+ *   5. All clear         - genuinely nothing, anywhere.
+ *
+ * The second line (`detail`) names what was found, so the summary is specific.
  */
-function verdict(
-  status: SentinelStatus | null,
-  findingsCount: number,
-  criticalCount: number,
-): { dot: string; headline: string; tone: string } {
-  if (!status) return { dot: "bg-ink-faint", headline: "Checking your systems…", tone: "text-ink-dim" };
+function verdict(status: SentinelStatus | null): { dot: string; headline: string; detail: string | null } {
+  if (!status) return { dot: "bg-ink-faint", headline: "Checking your systems…", detail: null };
+
+  // 1 - provider health
   if (status.errors.length > 0) {
-    const n = status.errors.length;
-    return { dot: "bg-crit", headline: `Sentinel needs attention — ${n} provider ${plural(n, "issue", "issues")}.`, tone: "text-ink" };
+    return {
+      dot: "bg-warn",
+      headline: "Sentinel requires attention.",
+      detail:
+        status.errors.length === 1
+          ? "A provider could not be analysed successfully. Some findings may be incomplete."
+          : "One or more providers could not be analysed successfully. Some findings may be incomplete.",
+    };
   }
-  if (criticalCount > 0) {
-    return { dot: "bg-crit", headline: `${criticalCount} critical ${plural(criticalCount, "finding needs", "findings need")} you now.`, tone: "text-ink" };
+  // 2 - critical
+  if (status.critical_count > 0) {
+    return {
+      dot: "bg-crit",
+      headline: "Immediate attention recommended.",
+      detail: status.summary ?? "Sentinel detected critical operational issues requiring prompt action.",
+    };
   }
-  if (findingsCount > 0) {
-    return { dot: "bg-warn", headline: `${findingsCount} ${plural(findingsCount, "thing needs", "things need")} your review.`, tone: "text-ink" };
+  // 3 - review (where situations land)
+  if (status.review_count > 0) {
+    const n = status.review_count;
+    return {
+      dot: "bg-warn",
+      headline: `${n} operational ${plural(n, "risk needs", "risks need")} your review.`,
+      detail: status.summary ? `${status.summary} Review the findings below.` : "Review the findings below.",
+    };
   }
+  // 4 - reminders only
+  if (status.reminder_count > 0) {
+    const n = status.reminder_count;
+    return {
+      dot: "bg-watch",
+      headline: `No operational risks — ${n} ${plural(n, "reminder", "reminders")} on your list.`,
+      detail: "Nothing Sentinel flagged; these are your own notes.",
+    };
+  }
+  // 5 - all clear
   return {
     dot: "bg-good",
-    headline: `All clear. Sentinel checked ${status.resource_count} ${plural(status.resource_count, "resource", "resources")} across ${status.provider_count} providers and found nothing that needs you.`,
-    tone: "text-ink",
+    headline: `All clear. Sentinel checked ${status.resource_count} ${plural(status.resource_count, "resource", "resources")} across ${status.provider_count} providers.`,
+    detail: "Nothing needs your attention.",
   };
 }
 
@@ -50,16 +84,12 @@ export function SentinelStatusCard({
   status,
   onSync,
   syncing,
-  findingsCount,
-  criticalCount,
 }: {
   status: SentinelStatus | null;
   onSync: () => void;
   syncing: boolean;
-  findingsCount: number;
-  criticalCount: number;
 }) {
-  const v = verdict(status, findingsCount, criticalCount);
+  const v = verdict(status);
   // Last sync is deliberately NOT in this list - it belongs next to the Sync
   // button, as one piece of information, not lost among the other metrics.
   const metrics = status
@@ -76,8 +106,10 @@ export function SentinelStatusCard({
           <span aria-hidden className={`mt-1.5 inline-block h-3 w-3 flex-none rounded-full ${v.dot}`} />
           <div className="min-w-0">
             {/* SECTION 1: the verdict is the most important sentence on the page,
-                so it is the largest and heaviest thing in the header. */}
-            <p className={`text-h3 font-semibold leading-snug text-balance ${v.tone}`}>{v.headline}</p>
+                so it is the largest and heaviest thing in the header. Its
+                second line names what was found, so it is specific. */}
+            <p className="text-h3 font-semibold leading-snug text-balance text-ink">{v.headline}</p>
+            {v.detail && <p className="mt-1 text-small leading-snug text-ink-dim">{v.detail}</p>}
             {metrics.length > 0 && (
               <p className="mt-2 text-caption text-ink-faint">
                 {metrics.map((m, i) => (

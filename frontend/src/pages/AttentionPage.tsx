@@ -157,13 +157,11 @@ export function AttentionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // SECTION 5: the assistant expands on its own the moment there are findings,
-  // so a busy page puts the AI within reach - but on a clear page it stays a
-  // quiet "Need help?" that never competes with the all-clear.
+  // SECTION 5: the assistant stays collapsed by default - a quiet "Need help?"
+  // below the findings - so it supports Sentinel's intelligence rather than
+  // competing with it for the eye. The user opens it when they want it; it
+  // never fronts the primary content.
   const findingsCount = status?.findings_count ?? 0;
-  useEffect(() => {
-    if (findingsCount > 0) setAssistantOpen(true);
-  }, [findingsCount]);
 
   function investigateFor(item: AttentionItem) {
     if (investigateItemId === item.id) {

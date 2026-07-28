@@ -60,23 +60,26 @@ export function SentinelStatusCard({
   criticalCount: number;
 }) {
   const v = verdict(status, findingsCount, criticalCount);
+  // Last sync is deliberately NOT in this list - it belongs next to the Sync
+  // button, as one piece of information, not lost among the other metrics.
   const metrics = status
     ? [
         `${status.signals_analysed.toLocaleString()} ${plural(status.signals_analysed, "signal", "signals")} analysed`,
         `${status.resource_count} ${plural(status.resource_count, "resource", "resources")}`,
         `${status.provider_count} providers`,
-        `last sync ${clockTime(status.last_synced_at)}`,
       ]
     : [];
   return (
-    <section className="card mb-4 p-4">
+    <section className="card mb-4 p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
-          <span aria-hidden className={`mt-1 inline-block h-2.5 w-2.5 flex-none rounded-full ${v.dot}`} />
+          <span aria-hidden className={`mt-1.5 inline-block h-3 w-3 flex-none rounded-full ${v.dot}`} />
           <div className="min-w-0">
-            <p className={`text-body font-medium leading-snug text-balance ${v.tone}`}>{v.headline}</p>
+            {/* SECTION 1: the verdict is the most important sentence on the page,
+                so it is the largest and heaviest thing in the header. */}
+            <p className={`text-h3 font-semibold leading-snug text-balance ${v.tone}`}>{v.headline}</p>
             {metrics.length > 0 && (
-              <p className="mt-1.5 text-caption text-ink-faint">
+              <p className="mt-2 text-caption text-ink-faint">
                 {metrics.map((m, i) => (
                   <span key={m}>
                     {i > 0 && <span className="px-1.5 text-ink-faint/50">·</span>}
@@ -87,17 +90,25 @@ export function SentinelStatusCard({
             )}
           </div>
         </div>
-        <button
-          onClick={onSync}
-          disabled={syncing}
-          className="flex-none rounded-md border border-border px-3 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
-        >
-          {syncing ? "Checking…" : "Sync Now"}
-        </button>
+        {/* Last sync + Sync Now, treated as one unit: the freshness and the
+            control that refreshes it read together. */}
+        <div className="flex flex-none items-center gap-3">
+          <div className="text-right">
+            <div className="text-micro uppercase tracking-wide text-ink-faint">Last sync</div>
+            <div className="text-caption tabular-nums text-ink-dim">{clockTime(status?.last_synced_at ?? null)}</div>
+          </div>
+          <button
+            onClick={onSync}
+            disabled={syncing}
+            className="rounded-md border border-border px-3 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
+          >
+            {syncing ? "Checking…" : "Sync Now"}
+          </button>
+        </div>
       </div>
 
       {status && status.errors.length > 0 && (
-        <div className="mt-3.5 flex flex-col gap-1.5 border-t border-border pt-3">
+        <div className="mt-4 flex flex-col gap-1.5 border-t border-border pt-3.5">
           {status.errors.map((e) => (
             <div key={e} className="flex items-center gap-2 text-caption text-crit">
               <span aria-hidden>⚠</span>
@@ -198,17 +209,17 @@ export function ProvidersChecked({ status }: { status: SentinelStatus | null }) 
 export function FindingsEmptyState({ status }: { status: SentinelStatus | null }) {
   const signals = status?.signals_analysed ?? 0;
   return (
-    <div className="rounded-md border border-border bg-surface-2/40 px-5 py-9 text-center">
-      <div className="mb-2 text-h3" aria-hidden>🎉</div>
+    <div className="rounded-md border border-border bg-surface-2/40 px-6 py-14 text-center">
+      <div className="mb-3 text-h2" aria-hidden>🎉</div>
       <p className="text-body font-medium text-ink">Nothing needs your attention.</p>
-      <p className="mx-auto mt-1.5 max-w-md text-small text-ink-dim">
+      <p className="mx-auto mt-2.5 max-w-md text-small leading-relaxed text-ink-dim">
         Sentinel analysed {signals.toLocaleString()} {signals === 1 ? "signal" : "signals"} across all connected
         providers. No operational risks were detected.
       </p>
       {status && status.providers.length > 0 && (
-        <div className="mt-5 border-t border-border pt-4">
+        <div className="mx-auto mt-8 max-w-lg border-t border-border pt-6">
           <ProviderPills status={status} />
-          <p className="mt-2.5 text-caption text-ink-faint">
+          <p className="mt-3.5 text-caption text-ink-faint">
             {signals.toLocaleString()} signals analysed · {status.findings_count} findings generated
           </p>
         </div>

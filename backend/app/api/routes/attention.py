@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState, AttentionType
-from app.models.connection import Connection
+from app.models.connection import Connection, Provider
 from app.models.signal import Signal, SignalType
 from app.models.user import User
 from app.providers.registry import spec_for
@@ -207,6 +207,36 @@ def sentinel_status(
             last_synced_at=last,
         ))
 
+    # Meet is not a separate grant - it rides on Calendar events that carry a
+    # meeting link. We surface it as its own "checked" line, honestly labelled,
+    # because "did you look at my meetings?" is a real question to the user and
+    # we truthfully do analyse those links. Its signals are a subset of
+    # Calendar's, so it never inflates the total - only the provider list.
+    cal = next((p for p in providers if p.provider == Provider.GOOGLE_CALENDAR.value), None)
+    if cal is not None:
+        cal_events = session.execute(
+            select(Signal.payload)
+            .join(Connection, Signal.connection_id == Connection.id)
+            .where(
+                Connection.workspace_id == workspace_id,
+                Connection.user_id == user.id,
+                Signal.type == SignalType.CALENDAR_EVENT,
+            )
+        ).scalars().all()
+        meet_count = sum(1 for p in cal_events if p and p.get("has_meeting_link"))
+        providers.append(ProviderStatusOut(
+            provider="google_meet",
+            label="Meet",
+            ok=cal.ok,  # if Calendar is failing, so is our view of Meet
+            state=cal.state,
+            resource_count=0,  # not a resource of its own - a lens on Calendar
+            signal_count=meet_count,
+            live=False,
+            error=None,  # Calendar already reports the underlying error
+            last_synced_at=cal.last_synced_at,
+            note="via Calendar",
+        ))
+
     providers.sort(key=lambda p: p.label.lower())
     # Findings = what Sentinel detected and is still open - the same items the
     # list shows, counted the same way, so the card can never disagree with it.
@@ -218,7 +248,10 @@ def sentinel_status(
         healthy=not errors,
         provider_count=len(providers),
         resource_count=sum(p.resource_count for p in providers),
-        signals_analysed=sum(p.signal_count for p in providers),
+        # Summed from the real per-provider ingest counts, not the provider
+        # list - so Meet, whose signals are a subset of Calendar's, is shown as
+        # its own line without being added to the total twice.
+        signals_analysed=sum(int(v) for v in signal_counts.values()),
         findings_count=findings_count,
         last_synced_at=last_synced,
         providers=providers,

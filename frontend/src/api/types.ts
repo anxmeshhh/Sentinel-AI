@@ -620,6 +620,7 @@ export interface ProviderStatus {
   live: boolean;
   error: string | null;
   last_synced_at: string | null;
+  note: string | null;
 }
 
 export interface SentinelStatus {

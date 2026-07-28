@@ -55,6 +55,30 @@ function severityOf(item: AttentionItem): { dot: string; label: string } {
   return { dot: "bg-watch", label: "FYI" };
 }
 
+/** SECTION 8: the recommended action, deterministic and free on every card -
+ *  a template keyed to the finding's type. It answers "what do I do" without
+ *  an LLM call; Investigate deepens it into specifics. Manual reminders are
+ *  the user's own notes and carry no recommendation. */
+const RECOMMENDED: Record<string, string> = {
+  important_email: "Reply, or archive if it's handled",
+  upcoming_meeting: "Prepare before it starts",
+  stale_pr: "Review it, or nudge the author",
+  deadline: "Act before it's due",
+  finding: "Review the details, then decide",
+};
+
+function recommendedAction(item: AttentionItem): string | null {
+  return item.origin === "manual" ? null : RECOMMENDED[item.type] ?? "Review and decide";
+}
+
+/** Confidence as honesty, not a number: every detected item here is a
+ *  deterministic fact (an unread starred email, a PR open 12 days), so it is
+ *  stated as certain. The inferred layer - a model's reading - is what
+ *  Investigate produces, and it carries its own confidence there. */
+function confidenceLabel(item: AttentionItem): string | null {
+  return item.origin === "manual" ? null : "High — a fact, not an inference";
+}
+
 function shortTime(iso: string): string {
   const d = new Date(iso);
   const today = new Date();
@@ -275,6 +299,14 @@ export function AttentionPage() {
                     {item.due_at && ` · due ${new Date(item.due_at).toLocaleString()}`}
                     {item.state === "snoozed" && item.snoozed_until && ` · snoozed until ${new Date(item.snoozed_until).toLocaleString()}`}
                   </div>
+                  {/* SECTION 8: what to do + how sure - deterministic, on the card. */}
+                  {item.state === "new" && recommendedAction(item) && (
+                    <div className="mt-1.5 text-caption">
+                      <span className="text-ink-faint">▸ Recommended </span>
+                      <span className="text-ink">{recommendedAction(item)}</span>
+                      <span className="ml-2 text-micro text-ink-faint">· Confidence {confidenceLabel(item)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -425,8 +457,9 @@ export function AttentionPage() {
         {findingsList}
       </div>
 
-      {/* SECTION 4 */}
-      <ProvidersChecked status={status} />
+      {/* SECTION 4 — standalone only when findings are shown; the all-clear
+          state folds providers into its own reassurance instead. */}
+      {!showAllClear && <ProvidersChecked status={status} />}
 
       {/* SECTION 5 */}
       <section>
@@ -485,7 +518,13 @@ export function AttentionPage() {
       </p>
 
       {/* SECTION 1 — always visible */}
-      <SentinelStatusCard status={status} onSync={refresh} syncing={refreshing} />
+      <SentinelStatusCard
+        status={status}
+        onSync={refresh}
+        syncing={refreshing}
+        findingsCount={findingsCount}
+        criticalCount={critical}
+      />
 
       {/* SECTION 2 */}
       <TodaysAttention critical={critical} needsReview={needsReview} reminders={reminders} dismissed={dismissedCount} />

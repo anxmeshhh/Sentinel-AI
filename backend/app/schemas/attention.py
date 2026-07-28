@@ -38,6 +38,7 @@ class ProviderStatusOut(BaseModel):
     live: bool  # queried live at request time (Drive), never ingested into signals
     error: str | None  # human-readable reason when not ok
     last_synced_at: datetime | None
+    note: str | None = None  # honest provenance for derived providers (e.g. Meet "via Calendar")
 
 
 class SentinelStatusOut(BaseModel):

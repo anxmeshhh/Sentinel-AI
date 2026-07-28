@@ -40,6 +40,14 @@ def ingest_connection(session: Session, connection: Connection) -> int:
         logger.info("ingest_skipped_paused", connection_id=str(connection.id))
         return 0
 
+    # An anchor - a connected account with no resource chosen yet (repo == "")
+    # - has nothing to sync. Skipped generically so the scheduled poll never
+    # tries to ingest a bare account grant (a Slack workspace before any
+    # channel is picked, a GitHub account before any repo), which has no
+    # handler and nothing to fetch.
+    if not connection.repo:
+        return 0
+
     backfill = GITHUB_BACKFILL if connection.provider == Provider.GITHUB else INITIAL_BACKFILL
     since = connection.last_synced_at or (datetime.now(timezone.utc) - backfill)
     signal_repo = SignalRepository(session, connection.workspace_id)

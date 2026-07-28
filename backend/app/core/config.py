@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # to the workspace (the Phase A per-user connection model).
     github_client_id: str | None = None
     github_client_secret: str | None = None
+    # Slack app (bot token, OAuth v2). Workspace-level grant; the bot only sees
+    # channels it is invited to, which is the access boundary by design.
+    slack_client_id: str | None = None
+    slack_client_secret: str | None = None
     # Legacy single shared PAT. Kept only so an existing .env doesn't fail to
     # load; nothing reads it any more.
     github_default_token: str | None = None

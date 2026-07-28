@@ -26,6 +26,15 @@ class SignalType(str, enum.Enum):
     # pipeline everything else uses, keeping demo mode a data difference
     # rather than a second code path. Phase 2r.
     DRIVE_FILE = "drive_file"
+    # Slack. Declared in Phase 0 (the provider knows what it will produce);
+    # ingestion wires them in Phase 2. These are the raw operational substrate,
+    # NOT findings: a channel had activity in a window, someone was mentioned,
+    # or a message tripped the operational lexicon (blocked/urgent/asap/?).
+    # The *findings* built on them (unanswered request, blocker) are
+    # measurement-gated in Phase 4, deliberately not committed here.
+    CHANNEL_ACTIVITY = "channel_activity"
+    MENTION = "mention"
+    FLAGGED_MESSAGE = "flagged_message"
 
 
 class Signal(Base, UUIDPk, TimestampMixin):

@@ -13,6 +13,7 @@ class Provider(str, enum.Enum):
     GOOGLE_CALENDAR = "google_calendar"
     GMAIL = "gmail"
     GOOGLE_DRIVE = "google_drive"
+    SLACK = "slack"
 
 
 class ResourcePriority(str, enum.Enum):

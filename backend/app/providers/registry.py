@@ -144,6 +144,20 @@ PROVIDERS: dict[Provider, ProviderSpec] = {
             # channel may use.
             resource_scoped=True,
         ),
+        ProviderSpec(
+            key=Provider.SLACK,
+            label="Slack",
+            retrieval=Retrieval.INGESTED,
+            auth=AuthKind.OAUTH,
+            # The raw signals Slack produces, declared now though ingestion is
+            # Phase 2. NOT resource_scoped: like GitHub, each monitored channel
+            # becomes its own Connection (its own bounded scope), so the
+            # connection is the allow-list, not a flag on one shared grant -
+            # that is what separates this from Drive, where a single grant
+            # reaches every file.
+            signal_types=(SignalType.CHANNEL_ACTIVITY, SignalType.MENTION, SignalType.FLAGGED_MESSAGE),
+            resource_scoped=False,
+        ),
     )
 }
 

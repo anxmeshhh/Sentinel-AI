@@ -97,3 +97,10 @@ if MICROSOFT_CONFIGURED:
         server_metadata_url="https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration",
         client_kwargs={"scope": "openid email profile"},
     )
+
+# Slack OAuth v2 is driven manually (see integrations/slack_auth.py), not through
+# authlib: v2 uses comma-separated bot scopes and a non-standard token response
+# (the bot token at `access_token`, plus `team`/`authed_user`), so an explicit
+# exchange is more predictable than bending authlib to it. This flag only gates
+# whether the routes are live.
+SLACK_CONFIGURED = bool(_settings.slack_client_id and _settings.slack_client_secret)

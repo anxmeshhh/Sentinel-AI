@@ -362,6 +362,11 @@ const PROVIDER_FAMILIES: {
     // per-feature routes exist for it (yet), so the family header is the link.
     surfaces: [{ to: "/connections/github", label: "GitHub" }],
   },
+  {
+    label: "Slack",
+    connects: ["slack"],
+    surfaces: [{ to: "/connections/slack", label: "Slack" }],
+  },
 ];
 
 /** The Personal portal's navigation, in three tiers by purpose - Sentinel's

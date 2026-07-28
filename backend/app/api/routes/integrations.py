@@ -12,6 +12,7 @@ create_connect_ticket/decode_connect_ticket docstring for the full reasoning.
 """
 
 import json
+import secrets
 import time
 import uuid
 from datetime import datetime, timezone
@@ -25,7 +26,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.core.auth import InvalidTokenError, create_connect_ticket, decode_connect_ticket
 from app.core.config import get_settings
-from app.core.oauth import GITHUB_CONFIGURED, GOOGLE_CONFIGURED, oauth
+from app.core.oauth import GITHUB_CONFIGURED, GOOGLE_CONFIGURED, SLACK_CONFIGURED, oauth
 from app.core.security import encrypt_token
 from app.models.connection import Connection, Provider
 from app.models.email_summary import EmailSummary
@@ -47,6 +48,8 @@ from app.services.github_connections import (
     set_paused,
     set_priority,
 )
+from app.integrations import slack_auth
+from app.services.slack_connections import connect_slack_workspace
 
 logger = structlog.get_logger("sentinel.integrations")
 
@@ -60,6 +63,7 @@ router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 GOOGLE_CONNECT_PURPOSE = "google_connect"
 GITHUB_CONNECT_PURPOSE = "github_connect"
+SLACK_CONNECT_PURPOSE = "slack_connect"
 
 
 @router.post("/google/connect-ticket", response_model=ConnectTicketOut)
@@ -353,6 +357,106 @@ def upsert_github_connection(session, *, workspace_id, user_id, login, encrypted
 def _account_anchor(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Connection:
     connections = account_connections(session, workspace_id, user_id)
     return next((c for c in connections if not c.repo), connections[0] if connections else None)
+
+
+# --- Slack (Phase 0: connect the workspace) --------------------------------
+# The same connect-ticket + session + callback shape as GitHub, so the flow a
+# user sees is identical across providers. Slack's OAuth v2 is driven manually
+# (see integrations/slack_auth.py) rather than through authlib.
+
+
+@router.post("/slack/connect-ticket", response_model=ConnectTicketOut)
+def create_slack_connect_ticket(
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> ConnectTicketOut:
+    """Mint a short-lived signed ticket carrying who is connecting. The OAuth
+    callback has no auth header, so identity rides in this ticket (validated)
+    plus the session - exactly as the Google/GitHub flows do."""
+    ticket = create_connect_ticket(user_id=user.id, workspace_id=workspace_id, purpose=SLACK_CONNECT_PURPOSE)
+    return ConnectTicketOut(ticket=ticket)
+
+
+@router.get("/slack/connect")
+def slack_connect(request: Request, ticket: str):
+    if not SLACK_CONFIGURED:
+        raise HTTPException(status_code=501, detail="Slack integration is not configured yet")
+    try:
+        user_id, workspace_id = decode_connect_ticket(ticket, expected_purpose=SLACK_CONNECT_PURPOSE)
+    except InvalidTokenError:
+        raise HTTPException(status_code=400, detail="This connect link is invalid or has expired - try again")
+
+    state = secrets.token_urlsafe(24)
+    request.session["slack_connect_user_id"] = str(user_id)
+    request.session["slack_connect_workspace_id"] = str(workspace_id)
+    request.session["slack_connect_return_to"] = _safe_return_path(request.query_params.get("return_to"))
+    request.session["slack_oauth_state"] = state
+
+    redirect_uri = f"{get_settings().backend_base_url}/integrations/slack/callback"
+    return RedirectResponse(slack_auth.authorize_url(
+        client_id=get_settings().slack_client_id, redirect_uri=redirect_uri, state=state,
+    ))
+
+
+@router.get("/slack/callback")
+def slack_connect_callback(request: Request, session: Session = Depends(get_db)):
+    if not SLACK_CONFIGURED:
+        raise HTTPException(status_code=501, detail="Slack integration is not configured yet")
+
+    frontend = get_settings().frontend_base_url
+    workspace_id_str = request.session.pop("slack_connect_workspace_id", None)
+    user_id_str = request.session.pop("slack_connect_user_id", None)
+    expected_state = request.session.pop("slack_oauth_state", None)
+    return_to = _safe_return_path(request.session.pop("slack_connect_return_to", None))
+    if not workspace_id_str or not user_id_str:
+        return RedirectResponse(f"{frontend}/?slack_error=session_expired")
+
+    # State check: the value we handed Slack must be the one that came back,
+    # or this is a forged/replayed callback, not our redirect.
+    if not expected_state or request.query_params.get("state") != expected_state:
+        return RedirectResponse(f"{frontend}/?slack_error=state_mismatch")
+
+    error = request.query_params.get("error")
+    code = request.query_params.get("code")
+    if error or not code:
+        return RedirectResponse(f"{frontend}/?slack_error={error or 'no_code'}")
+
+    redirect_uri = f"{get_settings().backend_base_url}/integrations/slack/callback"
+    try:
+        token_data = slack_auth.exchange_code(
+            client_id=get_settings().slack_client_id,
+            client_secret=get_settings().slack_client_secret,
+            code=code,
+            redirect_uri=redirect_uri,
+        )
+        bot_token = token_data.get("access_token")
+        if not bot_token:
+            return RedirectResponse(f"{frontend}/?slack_error=no_token")
+        # Verify the token and learn the workspace it belongs to. auth.test is
+        # authoritative for team identity, more so than the OAuth response.
+        identity = slack_auth.auth_test(bot_token)
+    except slack_auth.SlackAuthError as exc:
+        logger.warning("slack_oauth_failed", error=str(exc)[:200])
+        return RedirectResponse(f"{frontend}/?slack_error={str(exc)[:80]}")
+    except Exception:
+        logger.warning("slack_oauth_unexpected")
+        return RedirectResponse(f"{frontend}/?slack_error=connect_failed")
+
+    team = token_data.get("team") or {}
+    team_id = team.get("id") or identity.get("team_id") or "unknown-team"
+    team_name = team.get("name") or identity.get("team") or "Slack workspace"
+
+    connect_slack_workspace(
+        session,
+        workspace_id=uuid.UUID(workspace_id_str),
+        user_id=uuid.UUID(user_id_str),
+        team_id=team_id,
+        team_name=team_name,
+        encrypted_token=encrypt_token(bot_token),
+    )
+
+    separator = "&" if "?" in return_to else "?"
+    return RedirectResponse(f"{frontend}{return_to}{separator}connected=slack")
 
 
 @router.get("/github/repos", response_model=list[GitHubRepoOut])

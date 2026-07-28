@@ -74,6 +74,8 @@ export function ConnectionWorkspacePage() {
               <GoogleWorkspace connections={connections} onChanged={load} />
             ) : provider === "github" ? (
               <GitHubWorkspace connections={connections} onChanged={load} />
+            ) : provider === "slack" ? (
+              <SlackWorkspace connections={connections} />
             ) : (
               <ComingSoonWorkspace label={meta.label} />
             )}
@@ -582,6 +584,69 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
       <p className="mt-3 text-caption text-ink-dim">
         🔒 PR, commit, issue and review metadata only — never source code.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Slack, Phase 0 - connect the workspace.
+ *
+ * One bot-token grant per workspace. Phase 0 is only the connection: channel
+ * discovery, classification and operational intelligence follow in Phase 1.
+ * The connect flow is the same connect-ticket redirect every provider uses.
+ */
+function SlackWorkspace({ connections }: { connections: Connection[] }) {
+  const slack = connections.find((c) => c.provider === "slack");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function connect() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { ticket } = await api.post<{ ticket: string }>("/integrations/slack/connect-ticket");
+      const returnTo = encodeURIComponent("/connections/slack");
+      window.location.href = `${API_BASE}/integrations/slack/connect?ticket=${encodeURIComponent(ticket)}&return_to=${returnTo}`;
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't start the Slack connection");
+      setBusy(false);
+    }
+  }
+
+  if (!slack) {
+    return (
+      <div className="rounded-md border border-border p-6">
+        <p className="text-body font-medium text-ink">Connect your Slack workspace</p>
+        <p className="mt-1.5 max-w-lg text-small leading-relaxed text-ink-dim">
+          Sentinel reads operational activity across the channels you choose — it never mirrors your messages,
+          and it only sees channels its bot is invited to.
+        </p>
+        {error && <p className="mt-3 text-small text-crit">{error}</p>}
+        <button onClick={connect} disabled={busy} className="btn-primary mt-4">
+          {busy ? "Starting…" : "Connect Slack"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-border p-6">
+      <div className="flex items-center gap-2.5">
+        <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-good" />
+        <p className="text-body font-medium text-ink">Connected to {slack.org || "your Slack workspace"}</p>
+      </div>
+      <p className="mt-2 max-w-lg text-small leading-relaxed text-ink-dim">
+        Sentinel can now reach this workspace. Channel discovery, classification and operational
+        intelligence arrive next (Phase 1).
+      </p>
+      {error && <p className="mt-3 text-small text-crit">{error}</p>}
+      <button
+        onClick={connect}
+        disabled={busy}
+        className="mt-4 rounded-md border border-border px-3 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
+      >
+        {busy ? "Starting…" : "Reconnect"}
+      </button>
     </div>
   );
 }

@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ActionPanel } from "./ActionPanel";
 import { CommitmentStrip } from "./CommitmentStrip";
 import { GoalPanel } from "./GoalPanel";
 import { ProactiveStrip } from "./ProactiveStrip";
 
-type TabKey = "now" | "risks" | "commitments" | "goals";
+export type TabKey = "now" | "risks" | "commitments" | "goals";
 
 const TABS: { key: TabKey; label: string; question: string }[] = [
   { key: "now", label: "Now", question: "What needs my attention, and what does Sentinel want to do?" },
@@ -36,14 +36,30 @@ export function IntelligenceTabs({
   teamId,
   attention,
   counts,
+  autoFocus,
 }: {
   scope: "personal" | "channel";
   teamId?: string;
   /** The attention list itself, rendered by the page that owns its state. */
   attention: React.ReactNode;
   counts?: { attention?: number; risks?: number; commitments?: number; goals?: number };
+  /** The tab to open by default so the content matches the verdict - the
+   *  highest-priority non-empty category. Applied once, when it first
+   *  arrives; a manual tab click from then on always wins. */
+  autoFocus?: TabKey;
 }) {
   const [tab, setTab] = useState<TabKey>("now");
+  // The page decides the opening tab from data that loads asynchronously, so
+  // autoFocus arrives after mount. Apply it the moment it does - but never
+  // over a tab the user has already chosen themselves.
+  const touched = useRef(false);
+  useEffect(() => {
+    if (autoFocus && !touched.current) setTab(autoFocus);
+  }, [autoFocus]);
+  function selectTab(key: TabKey) {
+    touched.current = true;
+    setTab(key);
+  }
   const active = TABS.find((t) => t.key === tab)!;
 
   function badge(key: TabKey): number | undefined {
@@ -74,7 +90,7 @@ export function IntelligenceTabs({
               aria-selected={selected}
               aria-controls={`panel-${t.key}`}
               id={`tab-${t.key}`}
-              onClick={() => setTab(t.key)}
+              onClick={() => selectTab(t.key)}
               className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-small transition-colors ${
                 selected
                   ? "border-accent font-semibold text-ink"

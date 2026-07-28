@@ -10,7 +10,7 @@ import { workspaceContext } from "../components/context";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
 import { InvestigationPanel, useInvestigation } from "../components/InvestigationPanel";
-import { IntelligenceTabs } from "../components/IntelligenceTabs";
+import { IntelligenceTabs, type TabKey } from "../components/IntelligenceTabs";
 import {
   FindingsEmptyState,
   ProvidersChecked,
@@ -79,6 +79,24 @@ function confidenceLabel(item: AttentionItem): string | null {
   return item.origin === "manual" ? null : "High — a fact, not an inference";
 }
 
+/** The tab the page should open on, so the content immediately matches the
+ *  narrative verdict: the highest-priority non-empty category. Critical items
+ *  live in Now (a critical attention item) or Risks (a critical situation) -
+ *  open where they actually are. Below critical, the order is the intended
+ *  Risks -> Commitments -> Goals -> Now, with Now as the quiet default. */
+function pickFocusTab(
+  status: SentinelStatus,
+  counts: { risks?: number; commitments?: number; goals?: number },
+  open: AttentionItem[],
+): TabKey {
+  const criticalAttention = open.filter((i) => i.origin === "detected" && i.priority >= 0.8).length;
+  if (status.critical_count > 0) return criticalAttention > 0 ? "now" : "risks";
+  if ((counts.risks ?? 0) > 0) return "risks";
+  if ((counts.commitments ?? 0) > 0) return "commitments";
+  if ((counts.goals ?? 0) > 0) return "goals";
+  return "now";
+}
+
 function shortTime(iso: string): string {
   const d = new Date(iso);
   const today = new Date();
@@ -112,6 +130,7 @@ export function AttentionPage() {
   const [openItems, setOpenItems] = useState<AttentionItem[]>([]);
   const [dismissedCount, setDismissedCount] = useState(0);
   const [tabCounts, setTabCounts] = useState<{ risks?: number; commitments?: number; goals?: number }>({});
+  const [focusTab, setFocusTab] = useState<TabKey | undefined>(undefined);
   const [assistantOpen, setAssistantOpen] = useState(false);
 
   const [newTitle, setNewTitle] = useState("");
@@ -128,23 +147,25 @@ export function AttentionPage() {
     }
   }
 
-  /** Everything the status card, summary and tab badges need. All non-fatal:
-   *  the findings list stands on its own if any of these fail. */
+  /** Everything the status card, summary, tab badges and opening tab need. All
+   *  non-fatal: the findings list stands on its own if any of these fail. */
   async function loadMeta() {
-    api.get<SentinelStatus>("/attention/status").then(setStatus).catch(() => setStatus(null));
-    api.get<AttentionItem[]>("/attention?state=new").then(setOpenItems).catch(() => setOpenItems([]));
-    api.get<AttentionItem[]>("/attention?state=dismissed").then((d) => setDismissedCount(d.length)).catch(() => {});
-    Promise.allSettled([
-      api.get<Situation[]>("/proactive"),
-      api.get<Commitment[]>("/commitments"),
-      api.get<Goal[]>("/goals"),
-    ]).then(([r, c, g]) =>
-      setTabCounts({
-        risks: r.status === "fulfilled" ? r.value.length : undefined,
-        commitments: c.status === "fulfilled" ? c.value.length : undefined,
-        goals: g.status === "fulfilled" ? g.value.length : undefined,
-      }),
-    );
+    const [st, open, dismissed, r, c, g] = await Promise.all([
+      api.get<SentinelStatus>("/attention/status").catch(() => null),
+      api.get<AttentionItem[]>("/attention?state=new").catch(() => [] as AttentionItem[]),
+      api.get<AttentionItem[]>("/attention?state=dismissed").catch(() => [] as AttentionItem[]),
+      api.get<Situation[]>("/proactive").catch(() => null),
+      api.get<Commitment[]>("/commitments").catch(() => null),
+      api.get<Goal[]>("/goals").catch(() => null),
+    ]);
+    setStatus(st);
+    setOpenItems(open);
+    setDismissedCount(dismissed.length);
+    const counts = { risks: r?.length, commitments: c?.length, goals: g?.length };
+    setTabCounts(counts);
+    // Decide the opening tab once, when the counts are in. IntelligenceTabs
+    // applies it only until the user picks a tab themselves.
+    if (st) setFocusTab(pickFocusTab(st, counts, open));
   }
 
   useEffect(() => {
@@ -556,6 +577,7 @@ export function AttentionPage() {
         scope="personal"
         counts={{ attention: nowCount, ...tabCounts }}
         attention={nowContent}
+        autoFocus={focusTab}
       />
     </div>
   );

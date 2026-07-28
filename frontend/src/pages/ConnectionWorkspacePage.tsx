@@ -6,7 +6,7 @@ import { api, ApiError } from "../api/client";
 import type { Connection, GitHubRepo, GitHubRepository } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { ConnectScopeDialog } from "../components/ConnectScopeDialog";
-import { SentinelPanel } from "../components/SentinelPanel";
+import { SentinelPanel, type SuggestionGroup } from "../components/SentinelPanel";
 import { workspaceContext } from "../components/context";
 import { ScopeNotice, scopeOf } from "../components/ScopeBadge";
 import { useWorkspace } from "../context/WorkspaceContext";
@@ -42,10 +42,11 @@ export function ConnectionWorkspacePage() {
 
   const meta = PROVIDER_META[provider];
 
-  // The AI panel only exists where the orchestrator actually has tools -
-  // Google today. Showing it on GitHub/coming-soon pages would promise an
-  // intelligence that isn't wired up yet.
-  const showPanel = meta != null && provider === "google" && !loading && connections.length > 0;
+  // The assistant appears for every provider that has one wired up. Each is the
+  // same panel and interaction, differing only in its context label, endpoint
+  // and suggested prompts - so the experience is identical across providers.
+  const assistant = ASSISTANTS[provider];
+  const showPanel = meta != null && assistant != null && !loading && connections.length > 0;
 
   return (
     <div className="flex flex-col gap-6 xl:flex-row">
@@ -80,15 +81,70 @@ export function ConnectionWorkspacePage() {
         )}
       </div>
 
-      {showPanel && <AISidebar />}
+      {showPanel && <AISidebar config={assistant} />}
     </div>
   );
 }
 
+/** Per-provider assistant config. The panel and interaction are identical
+ *  across providers; only these three things change - what Sentinel is scoped
+ *  to, which endpoint answers, and the prompts it suggests. Adding a provider's
+ *  assistant is a new entry here plus its backend router, nothing structural. */
+interface AssistantConfig {
+  contextLabel: string;
+  endpointBase?: string;
+  placeholder?: string;
+  suggestions?: string[];
+  suggestionGroups?: SuggestionGroup[];
+}
+
+const ASSISTANTS: Record<string, AssistantConfig> = {
+  google: {
+    contextLabel: "Google Workspace",
+    suggestions: [
+      "What are my most important unread emails?",
+      "What's on my calendar this week?",
+      "Find my most recently edited Drive files",
+    ],
+  },
+  github: {
+    contextLabel: "GitHub",
+    endpointBase: "/connections/github",
+    placeholder: "Ask about your repositories…",
+    suggestionGroups: [
+      {
+        label: "Repository Health",
+        prompts: [
+          "Which repositories need my attention?",
+          "Show me inactive repositories.",
+          "Which repositories are at risk?",
+        ],
+      },
+      {
+        label: "Development",
+        prompts: [
+          "What changed this week?",
+          "Summarize recent development activity.",
+          "Which pull requests are waiting?",
+          "Which issues need review?",
+        ],
+      },
+      {
+        label: "Insights",
+        prompts: [
+          "Which repositories should I prioritize?",
+          "Compare activity across repositories.",
+          "Give me a GitHub briefing.",
+        ],
+      },
+    ],
+  },
+};
+
 /** The persistent Sentinel panel: main area is where you work manually,
  *  this is where you ask for help with whatever you're looking at.
  *  Collapsible so the main workspace can take the full width. */
-function AISidebar() {
+function AISidebar({ config }: { config: AssistantConfig }) {
   const { active } = useWorkspace();
   const [open, setOpen] = useState(true);
 
@@ -113,13 +169,12 @@ function AISidebar() {
     <aside className="w-full flex-none xl:w-[380px]">
       <div className="card overflow-hidden p-0 sm:p-0 xl:sticky xl:top-6 xl:h-[calc(100vh-6rem)]" style={{ minHeight: 420 }}>
         <SentinelPanel
-          contextLabel="Google Workspace"
+          contextLabel={config.contextLabel}
           identity={workspaceContext(active)}
-          suggestions={[
-            "What are my most important unread emails?",
-            "What's on my calendar this week?",
-            "Find my most recently edited Drive files",
-          ]}
+          endpointBase={config.endpointBase}
+          placeholder={config.placeholder}
+          suggestions={config.suggestions}
+          suggestionGroups={config.suggestionGroups}
           header={
             <button onClick={() => setOpen(false)} aria-label="Collapse Sentinel" className="rounded-md p-1 text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink">
               <Icon name="close" size={14} />

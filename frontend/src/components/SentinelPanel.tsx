@@ -70,7 +70,13 @@ const SOURCE_KIND_LABEL: Record<string, string> = {
   event: "Event",
   meeting: "Meeting",
   file: "File",
+  repo: "Repo",
 };
+
+export interface SuggestionGroup {
+  label: string;
+  prompts: string[];
+}
 
 export function SentinelPanel({
   contextLabel,
@@ -79,6 +85,7 @@ export function SentinelPanel({
   contextPrefix,
   placeholder,
   suggestions = [],
+  suggestionGroups,
   header,
 }: {
   /** Shown as "Using: …" - the user must never wonder what Sentinel can see. */
@@ -93,6 +100,11 @@ export function SentinelPanel({
   placeholder?: string;
   /** Example prompts for the empty state - contextual, clickable. */
   suggestions?: string[];
+  /** Grouped example prompts (e.g. GitHub's Repository Health / Development /
+   *  Insights). When provided, rendered as labelled groups instead of a flat
+   *  list. Same interaction, richer taxonomy - so a provider with many
+   *  capabilities can organise them without a different component. */
+  suggestionGroups?: SuggestionGroup[];
   /** Optional extra header content (e.g. a collapse button from the parent). */
   header?: ReactNode;
 }) {
@@ -187,7 +199,7 @@ export function SentinelPanel({
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {turns.length === 0 ? (
-          <EmptyState contextLabel={contextLabel} suggestions={suggestions} onPick={(s) => void send(s)} />
+          <EmptyState contextLabel={contextLabel} suggestions={suggestions} suggestionGroups={suggestionGroups} onPick={(s) => void send(s)} />
         ) : (
           <div className="flex flex-col gap-5">
             {turns.map((turn, i) => (
@@ -216,33 +228,54 @@ export function SentinelPanel({
   );
 }
 
+function SuggestionButton({ prompt, onPick }: { prompt: string; onPick: (s: string) => void }) {
+  return (
+    <button
+      onClick={() => onPick(prompt)}
+      className="w-full rounded-md border border-border px-3 py-2 text-left text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
+    >
+      {prompt}
+    </button>
+  );
+}
+
 function EmptyState({
   contextLabel,
   suggestions,
+  suggestionGroups,
   onPick,
 }: {
   contextLabel: string;
   suggestions: string[];
+  suggestionGroups?: SuggestionGroup[];
   onPick: (s: string) => void;
 }) {
+  const grouped = suggestionGroups && suggestionGroups.length > 0;
   return (
     <div className="flex h-full flex-col items-start justify-end gap-4 pb-2">
       <p className="text-caption leading-relaxed text-ink-faint">
         Sentinel can only see what's authorized in <span className="text-ink-dim">{contextLabel}</span>. Anything that
         would change your data is shown as a plan you confirm first.
       </p>
-      {suggestions.length > 0 && (
-        <div className="flex w-full flex-col gap-1.5">
-          {suggestions.map((s) => (
-            <button
-              key={s}
-              onClick={() => onPick(s)}
-              className="w-full rounded-md border border-border px-3 py-2 text-left text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
-            >
-              {s}
-            </button>
+      {grouped ? (
+        <div className="flex w-full flex-col gap-3.5">
+          {suggestionGroups!.map((g) => (
+            <div key={g.label} className="flex w-full flex-col gap-1.5">
+              <div className="text-micro font-medium uppercase tracking-wide text-ink-faint">{g.label}</div>
+              {g.prompts.map((p) => (
+                <SuggestionButton key={p} prompt={p} onPick={onPick} />
+              ))}
+            </div>
           ))}
         </div>
+      ) : (
+        suggestions.length > 0 && (
+          <div className="flex w-full flex-col gap-1.5">
+            {suggestions.map((s) => (
+              <SuggestionButton key={s} prompt={s} onPick={onPick} />
+            ))}
+          </div>
+        )
       )}
     </div>
   );

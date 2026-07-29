@@ -37,6 +37,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   google_calendar: "Calendar",
   google_drive: "Drive",
   github: "GitHub",
+  slack: "Slack",
   agent: "Sentinel",
 };
 
@@ -65,6 +66,9 @@ const RECOMMENDED: Record<string, string> = {
   stale_pr: "Review it, or nudge the author",
   deadline: "Act before it's due",
   finding: "Review the details, then decide",
+  slack_mention: "Reply in the thread, or delegate it",
+  slack_blocker: "Unblock it, or escalate the blocker",
+  slack_urgent: "Open the channel and triage",
 };
 
 function recommendedAction(item: AttentionItem): string | null {

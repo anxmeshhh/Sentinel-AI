@@ -31,6 +31,13 @@ class AttentionType(str, enum.Enum):
     FINDING = "finding"
     MANUAL = "manual"
     DEADLINE = "deadline"  # a dated commitment found in an email subject or document (Phase 2t)
+    # Slack operational findings (Phase 3), each from a deterministic detector
+    # over ingested Slack signals - no LLM. A mention in a channel a person
+    # marked critical; a message flagged as a blocker; a burst of urgent signals
+    # (repeated, or a multi-person incident forming).
+    SLACK_MENTION = "slack_mention"
+    SLACK_BLOCKER = "slack_blocker"
+    SLACK_URGENT = "slack_urgent"
 
 
 class AttentionState(str, enum.Enum):

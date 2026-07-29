@@ -518,7 +518,16 @@ export interface CalendarPlan {
 
 export interface AttentionItem {
   id: string;
-  type: "important_email" | "upcoming_meeting" | "stale_pr" | "finding" | "manual" | "deadline";
+  type:
+    | "important_email"
+    | "upcoming_meeting"
+    | "stale_pr"
+    | "finding"
+    | "manual"
+    | "deadline"
+    | "slack_mention"
+    | "slack_blocker"
+    | "slack_urgent";
   origin: "detected" | "manual";
   state: "new" | "done" | "snoozed" | "dismissed";
   source_provider: string | null;

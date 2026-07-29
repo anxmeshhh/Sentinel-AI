@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.models.agent_run import AgentRun
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState, AttentionType
-from app.models.connection import Connection
+from app.models.connection import Connection, Provider, ResourcePriority
 from app.models.finding import Finding
 from app.models.signal import Signal, SignalType
 from app.services.deadline_parser import find_deadline
@@ -41,6 +41,139 @@ DEADLINE_CAP = 8
 FINDING_MIN_SEVERITY = 0.6
 FINDING_LOOKBACK_DAYS = 3
 MEETING_EXPIRY_GRACE_HOURS = 2
+
+# --- Slack findings (Phase 3) ----------------------------------------------
+# Deterministic detectors over ingested Slack signals. Windows are short
+# because chat is fast-moving: a blocker or a mention matters now, not last
+# week. Caps keep a busy workspace from flooding the briefing.
+SLACK_MENTION_LOOKBACK_DAYS = 3
+SLACK_FLAG_LOOKBACK_DAYS = 3
+SLACK_URGENT_WINDOW_HOURS = 12
+SLACK_URGENT_MIN = 3  # this many flagged messages in the window is a burst
+SLACK_CAP = 5
+# Lexicon slices used only for severity - which flavour of urgent this is. The
+# words themselves are matched at ingest (services/slack_signals.py).
+_BLOCKER_TERMS = {"blocked", "blocker"}
+_INCIDENT_TERMS = {"incident", "outage", "down", "escalate", "escalation"}
+
+
+def _slack_permalink(channel_id: str, ts: str) -> str:
+    """A domain-agnostic deep link that opens the exact message in the user's
+    Slack. Evidence for a Slack finding is always the message it came from."""
+    return f"https://slack.com/app_redirect?channel={channel_id}&message_ts={ts}"
+
+
+def _slack_signals(session: Session, workspace_id: uuid.UUID, sig_type: SignalType, since: datetime):
+    """Signals of one type from monitored (non-paused) Slack channels, newest
+    first, joined to their channel so priority and #name are on hand."""
+    return session.execute(
+        select(Signal, Connection)
+        .join(Connection, Connection.id == Signal.connection_id)
+        .where(
+            Signal.workspace_id == workspace_id,
+            Signal.type == sig_type,
+            Signal.occurred_at >= since,
+            Connection.provider == Provider.SLACK,
+            Connection.paused_at.is_(None),
+        )
+        .order_by(Signal.occurred_at.desc())
+    ).all()
+
+
+def _detect_slack_priority_mentions(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """A mention in a channel a person marked CRITICAL. The classification is
+    what makes it high-priority: Slack already notifies plain mentions, so
+    surfacing every one would just duplicate Slack. Only the ones in channels
+    declared to matter reach the briefing."""
+    rows = _slack_signals(session, workspace_id, SignalType.MENTION, now - timedelta(days=SLACK_MENTION_LOOKBACK_DAYS))
+    candidates: list[dict] = []
+    for sig, conn in rows:
+        if conn.priority is not ResourcePriority.CRITICAL:
+            continue
+        age = _age_days(now, sig.occurred_at)
+        snippet = (sig.payload or {}).get("snippet") or ""
+        candidates.append({
+            "dedupe_key": f"slack_mention:{sig.external_id}",
+            "connection_id": conn.id,
+            "type": AttentionType.SLACK_MENTION,
+            "source_provider": "slack",
+            "title": f"Mention in {conn.full_name}",
+            "why": f"Mentioned in a critical channel {('today' if age == 0 else f'{age}d ago')}: {snippet[:140]}",
+            "evidence_url": _slack_permalink(conn.repo, sig.external_id),
+            "priority": 0.75,
+        })
+        if len(candidates) >= SLACK_CAP:
+            break
+    return candidates
+
+
+def _detect_slack_blockers(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """A message flagged as a blocker (the lexicon matched 'blocked'/'blocker').
+    One finding per flagged message; it auto-resolves when the message ages out
+    of the window."""
+    rows = _slack_signals(session, workspace_id, SignalType.FLAGGED_MESSAGE, now - timedelta(days=SLACK_FLAG_LOOKBACK_DAYS))
+    candidates: list[dict] = []
+    for sig, conn in rows:
+        if not (set((sig.payload or {}).get("matched") or []) & _BLOCKER_TERMS):
+            continue
+        snippet = (sig.payload or {}).get("snippet") or ""
+        candidates.append({
+            "dedupe_key": f"slack_blocker:{sig.external_id}",
+            "connection_id": conn.id,
+            "type": AttentionType.SLACK_BLOCKER,
+            "source_provider": "slack",
+            "title": f"Possible blocker in {conn.full_name}",
+            "why": f"Flagged as blocked in {conn.full_name}: {snippet[:140]}",
+            "evidence_url": _slack_permalink(conn.repo, sig.external_id),
+            "priority": 0.75 if conn.priority is ResourcePriority.CRITICAL else 0.6,
+        })
+        if len(candidates) >= SLACK_CAP:
+            break
+    return candidates
+
+
+def _detect_slack_urgent(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """A burst of urgent signals in one channel - repeated urgency, or a
+    multi-person incident forming. Aggregated to ONE finding per channel, so a
+    storm of messages is one situation and not fifty items, and it auto-resolves
+    when the burst falls back below the threshold."""
+    rows = _slack_signals(session, workspace_id, SignalType.FLAGGED_MESSAGE, now - timedelta(hours=SLACK_URGENT_WINDOW_HOURS))
+
+    by_channel: dict[uuid.UUID, dict] = {}
+    for sig, conn in rows:
+        grp = by_channel.setdefault(conn.id, {"conn": conn, "sigs": []})
+        grp["sigs"].append(sig)
+
+    candidates: list[dict] = []
+    for grp in by_channel.values():
+        conn, sigs = grp["conn"], grp["sigs"]
+        actors = {s.actor for s in sigs if s.actor}
+        terms: set[str] = set()
+        for s in sigs:
+            terms |= set((s.payload or {}).get("matched") or [])
+        incident = bool(terms & _INCIDENT_TERMS) and len(actors) >= 2
+        if not (len(sigs) >= SLACK_URGENT_MIN or incident):
+            continue
+        if incident:
+            title = f"Possible incident forming in {conn.full_name}"
+            why = (f"{len(sigs)} urgent messages from {len(actors)} people in the last "
+                   f"{SLACK_URGENT_WINDOW_HOURS}h — {', '.join(sorted(terms & _INCIDENT_TERMS))}")
+            priority = 0.85
+        else:
+            title = f"Repeated urgent signals in {conn.full_name}"
+            why = f"{len(sigs)} messages flagged urgent in {conn.full_name} in the last {SLACK_URGENT_WINDOW_HOURS}h"
+            priority = 0.65
+        candidates.append({
+            "dedupe_key": f"slack_urgent:{conn.repo}",  # one per channel
+            "connection_id": conn.id,
+            "type": AttentionType.SLACK_URGENT,
+            "source_provider": "slack",
+            "title": title,
+            "why": why,
+            "evidence_url": _slack_permalink(conn.repo, sigs[0].external_id),
+            "priority": priority,
+        })
+    return candidates
 
 
 def refresh_attention(
@@ -63,6 +196,9 @@ def refresh_attention(
         + _detect_stale_prs(session, workspace_id, now)
         + _detect_findings(session, workspace_id, now)
         + _detect_deadlines(session, workspace_id, now)
+        + _detect_slack_priority_mentions(session, workspace_id, now)
+        + _detect_slack_blockers(session, workspace_id, now)
+        + _detect_slack_urgent(session, workspace_id, now)
     ):
         detected[candidate["dedupe_key"]] = candidate
 

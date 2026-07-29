@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
-import type { Connection, GitHubRepo, GitHubRepository, SlackChannel } from "../api/types";
+import type { Connection, GitHubRepo, GitHubRepository, SlackChannel, SlackChannelResource } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { ConnectScopeDialog } from "../components/ConnectScopeDialog";
 import { SentinelPanel, type SuggestionGroup } from "../components/SentinelPanel";
@@ -588,30 +588,54 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
   );
 }
 
+const CHANNEL_STATE: Record<string, { label: string; tone: string }> = {
+  ready: { label: "Ready", tone: "text-good" },
+  syncing: { label: "Awaiting first sync", tone: "text-ink-faint" },
+  error: { label: "Sync failing", tone: "text-crit" },
+  paused: { label: "Paused", tone: "text-ink-faint" },
+  token_revoked: { label: "Reconnect needed", tone: "text-crit" },
+  needs_setup: { label: "Not set up", tone: "text-watch" },
+};
+
 /**
- * Slack, Phase 0 - connect the workspace.
+ * Slack as a multi-channel provider - the same shape as GitHub's repositories.
  *
- * One bot-token grant per workspace. Phase 0 is only the connection: channel
- * discovery, classification and operational intelligence follow in Phase 1.
- * The connect flow is the same connect-ticket redirect every provider uses.
+ * One bot-token grant, several monitored channels, each its own Connection so
+ * each can be paused, classified or removed on its own. Managed over the shared
+ * provider-account helper, not Slack-specific logic. A channel can only be
+ * monitored once the bot is a member of it (invite is the access boundary).
  */
 function SlackWorkspace({ connections }: { connections: Connection[] }) {
   const slack = connections.find((c) => c.provider === "slack");
-  const [busy, setBusy] = useState(false);
+  const [monitored, setMonitored] = useState<SlackChannelResource[] | null>(null);
+  const [available, setAvailable] = useState<SlackChannel[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [channels, setChannels] = useState<SlackChannel[] | null>(null);
-  const [channelsError, setChannelsError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setMonitored(await api.get<SlackChannelResource[]>("/integrations/slack/monitored"));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't load monitored channels");
+    }
+  }, []);
 
   useEffect(() => {
-    if (!slack) return;
-    api
-      .get<SlackChannel[]>("/integrations/slack/channels")
-      .then(setChannels)
-      .catch((e) => setChannelsError(e instanceof ApiError ? e.message : "Couldn't load channels"));
-  }, [slack]);
+    if (slack) void load();
+  }, [slack, load]);
+
+  async function loadAvailable() {
+    setAdding(true);
+    try {
+      setAvailable(await api.get<SlackChannel[]>("/integrations/slack/channels"));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't load channels");
+    }
+  }
 
   async function connect() {
-    setBusy(true);
+    setBusy("connect");
     setError(null);
     try {
       const { ticket } = await api.post<{ ticket: string }>("/integrations/slack/connect-ticket");
@@ -619,7 +643,47 @@ function SlackWorkspace({ connections }: { connections: Connection[] }) {
       window.location.href = `${API_BASE}/integrations/slack/connect?ticket=${encodeURIComponent(ticket)}&return_to=${returnTo}`;
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't start the Slack connection");
-      setBusy(false);
+      setBusy(null);
+    }
+  }
+
+  async function monitorChannel(ch: SlackChannel) {
+    setBusy(ch.id);
+    setError(null);
+    try {
+      await api.post("/integrations/slack/monitored", { channel_id: ch.id, name: ch.name });
+      await load();
+      await loadAvailable();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't start monitoring that channel");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function setPriority(id: string, priority: string) {
+    setBusy(id);
+    setError(null);
+    try {
+      await api.patch(`/integrations/slack/monitored/${id}/priority`, { priority });
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function channelAction(id: string, verb: "pause" | "resume" | "remove") {
+    setBusy(id);
+    setError(null);
+    try {
+      if (verb === "remove") await api.delete(`/integrations/slack/monitored/${id}`);
+      else await api.post(`/integrations/slack/monitored/${id}/${verb}`);
+      await load();
+      if (adding) await loadAvailable();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "That didn't work");
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -632,76 +696,139 @@ function SlackWorkspace({ connections }: { connections: Connection[] }) {
           and it only sees channels its bot is invited to.
         </p>
         {error && <p className="mt-3 text-small text-crit">{error}</p>}
-        <button onClick={connect} disabled={busy} className="btn-primary mt-4">
-          {busy ? "Starting…" : "Connect Slack"}
+        <button onClick={connect} disabled={busy === "connect"} className="btn-primary mt-4">
+          {busy === "connect" ? "Starting…" : "Connect Slack"}
         </button>
       </div>
     );
   }
 
-  const memberCount = channels?.filter((c) => c.is_member).length ?? 0;
+  const addable = (available ?? []).filter((c) => c.is_member && !c.monitored);
+  const needInvite = (available ?? []).filter((c) => !c.is_member);
+
   return (
     <div className="flex flex-col gap-5">
+      {error && <p className="text-small text-crit">{error}</p>}
+
       <div className="rounded-md border border-border p-6">
-        <div className="flex items-center gap-2.5">
-          <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-good" />
-          <p className="text-body font-medium text-ink">Connected to {slack.org || "your Slack workspace"}</p>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-good" />
+            <p className="text-body font-medium text-ink">Connected to {slack.org || "your Slack workspace"}</p>
+          </div>
+          <button onClick={connect} className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink">
+            Reconnect
+          </button>
         </div>
         <p className="mt-2 max-w-lg text-small leading-relaxed text-ink-dim">
-          Sentinel can see this workspace's channels. To monitor a channel, invite the bot to it —
-          <span className="font-mono text-ink"> /invite @sentinel</span> — then classification and operational
-          intelligence follow.
+          Each monitored channel is watched independently. Sentinel never mirrors your messages — it reads a
+          channel's activity to surface operational signals.
         </p>
-        {error && <p className="mt-3 text-small text-crit">{error}</p>}
-        <button
-          onClick={connect}
-          disabled={busy}
-          className="mt-4 rounded-md border border-border px-3 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
-        >
-          {busy ? "Starting…" : "Reconnect"}
-        </button>
       </div>
 
-      {/* Phase 1 — channel discovery. Management (classify / monitor) builds on this. */}
+      {/* Monitored channels — managed like repositories. */}
       <div>
-        <div className="mb-2.5 flex items-baseline justify-between">
-          <h3 className="text-micro uppercase tracking-wide text-ink-faint">Channels discovered</h3>
-          {channels && (
-            <span className="text-caption text-ink-faint">
-              {channels.length} channel{channels.length === 1 ? "" : "s"} · bot in {memberCount}
-            </span>
-          )}
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="text-body font-semibold text-ink">
+            Monitoring {monitored?.length ?? 0} {monitored?.length === 1 ? "channel" : "channels"}
+          </div>
+          <button
+            onClick={() => (adding ? setAdding(false) : loadAvailable())}
+            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
+          >
+            {adding ? "Done adding" : "+ Add channel"}
+          </button>
         </div>
-        {channelsError ? (
-          <p className="rounded-md border border-border px-4 py-3 text-small text-crit">{channelsError}</p>
-        ) : channels === null ? (
+
+        {monitored === null ? (
           <LoadingBlock />
-        ) : channels.length === 0 ? (
-          <p className="rounded-md border border-border px-4 py-6 text-center text-small text-ink-faint">
-            No public channels found in this workspace.
+        ) : monitored.length === 0 ? (
+          <p className="mb-3 text-small text-ink-dim">
+            No channels yet.{" "}
+            <button onClick={loadAvailable} className="text-accent-text hover:underline">Add one</button> the bot is in to start.
           </p>
         ) : (
-          <div className="flex flex-col gap-1.5">
-            {channels.map((ch) => (
-              <div key={ch.id} className="flex items-center gap-3 rounded-md border border-border bg-surface px-3.5 py-2.5">
-                <span className="min-w-0 flex-1 truncate text-small text-ink">
-                  <span className="text-ink-faint">#</span>
-                  {ch.name}
-                  {ch.topic && <span className="ml-2 text-caption text-ink-faint">{ch.topic}</span>}
-                </span>
-                {ch.num_members != null && (
-                  <span className="flex-none text-micro tabular-nums text-ink-faint">{ch.num_members} members</span>
-                )}
-                {ch.is_member ? (
-                  <span className="flex-none rounded-sm border border-good/40 px-1.5 py-px text-micro text-good">bot in channel</span>
-                ) : (
-                  <span className="flex-none rounded-sm border border-border px-1.5 py-px text-micro text-ink-faint">invite to monitor</span>
-                )}
-              </div>
-            ))}
+          <div className="flex flex-col gap-2">
+            {monitored.map((ch) => {
+              const state = CHANNEL_STATE[ch.state] ?? CHANNEL_STATE.ready;
+              return (
+                <div key={ch.connection_id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-surface p-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-small font-semibold text-ink">{ch.name}</div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-micro text-ink-faint">
+                      <span className={`font-mono uppercase tracking-wide ${state.tone}`}>{state.label}</span>
+                      <span>· {ch.signal_count} signal{ch.signal_count === 1 ? "" : "s"}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-none items-center gap-2.5 text-caption">
+                    <select
+                      value={ch.priority}
+                      onChange={(e) => setPriority(ch.connection_id, e.target.value)}
+                      disabled={busy === ch.connection_id}
+                      title="How much this channel matters. Only Critical will surface its silence as a finding."
+                      className="rounded-md border border-border bg-transparent px-1.5 py-1 text-micro text-ink-dim outline-none focus:border-border-strong disabled:opacity-50"
+                    >
+                      <option value="critical">Critical</option>
+                      <option value="normal">Normal</option>
+                      <option value="low">Low</option>
+                      <option value="experimental">Experimental</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                    {ch.paused ? (
+                      <button onClick={() => channelAction(ch.connection_id, "resume")} disabled={busy === ch.connection_id} className="text-ink-faint underline underline-offset-2 hover:text-good disabled:opacity-50">
+                        Resume
+                      </button>
+                    ) : (
+                      <button onClick={() => channelAction(ch.connection_id, "pause")} disabled={busy === ch.connection_id} className="text-ink-faint underline underline-offset-2 hover:text-watch disabled:opacity-50">
+                        Pause
+                      </button>
+                    )}
+                    <button onClick={() => channelAction(ch.connection_id, "remove")} disabled={busy === ch.connection_id} className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* Add picker — channels the bot is in, plus an invite hint for the rest. */}
+      {adding && (
+        <div className="rounded-md border border-border p-4">
+          <div className="mb-2.5 text-micro uppercase tracking-wide text-ink-faint">Channels the bot can monitor</div>
+          {available === null ? (
+            <LoadingBlock />
+          ) : (
+            <>
+              {addable.length === 0 ? (
+                <p className="text-small text-ink-faint">No new channels the bot is in. Invite it to a channel first.</p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {addable.map((ch) => (
+                    <div key={ch.id} className="flex items-center gap-3 rounded-md border border-border bg-surface px-3.5 py-2.5">
+                      <span className="min-w-0 flex-1 truncate text-small text-ink">
+                        <span className="text-ink-faint">#</span>{ch.name}
+                        {ch.topic && <span className="ml-2 text-caption text-ink-faint">{ch.topic}</span>}
+                      </span>
+                      <button onClick={() => monitorChannel(ch)} disabled={busy === ch.id} className="flex-none text-caption text-accent-text hover:underline disabled:opacity-50">
+                        {busy === ch.id ? "Adding…" : "Monitor"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {needInvite.length > 0 && (
+                <p className="mt-3 text-caption text-ink-faint">
+                  {needInvite.length} more channel{needInvite.length === 1 ? "" : "s"} need the bot invited —
+                  <span className="font-mono text-ink-dim"> /invite @sentinel</span> in the channel, then Add again.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

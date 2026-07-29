@@ -118,6 +118,14 @@ class Connection(Base, UUIDPk, TimestampMixin):
     # new token. NULL for non-GitHub providers.
     github_login: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
+    # A human name for the resource, when its identifier is not one. `repo`
+    # holds a Slack channel's *id* (stable across renames, what the API needs),
+    # so the channel's name lives here for display. NULL where the identifier
+    # already reads well (a GitHub repo, a Gmail label) - full_name falls back
+    # to org/repo then. Generic on purpose: the next provider whose ids are not
+    # human-readable uses the same field rather than inventing its own.
+    display_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
     # How much this resource matters, as a person judged it. Drives whether
     # activity-based attention (a critical repo gone silent) fires at all -
     # see services/github_attention.py. NORMAL for everything until set.
@@ -136,6 +144,11 @@ class Connection(Base, UUIDPk, TimestampMixin):
 
     @property
     def full_name(self) -> str:
+        # A resource's human name wins when it has one (a Slack channel), so the
+        # rest of the app - attention titles, situations, the assistant - reads
+        # "#all-sentinel" rather than a channel id.
+        if self.display_name:
+            return self.display_name
         if self.provider == Provider.GITHUB:
             return f"{self.org}/{self.repo}"
         return self.org

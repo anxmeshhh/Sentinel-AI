@@ -620,6 +620,18 @@ export interface SlackChannel {
   monitored: boolean;
 }
 
+export interface SlackChannelResource {
+  connection_id: string;
+  channel_id: string;
+  name: string;
+  state: string;
+  paused: boolean;
+  priority: string;
+  last_synced_at: string | null;
+  last_success_at: string | null;
+  signal_count: number;
+}
+
 export interface ProviderStatus {
   provider: string;
   label: string;

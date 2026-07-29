@@ -38,7 +38,10 @@ from app.schemas.integration import (
     GitHubPrioritySet,
     GitHubRepositoryOut,
     GitHubRepoSelect,
+    ResourcePrioritySet,
+    SlackChannelAdd,
     SlackChannelOut,
+    SlackChannelResourceOut,
 )
 from app.services.github_connections import (
     account_connections,
@@ -50,7 +53,7 @@ from app.services.github_connections import (
     set_priority,
 )
 from app.integrations import slack_auth
-from app.services.slack_connections import connect_slack_workspace, slack_workspace
+from app.services.slack_connections import add_channel, connect_slack_workspace, monitored_channels, slack_workspace
 
 logger = structlog.get_logger("sentinel.integrations")
 
@@ -487,7 +490,155 @@ def list_slack_channels(
         logger.warning("slack_channel_list_failed", error=str(exc)[:200])
         raise HTTPException(status_code=502, detail="Slack could not be reached just now") from exc
 
-    return [SlackChannelOut(**ch) for ch in channels]
+    monitored_ids = {c.repo for c in monitored_channels(session, workspace_id, user.id)}
+    return [SlackChannelOut(**ch, monitored=ch["id"] in monitored_ids) for ch in channels]
+
+
+# --- Slack channel management (Phase 1) ------------------------------------
+# A monitored channel is a Connection, managed exactly like a GitHub repository
+# - list / add / remove / pause / resume / classify - over the same shared
+# provider_account helper. No Slack-specific resource logic.
+
+
+def _owned_slack_channel(
+    session: Session, connection_id: uuid.UUID, workspace_id: uuid.UUID, user_id: uuid.UUID
+) -> Connection:
+    """A monitored Slack channel that belongs to this caller, or 404. Ownership
+    is checked against the record, not the path - another member's channel, or
+    another provider's connection, is never found here."""
+    connection = session.get(Connection, connection_id)
+    if (
+        connection is None
+        or connection.provider != Provider.SLACK
+        or connection.workspace_id != workspace_id
+        or connection.user_id != user_id
+        or not connection.repo
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
+    return connection
+
+
+def _slack_channel_out(session: Session, connection: Connection) -> SlackChannelResourceOut:
+    from app.services.connection_state import connection_state
+
+    return SlackChannelResourceOut(
+        connection_id=connection.id,
+        channel_id=connection.repo,
+        name=connection.full_name,
+        state=connection_state(connection).value,
+        paused=connection.paused_at is not None,
+        priority=connection.priority.value,
+        last_synced_at=connection.last_synced_at,
+        last_success_at=connection.last_success_at,
+        signal_count=session.query(Signal).filter(Signal.connection_id == connection.id).count(),
+    )
+
+
+@router.get("/slack/monitored", response_model=list[SlackChannelResourceOut])
+def list_monitored_channels(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> list[SlackChannelResourceOut]:
+    """The channels this person is monitoring, each with its own health."""
+    return [_slack_channel_out(session, c) for c in monitored_channels(session, workspace_id, user.id)]
+
+
+@router.post("/slack/monitored", response_model=SlackChannelResourceOut, status_code=201)
+def add_monitored_channel(
+    payload: SlackChannelAdd,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> SlackChannelResourceOut:
+    """Start monitoring a channel. The bot must already be a member - that is
+    the access boundary, so it is verified against the live channel rather than
+    trusted from the request, and the channel's current name is taken from
+    Slack rather than the client."""
+    from app.core.security import decrypt_token
+    from app.integrations.slack_client import SlackClient, SlackClientError
+
+    conn = slack_workspace(session, workspace_id, user.id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Connect Slack first")
+
+    try:
+        with SlackClient(decrypt_token(conn.encrypted_token)) as client:
+            channels = client.list_channels()
+    except SlackClientError as exc:
+        raise HTTPException(status_code=409, detail=f"Slack: {exc}") from exc
+    except Exception as exc:
+        logger.warning("slack_add_channel_lookup_failed", error=str(exc)[:200])
+        raise HTTPException(status_code=502, detail="Slack could not be reached just now") from exc
+
+    match = next((ch for ch in channels if ch["id"] == payload.channel_id), None)
+    if match is None:
+        raise HTTPException(status_code=404, detail="That channel isn't in this workspace")
+    if not match["is_member"]:
+        raise HTTPException(status_code=409, detail="Invite the bot to this channel first (/invite @sentinel)")
+
+    channel = add_channel(
+        session, workspace_id=workspace_id, user_id=user.id,
+        channel_id=payload.channel_id, channel_name=match["name"],
+    )
+    return _slack_channel_out(session, channel)
+
+
+@router.delete("/slack/monitored/{connection_id}", status_code=204)
+def remove_monitored_channel(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> None:
+    from app.services.provider_account import remove_resource
+
+    remove_resource(session, _owned_slack_channel(session, connection_id, workspace_id, user.id))
+
+
+@router.post("/slack/monitored/{connection_id}/pause", response_model=SlackChannelResourceOut)
+def pause_monitored_channel(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> SlackChannelResourceOut:
+    from app.services.provider_account import set_paused
+
+    connection = set_paused(session, _owned_slack_channel(session, connection_id, workspace_id, user.id), paused=True)
+    return _slack_channel_out(session, connection)
+
+
+@router.post("/slack/monitored/{connection_id}/resume", response_model=SlackChannelResourceOut)
+def resume_monitored_channel(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> SlackChannelResourceOut:
+    from app.services.provider_account import set_paused
+
+    connection = set_paused(session, _owned_slack_channel(session, connection_id, workspace_id, user.id), paused=False)
+    return _slack_channel_out(session, connection)
+
+
+@router.patch("/slack/monitored/{connection_id}/priority", response_model=SlackChannelResourceOut)
+def classify_monitored_channel(
+    connection_id: uuid.UUID,
+    payload: ResourcePrioritySet,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> SlackChannelResourceOut:
+    """Classify how much a channel matters - the same five levels a repository
+    uses. Marking a channel CRITICAL is what will let its silence become a
+    proactive situation once ingestion lands."""
+    from app.models.connection import ResourcePriority
+    from app.services.provider_account import set_priority
+
+    connection = _owned_slack_channel(session, connection_id, workspace_id, user.id)
+    set_priority(session, connection, ResourcePriority(payload.priority))
+    return _slack_channel_out(session, connection)
 
 
 @router.get("/github/repos", response_model=list[GitHubRepoOut])

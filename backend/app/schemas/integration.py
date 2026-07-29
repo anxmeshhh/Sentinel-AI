@@ -61,8 +61,8 @@ class GitHubPrioritySet(BaseModel):
 class SlackChannelOut(BaseModel):
     """One public channel the connected workspace has. `is_member` is the
     operational fact: the bot can list any channel, but can only monitor one it
-    has been invited to (that is what grants history access). `monitored` will
-    mark channels Sentinel already watches once channel management lands."""
+    has been invited to (that is what grants history access). `monitored` marks
+    channels Sentinel already watches, so the picker can show them as such."""
 
     id: str
     name: str
@@ -71,3 +71,32 @@ class SlackChannelOut(BaseModel):
     topic: str = ""
     purpose: str = ""
     monitored: bool = False
+
+
+class SlackChannelResourceOut(BaseModel):
+    """One channel Sentinel is monitoring, with its own health - the exact
+    shape of the GitHub repository view, because a channel is a resource the
+    same way a repository is: independent sync state, paused/priority, and its
+    own signal count."""
+
+    connection_id: uuid.UUID
+    channel_id: str
+    name: str
+    state: str
+    paused: bool
+    priority: str
+    last_synced_at: datetime | None
+    last_success_at: datetime | None
+    signal_count: int
+
+
+class SlackChannelAdd(BaseModel):
+    channel_id: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=300)
+
+
+class ResourcePrioritySet(BaseModel):
+    """Provider-agnostic classification request - the same five levels every
+    resource uses, so Slack and GitHub share one vocabulary."""
+
+    priority: str = Field(pattern="^(critical|normal|low|archived|experimental)$")

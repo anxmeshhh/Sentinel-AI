@@ -1,40 +1,35 @@
-"""One Slack workspace, connected.
+"""One Slack workspace, many monitored channels.
 
-Phase 0 stores exactly one thing per user+workspace: the Slack workspace anchor
-- a Connection holding the bot token, with no channel chosen yet (`repo == ""`),
-the direct analogue of the GitHub account anchor. Channels become their own
-Connections under this grant in Phase 1, which is also when the account-with-
-many-resources logic shared with GitHub gets lifted into one helper (it is
-deliberately duplicated in miniature here until that second-instance refactor).
-
-`github_login` carries the Slack team id here. The column name is a GitHub-era
-wart - it is really "the account's stable identity", the thing that tells a
-reconnect of a *different* workspace apart from a token refresh of the same one.
-It is renamed to something provider-neutral in the Phase 1 generalization; for
-now the field does its job under the wrong name, and this comment is the note.
+Slack's vocabulary over the shared provider_account helper (the second-instance
+refactor is now done - the multi-resource logic lives there, used by GitHub and
+Slack alike). A monitored channel is a full Connection row: its `repo` holds the
+channel *id* (stable across renames), its `display_name` the human "#name", and
+`github_login` the Slack team id - the account identity that tells a reconnect
+of a different workspace apart from a token refresh of the same one.
 """
 
 import uuid
 
-import structlog
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.connection import Connection, Provider
-from app.models.signal import Signal
+from app.services import provider_account
+from app.services.provider_account import ProviderAccountError
 
-logger = structlog.get_logger("sentinel.slack_connections")
+
+class SlackAccountError(ProviderAccountError):
+    pass
 
 
 def slack_workspace(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Connection | None:
-    """This user's Slack workspace connection in this Sentinel workspace, if any."""
-    return session.execute(
-        select(Connection).where(
-            Connection.workspace_id == workspace_id,
-            Connection.user_id == user_id,
-            Connection.provider == Provider.SLACK,
-        ).order_by(Connection.repo)
-    ).scalars().first()
+    """This user's Slack account in this workspace (any row - they share one bot
+    token), or None. Used to reach the token and the team identity."""
+    rows = provider_account.account_connections(session, workspace_id, user_id, Provider.SLACK)
+    return rows[0] if rows else None
+
+
+def monitored_channels(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> list[Connection]:
+    return provider_account.monitored_resources(session, workspace_id, user_id, Provider.SLACK)
 
 
 def connect_slack_workspace(
@@ -46,51 +41,24 @@ def connect_slack_workspace(
     team_name: str,
     encrypted_token: str,
 ) -> Connection:
-    """Reconcile the Slack account after an OAuth round trip.
-
-    Same workspace reconnected: refresh the bot token and clear any revocation.
-    A *different* workspace: the previous one's rows are wiped, because its
-    channels are not this token's to read. New: create the anchor - the
-    "connected, no channels chosen yet" state Phase 1 fills in.
-    """
-    existing = session.execute(
-        select(Connection).where(
-            Connection.workspace_id == workspace_id,
-            Connection.user_id == user_id,
-            Connection.provider == Provider.SLACK,
-        )
-    ).scalars().all()
-    prior_team = next((c.github_login for c in existing if c.github_login), None)
-
-    if existing and prior_team and prior_team != team_id:
-        logger.info(
-            "slack_workspace_switched", old=prior_team, new=team_id,
-            workspace_id=str(workspace_id), rows=len(existing),
-        )
-        for connection in existing:
-            session.query(Signal).filter(Signal.connection_id == connection.id).delete()
-            session.delete(connection)
-        existing = []
-
-    if existing:
-        for connection in existing:
-            connection.encrypted_token = encrypted_token
-            connection.github_login = team_id
-            connection.org = team_name
-            connection.revoked_at = None
-        session.commit()
-        return existing[0]
-
-    anchor = Connection(
-        workspace_id=workspace_id,
-        user_id=user_id,
-        provider=Provider.SLACK,
-        org=team_name,     # display name of the workspace, until a channel is chosen
-        repo="",           # anchor: connected, no channel selected yet
-        github_login=team_id,  # the account's stable identity (see module docstring)
-        encrypted_token=encrypted_token,
+    """Reconcile the Slack account after an OAuth round trip. The team id is the
+    account identity; the team name is its display."""
+    return provider_account.connect_account(
+        session, workspace_id=workspace_id, user_id=user_id, provider=Provider.SLACK,
+        account_identity=team_id, encrypted_token=encrypted_token, anchor_org=team_name,
     )
-    session.add(anchor)
-    session.commit()
-    session.refresh(anchor)
-    return anchor
+
+
+def add_channel(
+    session: Session, *, workspace_id: uuid.UUID, user_id: uuid.UUID, channel_id: str, channel_name: str
+) -> Connection:
+    """Start monitoring one channel. `org` is the workspace name (shared by all
+    the account's rows), `repo` the channel id, `display_name` the #name."""
+    account = provider_account.account_connections(session, workspace_id, user_id, Provider.SLACK)
+    if not account:
+        raise SlackAccountError("Connect a Slack workspace first")
+    team_name = account[0].org
+    return provider_account.add_resource(
+        session, workspace_id=workspace_id, user_id=user_id, provider=Provider.SLACK,
+        org=team_name, repo=channel_id, display_name=f"#{channel_name.lstrip('#')}",
+    )

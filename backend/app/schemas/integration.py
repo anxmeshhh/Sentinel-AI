@@ -88,6 +88,9 @@ class SlackChannelResourceOut(BaseModel):
     last_synced_at: datetime | None
     last_success_at: datetime | None
     signal_count: int
+    # Last ingestion run's metrics: {ok, signals, messages_scanned, duration_ms,
+    # at, error}. None until the channel has synced once.
+    last_sync: dict | None = None
 
 
 class SlackChannelAdd(BaseModel):

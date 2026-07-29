@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, Enum, ForeignKey, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UTCDateTime, UUIDPk
@@ -139,6 +139,12 @@ class Connection(Base, UUIDPk, TimestampMixin):
     # which advances even on a sync that fetched nothing. "Last successful" is
     # the honest health signal a user reads to trust a connection.
     last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+    # Observability for the last ingestion run - what a person reads to trust a
+    # sync: {ok, signals, messages_scanned, duration_ms, at, error}. Generic
+    # (every provider's ingestion stamps it), written by ingest_connection on
+    # both success and failure. NULL until a connection has synced once.
+    last_sync_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     signals: Mapped[list["Signal"]] = relationship(back_populates="connection", cascade="all, delete-orphan")
 

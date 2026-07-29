@@ -758,6 +758,13 @@ function SlackWorkspace({ connections }: { connections: Connection[] }) {
                     <div className="mt-0.5 flex flex-wrap items-center gap-2 text-micro text-ink-faint">
                       <span className={`font-mono uppercase tracking-wide ${state.tone}`}>{state.label}</span>
                       <span>· {ch.signal_count} signal{ch.signal_count === 1 ? "" : "s"}</span>
+                      {ch.last_sync?.at && (
+                        <span>· synced {new Date(ch.last_sync.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+                      )}
+                      {ch.last_sync?.messages_scanned != null && (
+                        <span>· {ch.last_sync.messages_scanned} scanned</span>
+                      )}
+                      {ch.last_sync && ch.last_sync.ok === false && <span className="text-crit">· last sync failed</span>}
                     </div>
                   </div>
                   <div className="flex flex-none items-center gap-2.5 text-caption">

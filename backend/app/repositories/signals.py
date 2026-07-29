@@ -3,7 +3,8 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.dialects.mysql import insert
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.models.signal import Signal, SignalType
 from app.repositories.base import WorkspaceScopedRepository
@@ -28,12 +29,13 @@ class SignalRepository(WorkspaceScopedRepository[Signal]):
         signals - this is what makes ingestion safely resumable after a
         partial failure (see PRD SS7 reliability requirement).
 
-        Uses MySQL's `INSERT ... ON DUPLICATE KEY UPDATE`, which fires off
-        the same (connection_id, type, external_id) unique constraint as
-        Postgres's ON CONFLICT would - MySQL just doesn't let you name the
-        constraint explicitly, it infers it from the key that collided.
+        Dialect-aware so ingestion is exercisable on SQLite in tests, not only
+        against MySQL in production. Both express the same intent - insert, or
+        on a collision of the (connection_id, type, external_id) unique key,
+        refresh the mutable fields - MySQL via ON DUPLICATE KEY UPDATE (which
+        infers the key), SQLite via ON CONFLICT naming it explicitly.
         """
-        stmt = insert(Signal).values(
+        values = dict(
             workspace_id=self.workspace_id,
             connection_id=connection_id,
             type=type,
@@ -42,7 +44,15 @@ class SignalRepository(WorkspaceScopedRepository[Signal]):
             payload=payload,
             occurred_at=occurred_at,
         )
-        stmt = stmt.on_duplicate_key_update(payload=stmt.inserted.payload, actor=stmt.inserted.actor)
+        if self.session.bind.dialect.name == "sqlite":
+            stmt = sqlite_insert(Signal).values(**values)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["connection_id", "type", "external_id"],
+                set_={"payload": stmt.excluded.payload, "actor": stmt.excluded.actor},
+            )
+        else:
+            stmt = mysql_insert(Signal).values(**values)
+            stmt = stmt.on_duplicate_key_update(payload=stmt.inserted.payload, actor=stmt.inserted.actor)
         self.session.execute(stmt)
 
     def since(self, connection_id: uuid.UUID, since: datetime) -> list[Signal]:

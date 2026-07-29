@@ -531,6 +531,7 @@ def _slack_channel_out(session: Session, connection: Connection) -> SlackChannel
         last_synced_at=connection.last_synced_at,
         last_success_at=connection.last_success_at,
         signal_count=session.query(Signal).filter(Signal.connection_id == connection.id).count(),
+        last_sync=connection.last_sync_meta,
     )
 
 
@@ -619,6 +620,21 @@ def resume_monitored_channel(
     from app.services.provider_account import set_paused
 
     connection = set_paused(session, _owned_slack_channel(session, connection_id, workspace_id, user.id), paused=False)
+    return _slack_channel_out(session, connection)
+
+
+@router.post("/slack/monitored/{connection_id}/sync", response_model=SlackChannelResourceOut)
+def sync_monitored_channel(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> SlackChannelResourceOut:
+    """Sync one channel now, rather than at the next scheduled poll."""
+    connection = _owned_slack_channel(session, connection_id, workspace_id, user.id)
+    if connection.paused_at is not None:
+        raise HTTPException(status_code=409, detail="This channel is paused - resume it first")
+    _sync_one(session, connection)
     return _slack_channel_out(session, connection)
 
 

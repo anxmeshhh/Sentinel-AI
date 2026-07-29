@@ -620,6 +620,16 @@ export interface SlackChannel {
   monitored: boolean;
 }
 
+export interface SlackSyncMeta {
+  ok: boolean;
+  signals?: number;
+  messages_scanned?: number;
+  participants?: number;
+  duration_ms?: number;
+  at?: string;
+  error?: string;
+}
+
 export interface SlackChannelResource {
   connection_id: string;
   channel_id: string;
@@ -630,6 +640,7 @@ export interface SlackChannelResource {
   last_synced_at: string | null;
   last_success_at: string | null;
   signal_count: number;
+  last_sync: SlackSyncMeta | null;
 }
 
 export interface ProviderStatus {

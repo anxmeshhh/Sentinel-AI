@@ -16,6 +16,19 @@ export function IntegrationCardGrid({ connections }: { connections: Connection[]
   const googleDrive = connections.find((c) => c.provider === "google_drive");
   const googleConnectedCount = [googleCalendar, gmail, googleDrive].filter(Boolean).length;
 
+  // Slack, driven by real connection rows like GitHub - not a placeholder.
+  // Connected = any Slack row exists (the workspace grant); channels are the
+  // rows that point at a resource.
+  const slackRows = connections.filter((c) => c.provider === "slack");
+  const slackConnected = slackRows.length > 0;
+  const slackChannels = slackRows.filter((c) => c.repo);
+  const slackWorkspace = slackRows.find((c) => c.org)?.org;
+  const slackLastSync = slackChannels
+    .map((c) => c.last_synced_at)
+    .filter((t): t is string => Boolean(t))
+    .sort()
+    .at(-1);
+
   return (
     <>
       {/* The scope of everything below, plus the one reassurance that
@@ -46,8 +59,29 @@ export function IntegrationCardGrid({ connections }: { connections: Connection[]
         connected={githubConnections.length > 0}
         to="/connections/github"
       />
+      <ServiceCard
+        icon={<SlackIcon />}
+        name="Slack"
+        status={
+          slackConnected
+            ? slackChannels.length > 0
+              ? `${slackChannels.length} channel${slackChannels.length === 1 ? "" : "s"} monitored`
+              : "Connected — add a channel"
+            : "Not connected"
+        }
+        desc={
+          slackConnected
+            ? `${slackWorkspace ?? "Workspace"} connected${
+                slackLastSync
+                  ? ` · synced ${new Date(slackLastSync).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+                  : ""
+              }. Blockers, unanswered questions, incidents forming.`
+            : "Blockers, unanswered questions, incidents forming across your channels."
+        }
+        connected={slackConnected}
+        to="/connections/slack"
+      />
       <ServiceCard icon={<ZoomIcon />} name="Zoom" status="Coming soon" desc="Meeting metadata — not yet available." connected={false} disabled to="/connections/zoom" />
-      <ServiceCard icon={<SlackIcon />} name="Slack" status="Coming soon" desc="Gaps, unanswered questions, missing approvals — not yet available." connected={false} disabled to="/connections/slack" />
       <ServiceCard icon={<NotionIcon />} name="Notion" status="Coming soon" desc="Stale or missing docs — not yet available." connected={false} disabled to="/connections/notion" />
     </div>
     </>

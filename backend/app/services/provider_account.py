@@ -178,9 +178,13 @@ def remove_resource(session: Session, connection: Connection) -> None:
     session.flush()
 
     if not monitored_resources(session, workspace_id, user_id, provider):
+        # The re-created anchor keeps the resource's `org` (the account's display
+        # name for Slack, a team name; a repo owner for GitHub, unused there),
+        # not the identity - so a Slack workspace name never degrades into a
+        # team id after removing the last channel.
         session.add(Connection(
             workspace_id=workspace_id, user_id=user_id, provider=provider,
-            org=identity or "", repo="", github_login=identity, encrypted_token=token,
+            org=connection.org or identity or "", repo="", github_login=identity, encrypted_token=token,
         ))
     session.commit()
 

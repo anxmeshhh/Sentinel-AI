@@ -75,6 +75,12 @@ class Settings(BaseSettings):
 
     # Scheduling
     ingestion_poll_interval_seconds: int = 6 * 60 * 60
+    # Slack polls far more often than the 6h default: chat is real-time and the
+    # product promise ("detect before users notice") collapses at 6h latency for
+    # an incident. Five minutes is the floor that respects Slack's rate limits
+    # for a normal channel count; the 6h all-poll still covers Slack as a safety
+    # net (idempotent, so double-polling costs one empty history call).
+    slack_poll_interval_seconds: int = 5 * 60
 
     # Findings
     min_finding_confidence: float = 0.55

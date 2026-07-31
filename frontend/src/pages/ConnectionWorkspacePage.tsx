@@ -764,7 +764,12 @@ function SlackWorkspace({ connections }: { connections: Connection[] }) {
                       {ch.last_sync?.messages_scanned != null && (
                         <span>· {ch.last_sync.messages_scanned} scanned</span>
                       )}
-                      {ch.last_sync && ch.last_sync.ok === false && <span className="text-crit">· last sync failed</span>}
+                      {ch.last_sync?.ok === false &&
+                        (ch.last_sync.error === "not_in_channel" ? (
+                          <span className="text-crit">· ⚠ bot removed — re-invite @sentinel</span>
+                        ) : (
+                          <span className="text-crit">· last sync failed</span>
+                        ))}
                     </div>
                   </div>
                   <div className="flex flex-none items-center gap-2.5 text-caption">

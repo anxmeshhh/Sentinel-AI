@@ -14,7 +14,7 @@ from sqlalchemy import select
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
 from app.models.agent_run import TriggeredBy
-from app.models.connection import Connection
+from app.models.connection import Connection, Provider
 from app.services import agent_orchestration, ingestion
 from app.services.attention_engine import refresh_attention
 from app.services.commitments import refresh_commitments_for_workspace
@@ -42,6 +42,30 @@ def poll_all_connections() -> None:
         for connection_id in connection_ids:
             ingest_connection.delay(str(connection_id))
         logger.info("poll_all_connections_dispatched", connection_count=len(connection_ids))
+    finally:
+        session.close()
+
+
+@celery_app.task(name="app.workers.tasks.poll_slack_connections")
+def poll_slack_connections() -> None:
+    """Slack's own fast poll. Chat is real-time, so monitored channels are
+    synced on the minutes-scale slack interval rather than the 6h all-poll -
+    the difference between catching an incident forming and reporting it after
+    lunch. Only channels with a resource chosen and not paused; the anchor and
+    paused channels cost nothing. Idempotent with the all-poll that also covers
+    Slack, so the overlap is harmless."""
+    session = SessionLocal()
+    try:
+        connection_ids = session.execute(
+            select(Connection.id).where(
+                Connection.provider == Provider.SLACK,
+                Connection.repo != "",
+                Connection.paused_at.is_(None),
+            )
+        ).scalars().all()
+        for connection_id in connection_ids:
+            ingest_connection.delay(str(connection_id))
+        logger.info("poll_slack_connections_dispatched", connection_count=len(connection_ids))
     finally:
         session.close()
 

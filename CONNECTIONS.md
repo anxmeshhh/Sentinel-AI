@@ -393,3 +393,44 @@ classification, the stalled-resource situation, scope/privacy, attention,
 goals, investigation and dedup are already generic and require nothing new. If
 Slack's account model matches the multi-resource pattern above, that becomes
 the moment to lift it into a shared helper — with two real callers to shape it.
+
+## Shared-channel architecture — a documented recommendation (not yet built)
+
+**The gap.** Slack channels are modelled as per-user Connections, inherited from
+the GitHub shape where a repo connection *is* one person's delegated token. But a
+Slack channel is not one person's — it is shared, and the bot token is
+workspace-level (one grant for the whole workspace, not a delegation of one
+user's access). So if two members each "monitor" `#incidents`, there are two
+Connection rows carrying the *same* bot token. Signal keys include
+`connection_id`, so the same messages ingest twice under two rows, and the same
+finding is produced twice. Duplicate work, duplicate briefing items.
+
+**Root cause — two ownership shapes, one model.**
+- GitHub / Google: the OAuth grant is *one person's* access, so a monitored
+  resource belongs to that person. Per-user is correct.
+- Slack (bot token): the grant is the *workspace's* (the bot), and a channel is
+  a *shared* resource. Per-user is a mismatch.
+
+**Recommended long-term design.** Model Slack channels as **workspace-shared
+resources**: one Connection per `(workspace, channel)`, not per member. The bot
+token is workspace-level already, so this matches reality. Findings from a shared
+channel then belong to the **channel / shared intelligence layer** (see
+`[[dual-intelligence-layers]]`), visible to every authorized member, rather than
+duplicated into each member's private attention.
+
+This asks `provider_account` to support two ownership models side by side:
+per-user resources (GitHub, Google, scoped by `user_id`) and workspace-shared
+resources (Slack, one row per channel, scoped by `workspace_id`). The cleanest
+expression is a provider-spec flag (e.g. `shared_resource: bool`) that decides
+the scope of `account_connections` / `add_resource` and where findings are
+published.
+
+**Why it is documented, not built now.** It is a larger change — an ownership
+dimension on the resource model, a data migration to collapse per-user channel
+rows into one shared row each, and routing Slack findings to the shared layer.
+For the current single-user workspace, per-user works correctly. The honest
+trigger to build it: the **first workspace where two or more members monitor
+overlapping channels**. A cheaper interim (dedup ingestion when several
+connections point at the same `(workspace, channel_id)`) would cut the wasted
+API calls but not the duplicate findings, so it is not a real fix — the
+shared-resource model is.

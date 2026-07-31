@@ -88,6 +88,31 @@ class SlackClient:
                 break
         return messages
 
+    def list_users(self, limit: int = 3000) -> list[dict]:
+        """The workspace's members as {id, name}, so a finding can say '@jess'
+        instead of 'U0197...'. name prefers the display name, then real name,
+        then the handle. Deleted users are skipped."""
+        out: list[dict] = []
+        cursor: str | None = None
+        while len(out) < limit:
+            params: dict = {"limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            resp = self._get("/users.list", params)
+            data = resp.json()
+            if not data.get("ok"):
+                raise SlackClientError(data.get("error", "users_list_failed"))
+            for u in data.get("members", []):
+                if u.get("deleted") or u.get("is_bot") and u.get("id") == "USLACKBOT":
+                    continue
+                prof = u.get("profile") or {}
+                name = prof.get("display_name") or prof.get("real_name") or u.get("name") or u["id"]
+                out.append({"id": u["id"], "name": name})
+            cursor = (data.get("response_metadata") or {}).get("next_cursor") or None
+            if not cursor:
+                break
+        return out
+
     def list_channels(self, limit: int = 1000) -> list[dict]:
         """Every public channel in the workspace, paginated. `is_member` is the
         one that matters operationally: the bot can *list* any public channel

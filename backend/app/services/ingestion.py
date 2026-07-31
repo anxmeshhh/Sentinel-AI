@@ -215,12 +215,16 @@ def _ingest_slack(
     the messages is discarded. No LLM, no semantic judgement - that is Phase 3.
     """
     from app.integrations.slack_client import SlackClient, SlackClientError
+    from app.services import slack_users
     from app.services.slack_signals import SKIP_SUBTYPES, extract_mentions, match_lexicon
 
     oldest = max(0.0, (since - SLACK_SYNC_OVERLAP).timestamp())
     try:
         with SlackClient(decrypt_token(connection.encrypted_token)) as client:
             messages = client.channel_history(connection.repo, oldest=oldest, max_messages=SLACK_MAX_MESSAGES)
+            # Cached, best-effort: names make findings readable, but must never
+            # break a sync, so a failed lookup just leaves ids in place.
+            names = slack_users.directory(client, connection.github_login or connection.repo)
     except SlackClientError as exc:
         if exc.is_auth:
             # The grant is dead - record it so the connection reports revoked,
@@ -249,13 +253,17 @@ def _ingest_slack(
 
         text = m.get("text") or ""
         occurred = datetime.fromtimestamp(ts_f, tz=timezone.utc)
+        # Store readable evidence: <@U123> tokens become @name, and the author's
+        # name rides along so a finding can name the person without a lookup.
+        snippet = slack_users.humanize(text, names)[:200]
+        author = {"actor_name": slack_users.name_for(actor, names)}
         thread = {"thread_ts": m.get("thread_ts"), "reply_count": m.get("reply_count")}
 
         mentions = extract_mentions(text)
         if mentions:
             signal_repo.upsert(
                 connection_id=connection.id, type=SignalType.MENTION, external_id=ts, actor=actor,
-                occurred_at=occurred, payload={"mentions": mentions, "snippet": text[:200], **thread},
+                occurred_at=occurred, payload={"mentions": mentions, "snippet": snippet, **author, **thread},
             )
             count += 1
 
@@ -263,7 +271,7 @@ def _ingest_slack(
         if matched:
             signal_repo.upsert(
                 connection_id=connection.id, type=SignalType.FLAGGED_MESSAGE, external_id=ts, actor=actor,
-                occurred_at=occurred, payload={"matched": matched, "snippet": text[:200], **thread},
+                occurred_at=occurred, payload={"matched": matched, "snippet": snippet, **author, **thread},
             )
             count += 1
 

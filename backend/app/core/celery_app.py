@@ -33,6 +33,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.poll_all_connections",
         "schedule": _settings.ingestion_poll_interval_seconds,
     },
+    # Slack on its own fast cadence - chat is real-time, so its channels can't
+    # wait for the 6h all-poll. See slack_poll_interval_seconds.
+    "poll-slack-connections": {
+        "task": "app.workers.tasks.poll_slack_connections",
+        "schedule": _settings.slack_poll_interval_seconds,
+    },
 }
 
 

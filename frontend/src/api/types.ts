@@ -7,6 +7,8 @@ export interface Connection {
   org: string;
   repo: string;
   last_synced_at: string | null;
+  // Real health: ready | live | syncing | error | token_revoked | paused | needs_setup
+  state?: string | null;
 }
 
 /** A repository the connected GitHub token can actually read.

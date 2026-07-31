@@ -19,5 +19,9 @@ class ConnectionOut(BaseModel):
     org: str
     repo: str
     last_synced_at: datetime | None
+    # Real health, so the UI never shows "Connected" for a revoked or failing
+    # connection. One of: ready | live | syncing | error | token_revoked |
+    # paused | needs_setup (see services/connection_state.py).
+    state: str | None = None
 
     model_config = {"from_attributes": True}

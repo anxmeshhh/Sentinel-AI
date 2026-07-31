@@ -31,12 +31,14 @@ Both are real, and both belong to the request layer rather than here.
 import enum
 
 from app.models.connection import Connection
+from app.providers.registry import spec_for
 
 
 class ConnectionState(str, enum.Enum):
     NEEDS_SETUP = "needs_setup"  # account connected, no resource chosen
     SYNCING = "syncing"  # first sync not finished yet
     READY = "ready"  # synced successfully at least once
+    LIVE = "live"  # connected and queried on demand; never syncs (Drive)
     ERROR = "error"  # has attempted a sync but none has succeeded
     PAUSED = "paused"  # deliberately silenced; keeps its history
     TOKEN_REVOKED = "token_revoked"  # the grant is gone; reconnect needed
@@ -51,6 +53,12 @@ def connection_state(connection: Connection) -> ConnectionState:
         return ConnectionState.TOKEN_REVOKED
     if not connection.repo:
         return ConnectionState.NEEDS_SETUP
+    # A live-query provider (Drive) never ingests, so the sync timestamps are
+    # meaningless for it - with a resource chosen and a live grant it is simply
+    # ready to answer a query. Reporting "syncing" forever (the old behaviour)
+    # was the misleading state the audit flagged.
+    if spec_for(connection.provider).live_query:
+        return ConnectionState.LIVE
     if connection.last_synced_at is None:
         return ConnectionState.SYNCING
     # Tried at least once. If nothing ever succeeded, that is a failing

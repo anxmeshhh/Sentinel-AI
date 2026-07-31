@@ -143,6 +143,7 @@ _STATE_SEVERITY = {
     ConnectionState.SYNCING: 2,
     ConnectionState.PAUSED: 1,
     ConnectionState.READY: 0,
+    ConnectionState.LIVE: 0,  # connected, queried on demand - as healthy as ready
 }
 _STATE_ERROR = {
     ConnectionState.TOKEN_REVOKED: "authentication expired — reconnect needed",
@@ -228,13 +229,10 @@ def sentinel_status(
     for provider, group in by_provider.items():
         spec = spec_for(provider)
         resources = [c for c in group if c.repo]  # a chosen resource, not a bare anchor
+        # connection_state now returns LIVE for live-query providers, so the
+        # old syncing/error->ready patch here is gone - the state is correct at
+        # the source (see services/connection_state.py).
         worst = max((connection_state(c) for c in resources), key=lambda s: _STATE_SEVERITY[s], default=ConnectionState.NEEDS_SETUP)
-        # A live-query provider never ingests, so the sync-timestamp states
-        # (syncing/error) are meaningless for it - with a resource chosen and a
-        # live grant, it is simply ready to answer a query. Revoked and paused
-        # still matter and are left as computed.
-        if spec.live_query and worst in (ConnectionState.SYNCING, ConnectionState.ERROR):
-            worst = ConnectionState.READY
         ok = worst not in (ConnectionState.ERROR, ConnectionState.TOKEN_REVOKED)
         reason = _STATE_ERROR.get(worst)
         error = None if ok else f"{spec.label} {reason}"

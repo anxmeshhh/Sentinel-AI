@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
@@ -33,6 +33,11 @@ export function MailPage() {
   const [loading, setLoading] = useState(true);
   const [askInput, setAskInput] = useState("");
   const [askMessage, setAskMessage] = useState<string | null>(null);
+  // Freshness: "Recent" must reflect the current mailbox, so the page pulls new
+  // mail on open (and on demand) rather than trusting the coarse background poll.
+  const [refreshing, setRefreshing] = useState(false);
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
+  const didAutoRefresh = useRef(false);
 
   const [selectedThreadKey, setSelectedThreadKey] = useState<string | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -60,6 +65,29 @@ export function MailPage() {
     loadTab(activeTab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, connected]);
+
+  // On first open, pull the newest mail so "Recent" is genuinely current - the
+  // cached list shows instantly, then this refreshes it. Incremental, so cheap.
+  useEffect(() => {
+    if (connected && !didAutoRefresh.current) {
+      didAutoRefresh.current = true;
+      void refresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]);
+
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      const res = await api.post<{ synced: number; last_synced_at: string | null }>("/mail/refresh");
+      setSyncedAt(res.last_synced_at);
+      await loadTab(activeTab);
+    } catch {
+      // Best-effort: the cached list still shows if the refresh can't reach Gmail.
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   // Gmail groups multiple messages in the same conversation under one row
   // with a count badge - same grouping here, off the flat list.
@@ -178,11 +206,27 @@ export function MailPage() {
         crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Gmail" }]}
       />
       <p className="eyebrow mb-2.5">Personal</p>
-      <div className="section-head">
-        <h1>Mail</h1>
-        <p>
-          Click an email to read it — original content only, no AI call. Summarize is optional, on demand.
-        </p>
+      <div className="section-head flex items-start justify-between gap-3">
+        <div>
+          <h1>Mail</h1>
+          <p>
+            Click an email to read it — original content only, no AI call. Summarize is optional, on demand.
+          </p>
+        </div>
+        {connected && (
+          <div className="flex flex-none items-center gap-2 pt-1">
+            <span className="text-micro text-ink-faint">
+              {refreshing ? "Refreshing…" : syncedAt ? `Synced ${new Date(syncedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
+            </span>
+            <button
+              onClick={() => void refresh()}
+              disabled={refreshing}
+              className="rounded-md border border-border px-2.5 py-1 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
+            >
+              ↻ Refresh
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-4" style={{ height: "calc(100vh - 12rem)" }}>

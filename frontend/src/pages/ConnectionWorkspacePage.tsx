@@ -188,6 +188,42 @@ function AISidebar({ config }: { config: AssistantConfig }) {
   );
 }
 
+type Health = { status: string; tone: "good" | "warn" | "crit" | "muted"; healthy: boolean };
+
+/** Map a connection's real backend state to a card status - never "Connected"
+ *  for a revoked or failing connection. */
+function serviceHealth(conn: Connection | undefined): Health {
+  if (!conn) return { status: "Not connected", tone: "muted", healthy: false };
+  switch (conn.state) {
+    case "ready":
+      return { status: "Connected", tone: "good", healthy: true };
+    case "live":
+      return { status: "Live connected", tone: "good", healthy: true };
+    case "syncing":
+      return { status: "Syncing…", tone: "muted", healthy: true };
+    case "error":
+      return { status: "Sync failing", tone: "crit", healthy: false };
+    case "token_revoked":
+      return { status: "Reconnect needed", tone: "crit", healthy: false };
+    case "paused":
+      return { status: "Paused", tone: "muted", healthy: true };
+    case "needs_setup":
+      return { status: "Not set up", tone: "warn", healthy: false };
+    default:
+      return { status: "Connected", tone: "good", healthy: true };
+  }
+}
+
+/** Meet has no connection of its own - it rides on Calendar, so its state IS
+ *  Calendar's. Available when Calendar is healthy; unavailable if Calendar is
+ *  broken; framed as availability rather than "connected". */
+function meetHealth(calendar: Connection | undefined): Health {
+  if (!calendar) return { status: "Not connected", tone: "muted", healthy: false };
+  const cal = serviceHealth(calendar);
+  if (cal.healthy) return { status: "Available", tone: "good", healthy: true };
+  return { status: "Unavailable — Calendar issue", tone: "crit", healthy: false };
+}
+
 function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]; onChanged: () => void }) {
   const { active } = useWorkspace();
   const [connecting, setConnecting] = useState(false);
@@ -220,42 +256,51 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
     onChanged();
   }
 
+  const gmailH = serviceHealth(gmail);
+  const calH = serviceHealth(googleCalendar);
+  const driveH = serviceHealth(googleDrive);
+  const meetH = meetHealth(googleCalendar);
+
   return (
     <div>
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <ServiceCard
           icon={<MailIcon />}
           name="Gmail"
-          status={gmail ? "Connected" : "Not connected"}
+          status={gmailH.status}
+          statusTone={gmailH.tone}
           desc={gmail?.org ?? "Subject, participants, timestamps — never message bodies"}
-          connected={Boolean(gmail)}
+          connected={gmailH.healthy}
           to={gmail ? "/mail" : undefined}
           disabled={!gmail}
         />
         <ServiceCard
           icon={<CalendarIcon />}
           name="Google Calendar"
-          status={googleCalendar ? "Connected" : "Not connected"}
+          status={calH.status}
+          statusTone={calH.tone}
           desc={googleCalendar?.org ?? "Meetings, attendees, duration"}
-          connected={Boolean(googleCalendar)}
+          connected={calH.healthy}
           to={googleCalendar ? "/calendar" : undefined}
           disabled={!googleCalendar}
         />
         <ServiceCard
           icon={<MeetIcon />}
           name="Google Meet"
-          status={googleCalendar ? "Available" : "Not connected"}
+          status={meetH.status}
+          statusTone={meetH.tone}
           desc="Rides on Calendar — no separate connection"
-          connected={Boolean(googleCalendar)}
+          connected={meetH.healthy}
           to={googleCalendar ? "/meet" : undefined}
           disabled={!googleCalendar}
         />
         <ServiceCard
           icon={<DriveIcon />}
           name="Google Drive"
-          status={googleDrive ? "Connected" : "Not connected"}
+          status={driveH.status}
+          statusTone={driveH.tone}
           desc={googleDrive?.org ?? "File name, type, modified time — never file content"}
-          connected={Boolean(googleDrive)}
+          connected={driveH.healthy}
           to={googleDrive ? "/drive" : undefined}
           disabled={!googleDrive}
         />

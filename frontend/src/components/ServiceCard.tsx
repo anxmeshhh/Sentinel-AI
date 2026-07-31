@@ -7,6 +7,10 @@ interface ServiceCardProps {
   status: string;
   desc: string;
   connected: boolean;
+  // Explicit colour for the status line. Defaults to connected? good : muted,
+  // but a failing/revoked connection needs to read red even though it is
+  // "connected" in the sense that a row exists.
+  statusTone?: "good" | "warn" | "crit" | "muted";
   active?: boolean;
   disabled?: boolean;
   to?: string;
@@ -19,7 +23,15 @@ interface ServiceCardProps {
 // Workspace's individual service grid underneath it. `to` navigates via
 // router; `onClick` handles in-page state (used nowhere left after the
 // workspace-page split, kept for flexibility).
-export function ServiceCard({ icon, name, status, desc, connected, active, disabled, to, onClick, onRemove }: ServiceCardProps) {
+const TONE_CLASS = {
+  good: "text-good",
+  warn: "text-warn",
+  crit: "text-crit",
+  muted: "text-ink-faint",
+} as const;
+
+export function ServiceCard({ icon, name, status, desc, connected, statusTone, active, disabled, to, onClick, onRemove }: ServiceCardProps) {
+  const toneClass = TONE_CLASS[statusTone ?? (connected ? "good" : "muted")];
   const className = `relative flex h-full flex-col rounded-md border p-5 text-left transition-colors ${
     active ? "border-ink-faint bg-surface/60" : "border-border hover:border-border-strong hover:bg-surface/40"
   } ${disabled ? "opacity-70" : ""}`;
@@ -41,7 +53,7 @@ export function ServiceCard({ icon, name, status, desc, connected, active, disab
       )}
       <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-md bg-surface-2">{icon}</div>
       <div className="mb-1 pr-4 text-lead font-semibold leading-tight text-ink">{name}</div>
-      <div className={`mb-2 text-small font-semibold ${connected ? "text-good" : "text-ink-faint"}`}>{status}</div>
+      <div className={`mb-2 text-small font-semibold ${toneClass}`}>{status}</div>
       <div className="text-caption leading-relaxed text-ink-faint">{desc}</div>
     </>
   );

@@ -14,7 +14,9 @@ export function IntegrationCardGrid({ connections }: { connections: Connection[]
   const googleCalendar = connections.find((c) => c.provider === "google_calendar");
   const gmail = connections.find((c) => c.provider === "gmail");
   const googleDrive = connections.find((c) => c.provider === "google_drive");
-  const googleConnectedCount = [googleCalendar, gmail, googleDrive].filter(Boolean).length;
+  const googleServices = [googleCalendar, gmail, googleDrive].filter(Boolean) as Connection[];
+  const googleConnectedCount = googleServices.length;
+  const googleUnhealthy = googleServices.filter((c) => c.state === "error" || c.state === "token_revoked").length;
 
   // Slack, driven by real connection rows like GitHub - not a placeholder.
   // Connected = any Slack row exists (the workspace grant); channels are the
@@ -46,7 +48,14 @@ export function IntegrationCardGrid({ connections }: { connections: Connection[]
       <ServiceCard
         icon={<GoogleIcon />}
         name="Google"
-        status={googleConnectedCount > 0 ? `${googleConnectedCount} service${googleConnectedCount === 1 ? "" : "s"} connected` : "Not connected"}
+        status={
+          googleConnectedCount === 0
+            ? "Not connected"
+            : googleUnhealthy > 0
+              ? `${googleUnhealthy} service${googleUnhealthy === 1 ? "" : "s"} need attention`
+              : `${googleConnectedCount} service${googleConnectedCount === 1 ? "" : "s"} connected`
+        }
+        statusTone={googleConnectedCount === 0 ? "muted" : googleUnhealthy > 0 ? "crit" : "good"}
         desc="Gmail, Calendar, Meet, Drive — browse, ask, and get risk findings, or give the AI a command across all of them."
         connected={googleConnectedCount > 0}
         to="/connections/google"

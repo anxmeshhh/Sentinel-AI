@@ -41,6 +41,32 @@ def get_mail(
     return [_to_item(s) for s in signals]
 
 
+@router.post("/refresh")
+def refresh_mail(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Pull the newest mail on demand so "Recent" reflects the *current* mailbox,
+    not whenever the coarse background poll last ran. Incremental (fetches only
+    since the checkpoint), so it is usually near-instant; the root fix for the
+    "Recent shows old emails" report, which was pure staleness, not a query bug."""
+    from app.integrations.google_auth import GoogleAuthError
+    from app.services.ingestion import ingest_connection
+
+    conn = ConnectionRepository(session, workspace_id).get_for_user(user.id, Provider.GMAIL)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Gmail is not connected")
+    try:
+        synced = ingest_connection(session, conn)
+    except GoogleAuthError:
+        raise HTTPException(status_code=409, detail="Gmail needs reconnecting")
+    except Exception:
+        raise HTTPException(status_code=502, detail="Couldn't reach Gmail just now")
+    session.refresh(conn)
+    return {"synced": synced, "last_synced_at": conn.last_synced_at.isoformat() if conn.last_synced_at else None}
+
+
 @router.post("/ask", response_model=MailAskResponse)
 def ask_mail(
     payload: MailAskRequest,

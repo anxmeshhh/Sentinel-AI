@@ -160,7 +160,14 @@ def refresh_intelligence(session: Session, scope: Scope) -> list[Situation]:
     Deterministic, no LLM."""
     findings = list_findings(session, scope)
     extract_entities(session, scope, findings)
-    return correlate(session, scope, findings)
+    situations = correlate(session, scope, findings)
+    # Reasoning (Phase 5) rides the same pass: it consumes the Context Engine's
+    # package, never raw data, and only calls the LLM for situations that
+    # changed. Local import breaks the situation<->reasoning module cycle.
+    from app.services.reasoning_engine import refresh_reasoning
+
+    refresh_reasoning(session, scope, findings)
+    return situations
 
 
 def refresh_intelligence_for_workspace(session: Session, workspace_id: uuid.UUID) -> list[Situation]:

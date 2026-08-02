@@ -34,6 +34,17 @@ from app.services.situation_engine import correlate, list_situations, refresh_in
 NOW = datetime.now(timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def _stub_llm(monkeypatch):
+    """refresh_intelligence now also runs the Reasoning Engine; stub its LLM so
+    these correlation tests stay deterministic and offline."""
+    class _Fast:
+        def complete_json(self, **kwargs):
+            return {"explanation": "x", "why_it_matters": "y"}
+
+    monkeypatch.setattr("app.services.reasoning_engine.LLMClient", _Fast)
+
+
 @pytest.fixture
 def session():
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)

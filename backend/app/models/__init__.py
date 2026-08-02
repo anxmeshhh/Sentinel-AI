@@ -34,6 +34,7 @@ from app.models.signal import Signal
 from app.models.situation import ProactiveSituation
 from app.models.entity import Entity, EntityMention
 from app.models.correlated_situation import Situation, SituationFinding
+from app.models.situation_reasoning import SituationReasoning
 from app.models.team import Team, TeamMembership
 from app.models.user import User
 from app.models.workspace import Membership, Workspace
@@ -65,6 +66,7 @@ __all__ = [
     "EntityMention",
     "Situation",
     "SituationFinding",
+    "SituationReasoning",
     "Commitment",
     "Goal",
     "GoalCommitment",

@@ -59,9 +59,17 @@ class Entity(Base, UUIDPk, TimestampMixin):
 
 class EntityMention(Base, UUIDPk, TimestampMixin):
     __tablename__ = "entity_mentions"
-    __table_args__ = (UniqueConstraint("finding_id", "entity_id", "role", name="uq_mention_finding_entity_role"),)
+    # Scope is part of the key: the SAME finding can be visible in more than one
+    # scope (a shared connection's finding belongs to every channel it is shared
+    # to), and a personal mention must never be reached from a channel query.
+    # The Entity node stays scope-neutral (a repo is one repo); scope lives here,
+    # on the edge.
+    __table_args__ = (UniqueConstraint("scope_key", "finding_id", "entity_id", "role", name="uq_mention_scope_finding_entity_role"),)
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    # Which scope observed this link ("personal:{user_id}" / "channel:{team_id}").
+    # Every read gates on this, so intelligence never crosses the scope boundary.
+    scope_key: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     entity_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # The canonical Finding this mention is for, by its stable string id

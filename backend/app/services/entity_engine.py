@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.finding import Finding, FindingSource
+from app.domain.scope import Scope
 from app.models.connection import Connection, Provider
 from app.models.entity import STRONG_KINDS, Entity, EntityKind, EntityMention, MentionRole
 from app.models.signal import Signal
@@ -121,11 +122,17 @@ def _upsert_entity(session: Session, workspace_id: uuid.UUID, kind: EntityKind, 
     return ent
 
 
-def extract_entities(session: Session, workspace_id: uuid.UUID, findings: list[Finding]) -> None:
-    """Derive and reconcile every finding's entity mentions. Two passes:
-    structured provenance first (so entities exist), then a text bridge against
-    the now-known strong entities."""
+def extract_entities(session: Session, scope: Scope, findings: list[Finding]) -> None:
+    """Derive and reconcile a scope's entity mentions. Two passes: structured
+    provenance first (so entities exist), then a text bridge against the
+    now-known strong entities.
+
+    Entities themselves are workspace-level and scope-NEUTRAL (a repo is one
+    repo); the scope lives on the mention (the edge), so reconciliation only
+    ever touches this scope's mentions and one scope can never disturb another."""
     now = datetime.now(timezone.utc)
+    workspace_id = scope.workspace_id
+    scope_key = scope.key
 
     # desired[finding_id][(entity_id, role)] = (finding_source, confidence)
     desired: dict[str, dict[tuple[uuid.UUID, MentionRole], tuple[str, float]]] = {}
@@ -149,10 +156,15 @@ def extract_entities(session: Session, workspace_id: uuid.UUID, findings: list[F
                 continue
             desired.setdefault(f.id, {}).setdefault((eid, role), (f.source.value, conf))
 
-    # Reconcile against stored mentions for exactly these findings.
+    # Reconcile against stored mentions for exactly these findings IN THIS SCOPE,
+    # so a channel run never prunes or reads a personal run's mentions.
     finding_ids = [f.id for f in findings]
     existing = session.execute(
-        select(EntityMention).where(EntityMention.workspace_id == workspace_id, EntityMention.finding_id.in_(finding_ids))
+        select(EntityMention).where(
+            EntityMention.workspace_id == workspace_id,
+            EntityMention.scope_key == scope_key,
+            EntityMention.finding_id.in_(finding_ids),
+        )
     ).scalars().all() if finding_ids else []
     existing_by_key = {(m.finding_id, m.entity_id, m.role): m for m in existing}
 
@@ -162,7 +174,7 @@ def extract_entities(session: Session, workspace_id: uuid.UUID, findings: list[F
             desired_keys.add((fid, eid, role))
             if (fid, eid, role) not in existing_by_key:
                 session.add(EntityMention(
-                    workspace_id=workspace_id, entity_id=eid, finding_id=fid,
+                    workspace_id=workspace_id, scope_key=scope_key, entity_id=eid, finding_id=fid,
                     finding_source=src, role=role, confidence=conf,
                 ))
     for key, mention in existing_by_key.items():

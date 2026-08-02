@@ -22,6 +22,7 @@ from app.providers.registry import spec_for
 from app.domain.finding import FindingSource, FindingTier
 from app.services.connection_state import ConnectionState, connection_state
 from app.services.findings import list_findings
+from app.services.investigation import personal_scope
 from app.services.mail_signals import noise_reason, sender_counts
 from app.schemas.attention import (
     AttentionItemOut,
@@ -280,7 +281,7 @@ def sentinel_status(
     # querying each pipeline here. The tier (critical/review/reminder) is
     # computed once, in services/findings.py, so a card and this verdict can
     # never disagree on what "critical" means.
-    findings = list_findings(session, workspace_id, viewer_user_id=user.id)
+    findings = list_findings(session, personal_scope(session, workspace_id, user.id))
     critical_count = sum(1 for f in findings if f.tier is FindingTier.CRITICAL)
     review_count = sum(1 for f in findings if f.tier is FindingTier.REVIEW)
     reminder_count = sum(1 for f in findings if f.tier is FindingTier.REMINDER)

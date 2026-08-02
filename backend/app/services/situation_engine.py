@@ -25,16 +25,19 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+import structlog
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.domain.finding import Finding
-from app.models.connection import Connection
+from app.domain.scope import Scope
 from app.models.correlated_situation import Situation, SituationFinding, SituationStatus
 from app.models.entity import STRONG_KINDS, Entity, EntityMention, MentionRole
 from app.services.entity_engine import extract_entities
 from app.services.findings import list_findings
-from app.services.investigation import personal_scope
+from app.services.scope_registry import active_scopes
+
+logger = structlog.get_logger("sentinel.situation_engine")
 
 # The minimum cluster size for a correlation to be a situation. Two is the
 # smallest number that is genuinely "more than one finding about this thing".
@@ -100,10 +103,13 @@ def _upsert_situation(
     return sit
 
 
-def correlate(session: Session, workspace_id: uuid.UUID, scope_key: str, findings: list[Finding]) -> list[Situation]:
+def correlate(session: Session, scope: Scope, findings: list[Finding]) -> list[Situation]:
     """Form/evolve/resolve situations for one scope from its current findings.
-    Assumes entity mentions are already derived (see extract_entities)."""
+    Assumes entity mentions are already derived (see extract_entities). Reads
+    only this scope's mentions, so correlation never crosses the boundary."""
     now = datetime.now(timezone.utc)
+    workspace_id = scope.workspace_id
+    scope_key = scope.key
     finding_by_id = {f.id: f for f in findings}
     finding_ids = list(finding_by_id)
 
@@ -112,6 +118,7 @@ def correlate(session: Session, workspace_id: uuid.UUID, scope_key: str, finding
         .join(Entity, Entity.id == EntityMention.entity_id)
         .where(
             EntityMention.workspace_id == workspace_id,
+            EntityMention.scope_key == scope_key,
             EntityMention.finding_id.in_(finding_ids),
             Entity.kind.in_(STRONG_KINDS),
             EntityMention.role.in_([MentionRole.ABOUT, MentionRole.MENTIONS]),
@@ -146,23 +153,28 @@ def correlate(session: Session, workspace_id: uuid.UUID, scope_key: str, finding
     return result
 
 
+def refresh_intelligence(session: Session, scope: Scope) -> list[Situation]:
+    """Run the whole Intelligence Core for ONE scope: read its findings, derive
+    its entities, correlate its situations. The single scope-parametric entry
+    point every future engine (Context, Reasoning, Memory, Decision) extends.
+    Deterministic, no LLM."""
+    findings = list_findings(session, scope)
+    extract_entities(session, scope, findings)
+    return correlate(session, scope, findings)
+
+
 def refresh_intelligence_for_workspace(session: Session, workspace_id: uuid.UUID) -> list[Situation]:
-    """Per-user in the workspace: derive entities from that person's findings,
-    then correlate them into situations. Deterministic, no LLM. Callers wrap
-    this so an intelligence bug can never fail a provider sync."""
-    user_ids = session.execute(
-        select(Connection.user_id).where(Connection.workspace_id == workspace_id).distinct()
-    ).scalars().all()
-
+    """Run the Intelligence Core for EVERY active scope in a workspace - each
+    person's personal scope and each channel's scope - reusing the identical
+    engines. One intelligence system, scoped, not two. Each scope is isolated so
+    a failure in one never affects another; callers wrap the whole thing so an
+    intelligence bug can never fail a provider sync."""
     situations: list[Situation] = []
-    for uid in user_ids:
-        if uid is None:
-            continue
-        findings = list_findings(session, workspace_id, viewer_user_id=uid)
-        extract_entities(session, workspace_id, findings)
-        scope_key = personal_scope(session, workspace_id, uid).key
-        situations.extend(correlate(session, workspace_id, scope_key, findings))
-
+    for scope in active_scopes(session, workspace_id):
+        try:
+            situations.extend(refresh_intelligence(session, scope))
+        except Exception:
+            logger.exception("intelligence_scope_failed", workspace_id=str(workspace_id), scope_key=scope.key)
     session.commit()
     return situations
 

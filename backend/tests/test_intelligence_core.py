@@ -75,12 +75,13 @@ def _attn(env, conn, *, type=AttentionType.STALE_PR, provider="github", priority
 
 
 def _run(env):
-    """extract + correlate for the one user, returning (findings, situations)."""
+    """extract + correlate for the one user's personal scope, returning
+    (findings, situations)."""
     s = env["_s"]
-    findings = list_findings(s, env["ws"].id, viewer_user_id=env["user"].id)
-    extract_entities(s, env["ws"].id, findings)
-    scope = personal_scope(s, env["ws"].id, env["user"].id).key
-    situations = correlate(s, env["ws"].id, scope, findings)
+    scope = personal_scope(s, env["ws"].id, env["user"].id)
+    findings = list_findings(s, scope)
+    extract_entities(s, scope, findings)
+    situations = correlate(s, scope, findings)
     return findings, situations
 
 
@@ -205,6 +206,43 @@ def test_reforming_reuses_the_same_row_not_a_duplicate(session, env):
     _run(env)  # run twice
     rows = session.execute(select(Situation)).scalars().all()
     assert len(rows) == 1  # dedupe_key keeps it one row
+
+
+def test_shared_entity_is_reused_across_scopes_not_duplicated(session, env):
+    """The Entity node is scope-NEUTRAL: the same repo referenced from two scopes
+    is one Entity row, with a mention per scope. Shared identity, scoped edges."""
+    s = env["_s"]
+    session.add(_attn(env, env["gh"], title="stale PR"))
+    session.commit()
+
+    personal = personal_scope(s, env["ws"].id, env["user"].id)
+    other = personal_scope(s, env["ws"].id, env["user"].id)
+    other.key = "personal:someone-else"  # simulate a second scope touching the same repo
+    for sc in (personal, other):
+        findings = list_findings(s, personal)  # same underlying finding
+        extract_entities(s, sc, findings)
+
+    repos = session.execute(select(Entity).where(Entity.kind == EntityKind.REPO)).scalars().all()
+    assert len(repos) == 1  # ONE shared entity node
+    mentions = session.execute(select(EntityMention).where(EntityMention.entity_id == repos[0].id)).scalars().all()
+    assert {m.scope_key for m in mentions} == {personal.key, other.key}  # one edge per scope
+
+
+def test_personal_findings_never_enter_a_channel_scope(session, env):
+    """The privacy boundary, structurally: a channel scope whose connection set
+    excludes the personal connections sees none of the personal findings."""
+    s = env["_s"]
+    session.add_all([_attn(env, env["gh"], priority=0.9, title="personal PR")])
+    session.commit()
+
+    # A channel scope authorized for NO connections cannot see personal findings.
+    from app.domain.scope import Scope
+    empty_channel = Scope(key="channel:team-x", connection_ids=set(), workspace_id=env["ws"].id, owner_id=uuid.uuid4())
+    assert list_findings(s, empty_channel) == []
+
+    # The same data IS visible in the owner's personal scope - proving it's the
+    # scope, not the absence of data, that gates it.
+    assert len(list_findings(s, personal_scope(s, env["ws"].id, env["user"].id))) == 1
 
 
 def test_end_to_end_refresh_for_workspace(session, env):

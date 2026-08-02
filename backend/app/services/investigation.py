@@ -47,7 +47,6 @@ The boundary is the query filter, not a post-hoc check on the results.
 
 import re
 import uuid
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 import structlog
@@ -99,24 +98,31 @@ class NotAuthorized(InvestigationError):
     pass
 
 
-@dataclass
-class Scope:
-    """The connection set an investigation may read, decided up front."""
-
-    key: str  # "personal:{user_id}" | "channel:{team_id}"
-    connection_ids: set[uuid.UUID] = field(default_factory=set)
+# Scope now lives in the domain layer (app/domain/scope.py) so every engine can
+# take it without importing service code; re-exported here so the many existing
+# `from app.services.investigation import Scope` imports keep working unchanged.
+from app.domain.scope import Scope, ScopeType  # noqa: E402
 
 
 def personal_scope(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Scope:
     connection_ids = set(session.execute(
         select(Connection.id).where(Connection.workspace_id == workspace_id, Connection.user_id == user_id)
     ).scalars())
-    return Scope(key=f"personal:{user_id}", connection_ids=connection_ids)
+    return Scope(key=f"personal:{user_id}", connection_ids=connection_ids, workspace_id=workspace_id, owner_id=user_id)
 
 
 def channel_scope(session: Session, team_id: uuid.UUID) -> Scope:
+    from app.models.team import Team
+
     resolved = resolve_channel_scope(session, team_id)
-    return Scope(key=f"channel:{team_id}", connection_ids=set(resolved["connections"]))
+    team = session.get(Team, team_id)
+    workspace_id = team.workspace_id if team is not None else None
+    return Scope(
+        key=f"channel:{team_id}",
+        connection_ids=set(resolved["connections"]),
+        workspace_id=workspace_id,
+        owner_id=team_id,
+    )
 
 
 def investigate(

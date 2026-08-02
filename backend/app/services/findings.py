@@ -20,10 +20,10 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.domain.finding import Finding, FindingSource, FindingStatus, FindingTier
+from app.domain.scope import Scope, ScopeType
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState
 from app.models.situation import ProactiveSituation, ProactiveKind, ProactiveStatus
 from app.services.attention_engine import list_attention
-from app.services.investigation import personal_scope
 from app.services.proactive import list_situations
 
 _ATTENTION_STATUS = {
@@ -101,16 +101,34 @@ def _from_situation(sit: ProactiveSituation) -> Finding:
     )
 
 
-def list_findings(session: Session, workspace_id: uuid.UUID, *, viewer_user_id: uuid.UUID) -> list[Finding]:
-    """Every open canonical finding for one viewer, unified from both pipelines.
+def _attention_in_scope(session: Session, scope: Scope) -> list[AttentionItem]:
+    """The attention items visible in a scope, gated on ``connection_ids``.
 
-    Scope is delegated to the existing readers, so this returns exactly the set
-    the Attention page already shows that person: their own attention items
-    (via ``viewer_user_id``) plus their personal-scope situations. Ordered
-    critical-first, then by raw severity, so the highest-signal finding leads.
+    For a personal scope this reproduces ``list_attention(viewer_user_id=...)``
+    exactly - its connection set IS the viewer's connections, plus the viewer's
+    own manual reminders. For a channel scope it is the detected items whose
+    connection the channel is authorized for; manual reminders belong to a
+    person, never a channel (the same rule the channel briefing enforces).
     """
-    items = list_attention(session, workspace_id, viewer_user_id=viewer_user_id)
-    scope = personal_scope(session, workspace_id, viewer_user_id)
+    items = list_attention(session, scope.workspace_id)
+    if scope.type is ScopeType.PERSONAL:
+        return [
+            i for i in items
+            if (i.origin is AttentionOrigin.MANUAL and i.created_by_user_id == scope.owner_id)
+            or (i.origin is AttentionOrigin.DETECTED and i.connection_id in scope.connection_ids)
+        ]
+    return [i for i in items if i.origin is AttentionOrigin.DETECTED and i.connection_id in scope.connection_ids]
+
+
+def list_findings(session: Session, scope: Scope) -> list[Finding]:
+    """Every open canonical finding for one scope, unified from both pipelines.
+
+    The single Scope-based reader every Intelligence Core engine uses. Personal
+    and channel scopes flow through the identical path - only the visible
+    connection set differs - so there is one intelligence system, not two.
+    Ordered critical-first, then by raw severity, so the highest-signal leads.
+    """
+    items = _attention_in_scope(session, scope)
     situations = list_situations(session, scope)
 
     findings = [_from_attention(i) for i in items] + [_from_situation(s) for s in situations]

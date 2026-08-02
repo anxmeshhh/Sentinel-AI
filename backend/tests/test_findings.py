@@ -121,7 +121,7 @@ def test_unifies_both_pipelines_with_one_tier_vocabulary(session, env):
     ])
     session.commit()
 
-    findings = list_findings(session, env["ws"].id, viewer_user_id=env["user"].id)
+    findings = list_findings(session, personal_scope(session, env["ws"].id, env["user"].id))
 
     # The DONE item is gone; everything else is present, once each.
     assert len(findings) == 6
@@ -149,7 +149,7 @@ def test_stalled_resource_is_never_critical_however_important(session, env):
     env["_s"] = session
     session.add(_sit(env, "repo", ProactiveKind.RESOURCE_STALLED, 1.0))
     session.commit()
-    (f,) = list_findings(session, env["ws"].id, viewer_user_id=env["user"].id)
+    (f,) = list_findings(session, personal_scope(session, env["ws"].id, env["user"].id))
     assert f.tier is FindingTier.REVIEW
 
 
@@ -184,7 +184,7 @@ def test_tier_counts_match_the_old_inline_verdict_logic(session, env):
     old_reminder = len(reminders)
 
     # --- new logic, over the canonical stream -------------------------------
-    findings = list_findings(session, env["ws"].id, viewer_user_id=env["user"].id)
+    findings = list_findings(session, personal_scope(session, env["ws"].id, env["user"].id))
     new_critical = sum(1 for f in findings if f.tier is FindingTier.CRITICAL)
     new_review = sum(1 for f in findings if f.tier is FindingTier.REVIEW)
     new_reminder = sum(1 for f in findings if f.tier is FindingTier.REMINDER)
@@ -199,5 +199,5 @@ def test_attention_status_maps_onto_one_lifecycle(session, env):
     env["_s"] = session
     session.add(_attn(env, priority=0.5))  # NEW -> OPEN
     session.commit()
-    (f,) = list_findings(session, env["ws"].id, viewer_user_id=env["user"].id)
+    (f,) = list_findings(session, personal_scope(session, env["ws"].id, env["user"].id))
     assert f.status is FindingStatus.OPEN

@@ -26,7 +26,7 @@ from app.models.attention_item import (
 )
 from app.models.base import Base
 from app.models.connection import Connection, Provider
-from app.models.situation import Situation, SituationKind, SituationStatus
+from app.models.situation import ProactiveSituation, ProactiveKind, ProactiveStatus
 from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
 from app.services.attention_engine import list_attention
@@ -90,7 +90,7 @@ def _sit(env, key, kind, importance, **kw):
         scope_key=personal_scope(env["_s"], env["ws"].id, env["user"].id).key,
         situation_key=key,
         kind=kind,
-        status=SituationStatus.ACTIVE,
+        status=ProactiveStatus.ACTIVE,
         title="s",
         evidence=[],
         evidence_count=1,
@@ -100,7 +100,7 @@ def _sit(env, key, kind, importance, **kw):
         confidence=0.9,
     )
     defaults.update(kw)
-    return Situation(**defaults)
+    return ProactiveSituation(**defaults)
 
 
 def test_unifies_both_pipelines_with_one_tier_vocabulary(session, env):
@@ -114,10 +114,10 @@ def test_unifies_both_pipelines_with_one_tier_vocabulary(session, env):
         _attn(env, priority=0.95, state=AttentionState.DONE, title="done"),  # excluded (not NEW)
     ])
     session.add_all([
-        _sit(env, "svc", SituationKind.SERVICE_JEOPARDY, 0.95,
+        _sit(env, "svc", ProactiveKind.SERVICE_JEOPARDY, 0.95,
              what_is_developing="Supabase is being torn down"),             # critical
-        _sit(env, "repo", SituationKind.RESOURCE_STALLED, 0.95),            # review (never critical)
-        _sit(env, "mtg", SituationKind.MEETING_UNPREPARED, 0.7),            # review
+        _sit(env, "repo", ProactiveKind.RESOURCE_STALLED, 0.95),            # review (never critical)
+        _sit(env, "mtg", ProactiveKind.MEETING_UNPREPARED, 0.7),            # review
     ])
     session.commit()
 
@@ -147,7 +147,7 @@ def test_stalled_resource_is_never_critical_however_important(session, env):
     """The one rule with teeth: a stalled resource stays 'review' at any
     importance. Mirrors the original _situation_is_critical exactly."""
     env["_s"] = session
-    session.add(_sit(env, "repo", SituationKind.RESOURCE_STALLED, 1.0))
+    session.add(_sit(env, "repo", ProactiveKind.RESOURCE_STALLED, 1.0))
     session.commit()
     (f,) = list_findings(session, env["ws"].id, viewer_user_id=env["user"].id)
     assert f.tier is FindingTier.REVIEW
@@ -164,9 +164,9 @@ def test_tier_counts_match_the_old_inline_verdict_logic(session, env):
               connection_id=None, created_by_user_id=env["user"].id),
     ])
     session.add_all([
-        _sit(env, "a", SituationKind.SERVICE_JEOPARDY, 0.9),
-        _sit(env, "b", SituationKind.SERVICE_JEOPARDY, 0.89),
-        _sit(env, "c", SituationKind.RESOURCE_STALLED, 1.0),
+        _sit(env, "a", ProactiveKind.SERVICE_JEOPARDY, 0.9),
+        _sit(env, "b", ProactiveKind.SERVICE_JEOPARDY, 0.89),
+        _sit(env, "c", ProactiveKind.RESOURCE_STALLED, 1.0),
     ])
     session.commit()
 
@@ -177,7 +177,7 @@ def test_tier_counts_match_the_old_inline_verdict_logic(session, env):
     sits = list_situations(session, personal_scope(session, env["ws"].id, env["user"].id))
 
     def _old_is_critical(s):
-        return s.importance >= 0.9 and s.kind is not SituationKind.RESOURCE_STALLED
+        return s.importance >= 0.9 and s.kind is not ProactiveKind.RESOURCE_STALLED
 
     old_critical = sum(1 for i in detected if i.priority >= 0.8) + sum(1 for s in sits if _old_is_critical(s))
     old_review = sum(1 for i in detected if i.priority < 0.8) + sum(1 for s in sits if not _old_is_critical(s))

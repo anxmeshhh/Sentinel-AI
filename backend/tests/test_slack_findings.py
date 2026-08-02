@@ -185,7 +185,7 @@ def test_critical_channel_inactive_reuses_resource_stalled(session, env):
     situation - the same detector GitHub uses, no Slack-specific code."""
     from app.services.investigation import personal_scope
     from app.services.proactive import _detect_stalled_critical_resources
-    from app.models.situation import SituationKind
+    from app.models.situation import ProactiveKind
 
     ch = _channel(session, env, name="deployment", priority=ResourcePriority.CRITICAL)
     # Its last activity was long ago - past the silence threshold.
@@ -196,5 +196,5 @@ def test_critical_channel_inactive_reuses_resource_stalled(session, env):
     session.commit()
     scope = personal_scope(session, env["workspace"].id, env["user"].id)
     [cand] = _detect_stalled_critical_resources(session, scope, [])
-    assert cand.kind == SituationKind.RESOURCE_STALLED
+    assert cand.kind == ProactiveKind.RESOURCE_STALLED
     assert "#deployment" in cand.title

@@ -22,7 +22,7 @@ from app.models.connection import Connection, Provider
 from app.models.hierarchy import Group, WorkspaceClass
 from app.models.shared_connection import SharedConnection, SharedScope
 from app.models.signal import Signal, SignalType
-from app.models.situation import Situation, SituationKind, SituationStatus
+from app.models.situation import ProactiveSituation, ProactiveKind, ProactiveStatus
 from app.models.team import ChannelRole, Team, TeamMembership
 from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
@@ -112,8 +112,8 @@ def test_a_corroborated_service_failure_becomes_an_active_situation(session, env
 
     [situation] = _run(session, env)
 
-    assert situation.kind == SituationKind.SERVICE_JEOPARDY
-    assert situation.status == SituationStatus.ACTIVE  # corroborated
+    assert situation.kind == ProactiveKind.SERVICE_JEOPARDY
+    assert situation.status == ProactiveStatus.ACTIVE  # corroborated
     assert situation.evidence_count == 2
     assert situation.importance >= 0.7
 
@@ -148,7 +148,7 @@ def test_an_ordinary_mailbox_produces_nothing_and_costs_nothing(session, env):
     situations = _run(session, env)
 
     assert situations == []
-    assert session.execute(select(Situation)).scalars().all() == []
+    assert session.execute(select(ProactiveSituation)).scalars().all() == []
 
 
 def test_urgency_language_alone_does_not_qualify(session, env):
@@ -197,7 +197,7 @@ def test_new_evidence_evolves_the_same_row_instead_of_adding_another(session, en
     session.add(_email(env["admin_gmail"], "a1", "Your project is going to be paused", days_ago=3))
     session.commit()
     [first] = _run(session, env)
-    assert first.status == SituationStatus.ACTIVE  # severe enough alone
+    assert first.status == ProactiveStatus.ACTIVE  # severe enough alone
     assert first.evidence_count == 1
 
     session.add(_email(env["admin_gmail"], "a2", "Your project has been paused", days_ago=1))
@@ -206,7 +206,7 @@ def test_new_evidence_evolves_the_same_row_instead_of_adding_another(session, en
 
     assert second.id == first.id  # one row, not two
     assert second.evidence_count == 2
-    assert len(session.execute(select(Situation)).scalars().all()) == 1
+    assert len(session.execute(select(ProactiveSituation)).scalars().all()) == 1
 
 
 def test_a_repeat_run_with_no_new_evidence_spends_no_tokens(session, env):
@@ -240,8 +240,8 @@ def test_a_resolution_message_closes_the_situation(session, env):
 
     assert _run(session, env) == []  # gone from the live list
 
-    stored = session.execute(select(Situation)).scalars().one()
-    assert stored.status == SituationStatus.RESOLVED
+    stored = session.execute(select(ProactiveSituation)).scalars().one()
+    assert stored.status == ProactiveStatus.RESOLVED
     assert stored.resolved_at is not None
 
 
@@ -271,7 +271,7 @@ def test_a_channel_situation_is_never_built_from_private_mail(session, env):
     channel = refresh_situations(session, env["workspace"].id, channel_scope(session, env["team"].id))
 
     assert channel == []
-    assert all("SECRET" not in s.title for s in session.execute(select(Situation)).scalars())
+    assert all("SECRET" not in s.title for s in session.execute(select(ProactiveSituation)).scalars())
 
 
 def test_the_member_sees_their_own_situation_privately(session, env):
@@ -475,7 +475,7 @@ def test_the_background_pass_covers_every_scope_in_the_workspace(session, env):
 
     refresh_proactive_for_workspace(session, env["workspace"].id)
 
-    rows = session.execute(select(Situation)).scalars().all()
+    rows = session.execute(select(ProactiveSituation)).scalars().all()
     by_scope = {r.scope_key: r for r in rows}
 
     admin_key = f"personal:{env['admin'].id}"
@@ -499,11 +499,11 @@ def test_a_second_background_pass_adds_no_rows_and_no_tokens(session, env):
     session.commit()
 
     refresh_proactive_for_workspace(session, env["workspace"].id)
-    first = session.execute(select(Situation)).scalars().all()
+    first = session.execute(select(ProactiveSituation)).scalars().all()
     calls_before = sum(s.llm_calls for s in first)
 
     refresh_proactive_for_workspace(session, env["workspace"].id)
-    second = session.execute(select(Situation)).scalars().all()
+    second = session.execute(select(ProactiveSituation)).scalars().all()
 
     assert len(second) == len(first)
     assert sum(s.llm_calls for s in second) == calls_before

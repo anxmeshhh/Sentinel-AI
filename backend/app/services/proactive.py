@@ -95,7 +95,7 @@ from sqlalchemy.orm import Session
 from app.agents.llm import LLMClient, LLMError
 from app.models.attention_item import AttentionItem
 from app.models.signal import Signal, SignalType
-from app.models.situation import Situation, SituationKind, SituationStatus
+from app.models.situation import ProactiveSituation, ProactiveKind, ProactiveStatus
 from app.services.investigation import Scope
 from app.services.mail_signals import extract_address
 
@@ -199,7 +199,7 @@ class Candidate:
     """A situation the detectors believe in, before scoring and reconciliation."""
 
     key: str
-    kind: SituationKind
+    kind: ProactiveKind
     title: str
     evidence: list[dict] = field(default_factory=list)
     importance: float = 0.5
@@ -219,7 +219,7 @@ class Candidate:
         return hashlib.sha256(raw.encode()).hexdigest()[:64]
 
 
-def refresh_situations(session: Session, workspace_id: uuid.UUID, scope: Scope) -> list[Situation]:
+def refresh_situations(session: Session, workspace_id: uuid.UUID, scope: Scope) -> list[ProactiveSituation]:
     """Detect, reconcile and return this scope's live situations.
 
     Everything before `_synthesize` is deterministic. Situations that don't
@@ -240,11 +240,11 @@ def refresh_situations(session: Session, workspace_id: uuid.UUID, scope: Scope) 
     existing = {
         s.situation_key: s
         for s in session.execute(
-            select(Situation).where(Situation.scope_key == scope.key)
+            select(ProactiveSituation).where(ProactiveSituation.scope_key == scope.key)
         ).scalars()
     }
 
-    live: list[Situation] = []
+    live: list[ProactiveSituation] = []
     for candidate in surfaced:
         situation = existing.pop(candidate.key, None)
         if situation is None:
@@ -258,15 +258,15 @@ def refresh_situations(session: Session, workspace_id: uuid.UUID, scope: Scope) 
     # happened is part of the record, and re-detecting it later would
     # otherwise present an old problem as brand new.
     for orphan in existing.values():
-        if orphan.status != SituationStatus.RESOLVED:
-            orphan.status = SituationStatus.RESOLVED
+        if orphan.status != ProactiveStatus.RESOLVED:
+            orphan.status = ProactiveStatus.RESOLVED
             orphan.resolved_at = datetime.now(timezone.utc)
 
     session.commit()
 
     # Only now, and only for what changed.
     for situation in live:
-        if situation.status is not SituationStatus.RESOLVED and _needs_narrative(situation):
+        if situation.status is not ProactiveStatus.RESOLVED and _needs_narrative(situation):
             _synthesize(situation, session)
     session.commit()
 
@@ -276,7 +276,7 @@ def refresh_situations(session: Session, workspace_id: uuid.UUID, scope: Scope) 
         scope=scope.key, candidates=len(candidates), surfaced=len(live),
         llm_calls=sum(s.llm_calls for s in live),
     )
-    return [s for s in live if s.status is not SituationStatus.RESOLVED]
+    return [s for s in live if s.status is not ProactiveStatus.RESOLVED]
 
 
 def refresh_proactive_for_workspace(session: Session, workspace_id: uuid.UUID) -> int:
@@ -327,7 +327,7 @@ def refresh_proactive_for_workspace(session: Session, workspace_id: uuid.UUID) -
     return refreshed
 
 
-def investigatable_item_id(session: Session, situation: Situation) -> uuid.UUID | None:
+def investigatable_item_id(session: Session, situation: ProactiveSituation) -> uuid.UUID | None:
     """The AttentionItem one of this situation's signals also produced.
 
     Investigate This operates on attention items, so this is the join that
@@ -357,11 +357,11 @@ def investigatable_item_id(session: Session, situation: Situation) -> uuid.UUID 
     return None
 
 
-def list_situations(session: Session, scope: Scope) -> list[Situation]:
+def list_situations(session: Session, scope: Scope) -> list[ProactiveSituation]:
     """Read what is already known, without re-detecting. Costs nothing."""
     rows = session.execute(
-        select(Situation).where(
-            Situation.scope_key == scope.key, Situation.status != SituationStatus.RESOLVED
+        select(ProactiveSituation).where(
+            ProactiveSituation.scope_key == scope.key, ProactiveSituation.status != ProactiveStatus.RESOLVED
         )
     ).scalars().all()
     return sorted(rows, key=lambda s: (-s.importance, -s.last_evidence_at.timestamp()))
@@ -438,7 +438,7 @@ def _detect_service_jeopardy(signals: list[Signal]) -> list[Candidate]:
         resolved_at = resolutions.get((domain, entity))
         candidates.append(Candidate(
             key=f"service_jeopardy:{key_suffix}",
-            kind=SituationKind.SERVICE_JEOPARDY,
+            kind=ProactiveKind.SERVICE_JEOPARDY,
             title=_title_for(domain, matches),
             evidence=evidence,
             importance=round(min(1.0, severity * recency * (1.25 if corroborated else 1.0)), 3),
@@ -544,7 +544,7 @@ def _detect_stalled_critical_resources(session: Session, scope: Scope, signals: 
         importance = round(min(0.9, 0.6 + days / 60), 3)
         candidates.append(Candidate(
             key=f"resource_stalled:{connection.id}",
-            kind=SituationKind.RESOURCE_STALLED,
+            kind=ProactiveKind.RESOURCE_STALLED,
             title=f"{connection.full_name} has gone quiet",
             evidence=[_evidence(newest, "last_activity")],
             importance=importance,
@@ -597,7 +597,7 @@ def _detect_unprepared_meetings(signals: list[Signal]) -> list[Candidate]:
         hours_away = max(0.0, (start - now).total_seconds() / 3600)
         candidates.append(Candidate(
             key=f"meeting_unprepared:{signal.external_id}:{start.date().isoformat()}",
-            kind=SituationKind.MEETING_UNPREPARED,
+            kind=ProactiveKind.MEETING_UNPREPARED,
             title=f"{payload.get('title') or 'Meeting'} — unread mail from an attendee",
             evidence=[_evidence(signal, "the_meeting")] + unread[:5],
             importance=round(min(1.0, 0.5 + (0.3 if hours_away <= 12 else 0.15)), 3),
@@ -609,13 +609,13 @@ def _detect_unprepared_meetings(signals: list[Signal]) -> list[Candidate]:
 # --- reconciliation and lifecycle -----------------------------------------
 
 
-def _create(session: Session, workspace_id: uuid.UUID, scope: Scope, candidate: Candidate) -> Situation:
-    situation = Situation(
+def _create(session: Session, workspace_id: uuid.UUID, scope: Scope, candidate: Candidate) -> ProactiveSituation:
+    situation = ProactiveSituation(
         workspace_id=workspace_id,
         scope_key=scope.key,
         situation_key=candidate.key,
         kind=candidate.kind,
-        status=SituationStatus.RESOLVED if candidate.resolved else _status_for(candidate),
+        status=ProactiveStatus.RESOLVED if candidate.resolved else _status_for(candidate),
         title=candidate.title,
         evidence=candidate.evidence,
         evidence_count=len(candidate.evidence),
@@ -630,11 +630,11 @@ def _create(session: Session, workspace_id: uuid.UUID, scope: Scope, candidate: 
     return situation
 
 
-def _update(situation: Situation, candidate: Candidate) -> None:
+def _update(situation: ProactiveSituation, candidate: Candidate) -> None:
     """New evidence evolves the existing row. This is the anti-spam rule, and
     it is why `situation_key` is stable rather than per-signal."""
     if candidate.resolved:
-        situation.status = SituationStatus.RESOLVED
+        situation.status = ProactiveStatus.RESOLVED
         situation.resolved_at = situation.resolved_at or datetime.now(timezone.utc)
         return
 
@@ -649,15 +649,15 @@ def _update(situation: Situation, candidate: Candidate) -> None:
     situation.confidence = candidate.confidence
 
 
-def _status_for(candidate: Candidate) -> SituationStatus:
+def _status_for(candidate: Candidate) -> ProactiveStatus:
     # One piece of evidence is real but uncorroborated; more than one, or a
     # severe one, is an active situation.
     if len(candidate.evidence) > 1 or candidate.importance >= 0.7:
-        return SituationStatus.ACTIVE
-    return SituationStatus.EMERGING
+        return ProactiveStatus.ACTIVE
+    return ProactiveStatus.EMERGING
 
 
-def _needs_narrative(situation: Situation) -> bool:
+def _needs_narrative(situation: ProactiveSituation) -> bool:
     """One LLM call per *material change*, not per refresh."""
     current = hashlib.sha256(
         "|".join(sorted(e["signal_id"] for e in situation.evidence)).encode()
@@ -665,7 +665,7 @@ def _needs_narrative(situation: Situation) -> bool:
     return current != situation.evidence_fingerprint
 
 
-def _synthesize(situation: Situation, session: Session | None = None) -> None:
+def _synthesize(situation: ProactiveSituation, session: Session | None = None) -> None:
     facts = {
         "situation": situation.title,
         "kind": situation.kind.value,
@@ -719,7 +719,7 @@ def _synthesize(situation: Situation, session: Session | None = None) -> None:
 EXCERPT_CHARS = 600
 
 
-def _live_excerpt(session: Session, situation: Situation) -> str | None:
+def _live_excerpt(session: Session, situation: ProactiveSituation) -> str | None:
     """A short, live-fetched excerpt of the latest message behind a situation.
 
     Subjects alone say a service was paused but rarely say *why* or *by when*.

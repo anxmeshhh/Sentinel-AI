@@ -20,6 +20,7 @@ from app.services.attention_engine import refresh_attention
 from app.services.commitments import refresh_commitments_for_workspace
 from app.services.goals import affected_scope_keys, reassess_goals_for_workspace
 from app.services.proactive import refresh_proactive_for_workspace
+from app.services.situation_engine import refresh_intelligence_for_workspace
 
 logger = structlog.get_logger("sentinel.workers")
 
@@ -106,6 +107,14 @@ def ingest_connection(self, connection_id: str, triggered_by: str = TriggeredBy.
             refresh_proactive_for_workspace(session, connection.workspace_id)
         except Exception:
             logger.exception("proactive_refresh_failed", workspace_id=str(connection.workspace_id))
+        # Intelligence Core (Phases 2 & 3) rides the same sync: derive entities
+        # from the fresh findings and correlate them into cross-provider
+        # situations. Deterministic, no LLM. Wrapped like the rest so a
+        # correlation bug can never fail the provider sync.
+        try:
+            refresh_intelligence_for_workspace(session, connection.workspace_id)
+        except Exception:
+            logger.exception("intelligence_refresh_failed", workspace_id=str(connection.workspace_id))
         # Commitments age on the same cycle. Purely deterministic - dates and
         # source state, no LLM - so this is milliseconds and costs nothing.
         try:

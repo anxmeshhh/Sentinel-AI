@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.finding import Finding, FindingSource, FindingStatus, FindingTier
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState
-from app.models.situation import Situation, SituationKind, SituationStatus
+from app.models.situation import ProactiveSituation, ProactiveKind, ProactiveStatus
 from app.services.attention_engine import list_attention
 from app.services.investigation import personal_scope
 from app.services.proactive import list_situations
@@ -33,9 +33,9 @@ _ATTENTION_STATUS = {
     AttentionState.DISMISSED: FindingStatus.DISMISSED,
 }
 _SITUATION_STATUS = {
-    SituationStatus.EMERGING: FindingStatus.OPEN,
-    SituationStatus.ACTIVE: FindingStatus.OPEN,
-    SituationStatus.RESOLVED: FindingStatus.RESOLVED,
+    ProactiveStatus.EMERGING: FindingStatus.OPEN,
+    ProactiveStatus.ACTIVE: FindingStatus.OPEN,
+    ProactiveStatus.RESOLVED: FindingStatus.RESOLVED,
 }
 
 
@@ -46,12 +46,12 @@ def _attention_tier(item: AttentionItem) -> FindingTier:
     return FindingTier.CRITICAL if item.priority >= 0.8 else FindingTier.REVIEW
 
 
-def _situation_tier(sit: Situation) -> FindingTier:
+def _situation_tier(sit: ProactiveSituation) -> FindingTier:
     # Mirrors the former attention.py::_situation_is_critical exactly: a stalled
     # resource is never an emergency however long it has been quiet - it is
     # always "review"; other situations become critical only at the very top of
     # the importance scale (a service torn down, not merely paused).
-    critical = sit.importance >= 0.9 and sit.kind is not SituationKind.RESOURCE_STALLED
+    critical = sit.importance >= 0.9 and sit.kind is not ProactiveKind.RESOURCE_STALLED
     return FindingTier.CRITICAL if critical else FindingTier.REVIEW
 
 
@@ -78,7 +78,7 @@ def _from_attention(item: AttentionItem) -> Finding:
     )
 
 
-def _from_situation(sit: Situation) -> Finding:
+def _from_situation(sit: ProactiveSituation) -> Finding:
     return Finding(
         id=f"situation:{sit.id}",
         source=FindingSource.PROACTIVE,

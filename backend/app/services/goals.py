@@ -50,7 +50,7 @@ from sqlalchemy.orm import Session
 from app.agents.llm import LLMClient, LLMError
 from app.models.commitment import Commitment, CommitmentStatus
 from app.models.goal import Goal, GoalCommitment, GoalHealth, GoalRelation, GoalSituation
-from app.models.situation import Situation, SituationStatus
+from app.models.situation import ProactiveSituation, ProactiveStatus
 from app.services.investigation import Scope
 
 logger = structlog.get_logger("sentinel.goals")
@@ -198,7 +198,7 @@ def linked_commitments(session: Session, goal: Goal) -> list[Commitment]:
     ).scalars())
 
 
-def relevant_situations(session: Session, goal: Goal) -> list[tuple[Situation, GoalSituation]]:
+def relevant_situations(session: Session, goal: Goal) -> list[tuple[ProactiveSituation, GoalSituation]]:
     """Situations that have an *established* relationship to this goal.
 
     Scope alone is not a relationship. Before this, every active situation in
@@ -227,10 +227,10 @@ def relevant_situations(session: Session, goal: Goal) -> list[tuple[Situation, G
         return []
 
     situations = session.execute(
-        select(Situation).where(
-            Situation.id.in_(links.keys()),
-            Situation.scope_key == goal.scope_key,  # re-checked, never trusted
-            Situation.status.in_([SituationStatus.ACTIVE, SituationStatus.EMERGING]),
+        select(ProactiveSituation).where(
+            ProactiveSituation.id.in_(links.keys()),
+            ProactiveSituation.scope_key == goal.scope_key,  # re-checked, never trusted
+            ProactiveSituation.status.in_([ProactiveStatus.ACTIVE, ProactiveStatus.EMERGING]),
         )
     ).scalars().all()
     return [(s, links[s.id]) for s in situations]
@@ -263,9 +263,9 @@ def detect_situation_relations(session: Session, goal: Goal) -> int:
     }
 
     candidates = session.execute(
-        select(Situation).where(
-            Situation.scope_key == goal.scope_key,
-            Situation.status.in_([SituationStatus.ACTIVE, SituationStatus.EMERGING]),
+        select(ProactiveSituation).where(
+            ProactiveSituation.scope_key == goal.scope_key,
+            ProactiveSituation.status.in_([ProactiveStatus.ACTIVE, ProactiveStatus.EMERGING]),
         )
     ).scalars().all()
 
@@ -292,7 +292,7 @@ def detect_situation_relations(session: Session, goal: Goal) -> int:
 
 
 def set_situation_relation(
-    session: Session, goal: Goal, situation: Situation, relation: GoalRelation, user_id: uuid.UUID
+    session: Session, goal: Goal, situation: ProactiveSituation, relation: GoalRelation, user_id: uuid.UUID
 ) -> Goal:
     """A person classifying evidence. Scope is re-checked here too, so a
     private situation can never be attached to a channel goal."""
@@ -470,7 +470,7 @@ def set_commitment_weight(session: Session, goal: Goal, commitment_id: uuid.UUID
     return goal
 
 
-def _situation_ref(situation: Situation, link, detail: str) -> dict:
+def _situation_ref(situation: ProactiveSituation, link, detail: str) -> dict:
     return {
         "kind": "situation",
         "id": str(situation.id),

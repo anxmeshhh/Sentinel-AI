@@ -22,7 +22,7 @@ from app.core.security import encrypt_token
 from app.models.base import Base
 from app.models.connection import Connection, Provider, ResourcePriority
 from app.models.signal import Signal, SignalType
-from app.models.situation import SituationKind, SituationStatus
+from app.models.situation import ProactiveKind, ProactiveStatus
 from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
 from app.services.investigation import personal_scope
@@ -101,7 +101,7 @@ def test_a_silent_critical_repo_is_a_situation(session, env):
 
     [candidate] = _detect(session, env)
 
-    assert candidate.kind == SituationKind.RESOURCE_STALLED
+    assert candidate.kind == ProactiveKind.RESOURCE_STALLED
     assert "acme/api" in candidate.title
     assert candidate.evidence  # the last commit, as evidence
 
@@ -163,7 +163,7 @@ def test_activity_of_any_kind_is_a_baseline_not_only_commits(session, env):
 
     [candidate] = _detect(session, env)
 
-    assert candidate.kind == SituationKind.RESOURCE_STALLED
+    assert candidate.kind == ProactiveKind.RESOURCE_STALLED
     assert "acme/api" in candidate.title
 
 
@@ -190,7 +190,7 @@ def test_it_surfaces_as_a_live_situation_through_refresh(session, env):
 
     live = refresh_situations(session, env["workspace"].id, _scope(session, env))
 
-    stalled = [s for s in live if s.kind == SituationKind.RESOURCE_STALLED]
+    stalled = [s for s in live if s.kind == ProactiveKind.RESOURCE_STALLED]
     assert len(stalled) == 1
     assert stalled[0].scope_key == _scope(session, env).key  # scoped like everything else
 
@@ -202,21 +202,21 @@ def test_resuming_commits_resolves_the_situation(session, env):
     repo = _repo(session, env, priority=ResourcePriority.CRITICAL)
     old = _commit(session, env, repo, days_ago=RESOURCE_SILENCE_THRESHOLD.days + 12)
     scope = _scope(session, env)
-    assert any(s.kind == SituationKind.RESOURCE_STALLED for s in refresh_situations(session, env["workspace"].id, scope))
+    assert any(s.kind == ProactiveKind.RESOURCE_STALLED for s in refresh_situations(session, env["workspace"].id, scope))
 
     # A fresh commit lands - the repo is active again.
     _commit(session, env, repo, days_ago=0)
     live = refresh_situations(session, env["workspace"].id, scope)
 
-    assert not any(s.kind == SituationKind.RESOURCE_STALLED for s in live)
+    assert not any(s.kind == ProactiveKind.RESOURCE_STALLED for s in live)
     # ...and the stored row is marked resolved, not deleted.
     from sqlalchemy import select
-    from app.models.situation import Situation
+    from app.models.situation import ProactiveSituation
 
     stored = session.execute(
-        select(Situation).where(Situation.situation_key == f"resource_stalled:{repo.id}")
+        select(ProactiveSituation).where(ProactiveSituation.situation_key == f"resource_stalled:{repo.id}")
     ).scalars().one()
-    assert stored.status == SituationStatus.RESOLVED
+    assert stored.status == ProactiveStatus.RESOLVED
 
 
 def test_lowering_priority_silences_an_existing_finding(session, env):
@@ -226,14 +226,14 @@ def test_lowering_priority_silences_an_existing_finding(session, env):
     repo = _repo(session, env, priority=ResourcePriority.CRITICAL)
     _commit(session, env, repo, days_ago=RESOURCE_SILENCE_THRESHOLD.days + 12)
     scope = _scope(session, env)
-    assert any(s.kind == SituationKind.RESOURCE_STALLED for s in refresh_situations(session, env["workspace"].id, scope))
+    assert any(s.kind == ProactiveKind.RESOURCE_STALLED for s in refresh_situations(session, env["workspace"].id, scope))
 
     from app.services.github_connections import set_priority
 
     set_priority(session, repo, ResourcePriority.NORMAL)
     live = refresh_situations(session, env["workspace"].id, scope)
 
-    assert not any(s.kind == SituationKind.RESOURCE_STALLED for s in live)
+    assert not any(s.kind == ProactiveKind.RESOURCE_STALLED for s in live)
 
 
 # --- the boundary holds ----------------------------------------------------

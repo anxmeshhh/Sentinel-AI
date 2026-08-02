@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, get_workspace_id, require_channel_role
-from app.models.situation import Situation
+from app.models.situation import ProactiveSituation
 from app.models.team import ChannelRole, Team
 from app.models.user import User
 from app.schemas.investigation import InvestigationOut
@@ -92,8 +92,8 @@ def channel_situations(
 # --- situation -> Investigate This ----------------------------------------
 
 
-def _situation_or_404(session: Session, situation_id: uuid.UUID, workspace_id: uuid.UUID) -> Situation:
-    situation = session.get(Situation, situation_id)
+def _situation_or_404(session: Session, situation_id: uuid.UUID, workspace_id: uuid.UUID) -> ProactiveSituation:
+    situation = session.get(ProactiveSituation, situation_id)
     if situation is None or situation.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Not found")
     return situation

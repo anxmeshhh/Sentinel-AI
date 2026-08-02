@@ -2,7 +2,7 @@
 
 Distinct from an AttentionItem, and the distinction is the whole feature: an
 AttentionItem is *one thing that arrived* ("this email is starred and
-unread"). A Situation is a **reading of several signals over time** ("a
+unread"). A ProactiveSituation is a **reading of several signals over time** ("a
 service you depend on is being withdrawn, and it has now happened").
 
 That difference is why this has a lifecycle and AttentionItem does not:
@@ -36,13 +36,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin, UTCDateTime, UUIDPk
 
 
-class SituationStatus(str, enum.Enum):
+class ProactiveStatus(str, enum.Enum):
     EMERGING = "emerging"  # one piece of evidence - real, but uncorroborated
     ACTIVE = "active"  # corroborated, or serious enough on its own
     RESOLVED = "resolved"  # the underlying issue is deterministically over
 
 
-class SituationKind(str, enum.Enum):
+class ProactiveKind(str, enum.Enum):
     # A service or resource the user depends on is being withdrawn, paused,
     # throttled or expired. Validated against the real mailbox before it was
     # built: 5 genuine instances in 190 emails, no false positives.
@@ -58,7 +58,7 @@ class SituationKind(str, enum.Enum):
     RESOURCE_STALLED = "resource_stalled"
 
 
-class Situation(Base, UUIDPk, TimestampMixin):
+class ProactiveSituation(Base, UUIDPk, TimestampMixin):
     __tablename__ = "situations"
     __table_args__ = (
         # One row per underlying situation per scope. This constraint is what
@@ -71,9 +71,9 @@ class Situation(Base, UUIDPk, TimestampMixin):
     scope_key: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     situation_key: Mapped[str] = mapped_column(String(300), nullable=False)
 
-    kind: Mapped[SituationKind] = mapped_column(Enum(SituationKind, name="situation_kind"), nullable=False)
-    status: Mapped[SituationStatus] = mapped_column(
-        Enum(SituationStatus, name="situation_status"), nullable=False, default=SituationStatus.EMERGING
+    kind: Mapped[ProactiveKind] = mapped_column(Enum(ProactiveKind, name="situation_kind"), nullable=False)
+    status: Mapped[ProactiveStatus] = mapped_column(
+        Enum(ProactiveStatus, name="situation_status"), nullable=False, default=ProactiveStatus.EMERGING
     )
 
     title: Mapped[str] = mapped_column(String(500), nullable=False)

@@ -16,7 +16,7 @@ from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState, AttentionType
 from app.models.connection import Connection, Provider
 from app.models.signal import Signal, SignalType
-from app.models.situation import SituationKind
+from app.models.situation import ProactiveKind
 from app.models.user import User
 from app.providers.registry import spec_for
 from app.domain.finding import FindingSource, FindingTier
@@ -159,12 +159,12 @@ def _operational_summary(situations: list, detected: list) -> str | None:
 
     parts: list[str] = []
     kinds = Counter(s.kind for s in situations)
-    if kinds.get(SituationKind.RESOURCE_STALLED):
-        parts.append(n_of(kinds[SituationKind.RESOURCE_STALLED], "stalled repository", "stalled repositories"))
-    if kinds.get(SituationKind.SERVICE_JEOPARDY):
-        parts.append(n_of(kinds[SituationKind.SERVICE_JEOPARDY], "service at risk", "services at risk"))
-    if kinds.get(SituationKind.MEETING_UNPREPARED):
-        parts.append(n_of(kinds[SituationKind.MEETING_UNPREPARED], "unprepared meeting", "unprepared meetings"))
+    if kinds.get(ProactiveKind.RESOURCE_STALLED):
+        parts.append(n_of(kinds[ProactiveKind.RESOURCE_STALLED], "stalled repository", "stalled repositories"))
+    if kinds.get(ProactiveKind.SERVICE_JEOPARDY):
+        parts.append(n_of(kinds[ProactiveKind.SERVICE_JEOPARDY], "service at risk", "services at risk"))
+    if kinds.get(ProactiveKind.MEETING_UNPREPARED):
+        parts.append(n_of(kinds[ProactiveKind.MEETING_UNPREPARED], "unprepared meeting", "unprepared meetings"))
 
     types = Counter(i.type for i in detected)
     type_phrase = {

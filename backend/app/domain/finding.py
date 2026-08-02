@@ -53,7 +53,7 @@ class FindingTier(str, enum.Enum):
 
 class FindingStatus(str, enum.Enum):
     """Normalized lifecycle across both pipelines. Maps AttentionState
-    (new/done/snoozed/dismissed) and SituationStatus (emerging/active/resolved)
+    (new/done/snoozed/dismissed) and ProactiveStatus (emerging/active/resolved)
     onto one ladder: OPEN still needs a person, RESOLVED is deterministically
     over, DISMISSED was waved off, SNOOZED is deferred."""
 

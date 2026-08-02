@@ -20,7 +20,7 @@ from app.models.connection import Connection, Provider
 from app.models.goal import Goal, GoalCommitment, GoalHealth
 from app.models.hierarchy import Group, WorkspaceClass
 from app.models.shared_connection import SharedConnection, SharedScope
-from app.models.situation import Situation, SituationKind, SituationStatus
+from app.models.situation import ProactiveSituation, ProactiveKind, ProactiveStatus
 from app.models.team import ChannelRole, Team, TeamMembership
 from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
@@ -161,10 +161,10 @@ def test_an_overdue_commitment_blocks_the_goal(session, env):
 
 
 def _situation(session, env, scope_key, title, *, signal_ids=None):
-    situation = Situation(
+    situation = ProactiveSituation(
         workspace_id=env["workspace"].id, scope_key=scope_key,
-        situation_key=f"service_jeopardy:{uuid.uuid4().hex[:8]}", kind=SituationKind.SERVICE_JEOPARDY,
-        status=SituationStatus.ACTIVE, title=title,
+        situation_key=f"service_jeopardy:{uuid.uuid4().hex[:8]}", kind=ProactiveKind.SERVICE_JEOPARDY,
+        status=ProactiveStatus.ACTIVE, title=title,
         evidence=[{"signal_id": sid} for sid in (signal_ids or [])],
         evidence_count=len(signal_ids or []), first_seen_at=NOW, last_evidence_at=NOW,
         importance=0.8, confidence=0.9,
@@ -436,10 +436,10 @@ def test_a_private_situation_never_affects_a_channel_goal(session, env):
     _link(session, env, channel_goal, _commitment(
         session, env, "Ship it", due_at=NOW + timedelta(days=20), scope=channel_scope(session, env["team"].id)
     ))
-    session.add(Situation(
+    session.add(ProactiveSituation(
         workspace_id=env["workspace"].id, scope_key=_personal(session, env, env["member"]).key,
-        situation_key="service_jeopardy:private", kind=SituationKind.SERVICE_JEOPARDY,
-        status=SituationStatus.ACTIVE, title="My private service is down",
+        situation_key="service_jeopardy:private", kind=ProactiveKind.SERVICE_JEOPARDY,
+        status=ProactiveStatus.ACTIVE, title="My private service is down",
         evidence=[], evidence_count=1, first_seen_at=NOW, last_evidence_at=NOW,
         importance=0.8, confidence=0.9,
     ))

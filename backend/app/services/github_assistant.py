@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.llm import LLMClient, LLMError
 from app.models.signal import Signal, SignalType
-from app.models.situation import SituationKind
+from app.models.situation import ProactiveKind
 from app.services.connection_state import connection_state
 from app.services.github_connections import monitored_repositories
 from app.services.investigation import personal_scope
@@ -100,7 +100,7 @@ def github_context(session: Session, workspace_id, user_id) -> dict:
 
     scope = personal_scope(session, workspace_id, user_id)
     risks = [
-        s.title for s in list_situations(session, scope) if s.kind == SituationKind.RESOURCE_STALLED
+        s.title for s in list_situations(session, scope) if s.kind == ProactiveKind.RESOURCE_STALLED
     ]
 
     recent_commits.sort(key=lambda x: x["days_ago"])

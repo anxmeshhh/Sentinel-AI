@@ -28,7 +28,7 @@ from app.models.goal import Goal
 from app.models.team import ChannelRole, Team
 from app.models.user import User
 from app.models.goal import GoalRelation
-from app.models.situation import Situation
+from app.models.situation import ProactiveSituation
 from app.schemas.goal import (
     GoalCreate,
     GoalDetailOut,
@@ -297,7 +297,7 @@ def classify_situation(
     goal without touching the situation itself.
     """
     goal = _authorized(session, goal_id, user)
-    situation = session.get(Situation, payload.situation_id)
+    situation = session.get(ProactiveSituation, payload.situation_id)
     if situation is None:
         raise HTTPException(status_code=404, detail="Not found")
     try:

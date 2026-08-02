@@ -24,7 +24,7 @@ from app.models.connection import Connection
 from app.models.shared_connection import ChannelConnectionExclusion, SharedConnection, SharedConnectionResource
 from app.models.hierarchy import Group, WorkspaceClass
 from app.models.email_summary import EmailSummary
-from app.models.finding import Finding
+from app.models.finding import AgentFinding
 from app.models.goal import Goal, GoalCommitment
 from app.models.investigation import Investigation
 from app.models.invite import WorkspaceInvite
@@ -54,7 +54,7 @@ __all__ = [
     "ChannelRequiredConnection",
     "Signal",
     "AgentRun",
-    "Finding",
+    "AgentFinding",
     "Brief",
     "EmailSummary",
     "Investigation",

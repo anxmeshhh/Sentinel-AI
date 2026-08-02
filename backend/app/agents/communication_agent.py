@@ -20,7 +20,7 @@ import structlog
 from app.agents.base import SpecialistAgent
 from app.agents.llm import LLMClient, LLMError
 from app.core.config import get_settings
-from app.models.finding import Finding
+from app.models.finding import AgentFinding
 from app.models.signal import Signal, SignalType
 from app.services.mail_signals import noise_reason, sender_counts
 
@@ -53,7 +53,7 @@ class CommunicationAgent(SpecialistAgent):
     def __init__(self, llm: LLMClient | None = None):
         self._llm = llm or LLMClient()
 
-    def analyze(self, signals: list[Signal]) -> list[Finding]:
+    def analyze(self, signals: list[Signal]) -> list[AgentFinding]:
         emails = [s for s in signals if s.type == SignalType.EMAIL]
         events = [s for s in signals if s.type == SignalType.CALENDAR_EVENT]
 
@@ -76,7 +76,7 @@ class CommunicationAgent(SpecialistAgent):
             return []
 
         settings = get_settings()
-        findings: list[Finding] = []
+        findings: list[AgentFinding] = []
         for result in narrated.get("results", []):
             idx = result.get("index")
             if idx is None or not (0 <= idx < len(candidates)):
@@ -86,7 +86,7 @@ class CommunicationAgent(SpecialistAgent):
                 continue
             candidate = candidates[idx]
             findings.append(
-                Finding(
+                AgentFinding(
                     id=uuid.uuid4(),
                     agent=self.name,
                     type=candidate["type"],

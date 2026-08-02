@@ -18,7 +18,7 @@ from app.models.connection import Provider
 from app.models.user import User
 from app.repositories.briefs import BriefRepository
 from app.repositories.connections import ConnectionRepository
-from app.repositories.findings import FindingRepository
+from app.repositories.findings import AgentFindingRepository
 from app.schemas.assistant import ChatRequest, ChatResponse
 from app.services.calendar_query import calendar_summary_for_assistant
 from app.services.mail_query import find_best_matching_email, mail_summary_for_assistant
@@ -90,7 +90,7 @@ def _brief_section(session: Session, workspace_id: uuid.UUID) -> str:
     if brief is None:
         return "No brief has been generated for this workspace yet - no findings to discuss."
 
-    findings = FindingRepository(session, workspace_id).for_run(brief.run_id)
+    findings = AgentFindingRepository(session, workspace_id).for_run(brief.run_id)
     lines = [f"Latest brief ({brief.generated_at.isoformat()}): {brief.narrative}", "", "Findings:"]
     for f in findings:
         lines.append(

@@ -22,10 +22,10 @@ from app.core.logging import LOG_FILE_PATH
 from app.models.agent_run import AgentRun, RunStatus
 from app.models.brief import Brief
 from app.models.connection import Connection
-from app.models.finding import Finding
+from app.models.finding import AgentFinding
 from app.models.signal import Signal
 from app.repositories.agent_runs import AgentRunRepository
-from app.repositories.findings import FindingRepository
+from app.repositories.findings import AgentFindingRepository
 from app.schemas.admin import AgentRunOut, LogLineOut, SystemStatsOut
 from app.schemas.finding import FindingOut
 
@@ -44,7 +44,7 @@ def list_runs(
     out = []
     for run in runs:
         finding_count = session.execute(
-            select(func.count()).select_from(Finding).where(Finding.run_id == run.id)
+            select(func.count()).select_from(AgentFinding).where(AgentFinding.run_id == run.id)
         ).scalar_one()
         connection = connections.get(run.connection_id) if run.connection_id else None
         duration = (run.finished_at - run.started_at).total_seconds() if run.finished_at else None
@@ -72,7 +72,7 @@ def run_findings(
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
 ) -> list[FindingOut]:
-    return FindingRepository(session, workspace_id).for_run(run_id)
+    return AgentFindingRepository(session, workspace_id).for_run(run_id)
 
 
 @router.get("/logs", response_model=list[LogLineOut])
@@ -126,7 +126,7 @@ def system_stats(
     return SystemStatsOut(
         connections=count(Connection),
         signals=count(Signal),
-        findings=count(Finding),
+        findings=count(AgentFinding),
         briefs=count(Brief),
         runs_total=sum(run_statuses.values()),
         runs_success=run_statuses.get(RunStatus.SUCCESS, 0),

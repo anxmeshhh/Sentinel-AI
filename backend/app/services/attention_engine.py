@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.models.agent_run import AgentRun
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState, AttentionType
 from app.models.connection import Connection, Provider, ResourcePriority
-from app.models.finding import Finding
+from app.models.finding import AgentFinding
 from app.models.signal import Signal, SignalType
 from app.services.deadline_parser import find_deadline
 from app.services.mail_signals import extract_address, noise_reason, sender_counts
@@ -563,10 +563,10 @@ def _detect_findings(session: Session, workspace_id: uuid.UUID, now: datetime) -
     # about - the same link channel_briefing used to resolve separately, now
     # recorded once on the item like every other kind.
     findings = session.execute(
-        select(Finding, AgentRun.connection_id)
-        .join(AgentRun, AgentRun.id == Finding.run_id)
-        .where(Finding.workspace_id == workspace_id, Finding.severity >= FINDING_MIN_SEVERITY, Finding.created_at >= since)
-        .order_by(Finding.severity.desc())
+        select(AgentFinding, AgentRun.connection_id)
+        .join(AgentRun, AgentRun.id == AgentFinding.run_id)
+        .where(AgentFinding.workspace_id == workspace_id, AgentFinding.severity >= FINDING_MIN_SEVERITY, AgentFinding.created_at >= since)
+        .order_by(AgentFinding.severity.desc())
     ).all()
 
     return [

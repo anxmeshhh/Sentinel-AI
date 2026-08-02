@@ -2,7 +2,7 @@
 one thing users actually read - a ranked, narrated daily brief.
 
 Phase 1 only has one specialist agent feeding it (Engineering), but this
-takes `list[Finding]` regardless of which agent produced them, so Phase 2's
+takes `list[AgentFinding]` regardless of which agent produced them, so Phase 2's
 cross-agent correlation is additive logic here, not a rewrite
 (ARCHITECTURE.md §4, §9).
 """
@@ -10,7 +10,7 @@ cross-agent correlation is additive logic here, not a rewrite
 import structlog
 
 from app.agents.llm import LLMClient, LLMError
-from app.models.finding import Finding
+from app.models.finding import AgentFinding
 
 logger = structlog.get_logger("sentinel.agents.executive")
 
@@ -30,7 +30,7 @@ class ExecutiveAgent:
     def __init__(self, llm: LLMClient | None = None):
         self._llm = llm or LLMClient()
 
-    def synthesize(self, findings: list[Finding], connection_label: str) -> tuple[str, list[str]]:
+    def synthesize(self, findings: list[AgentFinding], connection_label: str) -> tuple[str, list[str]]:
         if not findings:
             return "No findings above the confidence threshold today.", []
 
@@ -47,7 +47,7 @@ class ExecutiveAgent:
         return narrative, [str(f.id) for f in top]
 
 
-def _render_findings(findings: list[Finding], connection_label: str) -> str:
+def _render_findings(findings: list[AgentFinding], connection_label: str) -> str:
     lines = [f"Connection: {connection_label}", ""]
     for f in findings:
         lines.append(
@@ -58,7 +58,7 @@ def _render_findings(findings: list[Finding], connection_label: str) -> str:
     return "\n".join(lines)
 
 
-def _fallback_narrative(findings: list[Finding], connection_label: str) -> str:
+def _fallback_narrative(findings: list[AgentFinding], connection_label: str) -> str:
     """Used only if the LLM call fails - never silently produce an empty brief."""
     if not findings:
         return f"{connection_label}: no findings above the confidence threshold today."

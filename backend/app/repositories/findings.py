@@ -1,12 +1,12 @@
 import uuid
 
-from app.models.finding import Finding
+from app.models.finding import AgentFinding
 from app.repositories.base import WorkspaceScopedRepository
 
 
-class FindingRepository(WorkspaceScopedRepository[Finding]):
-    model = Finding
+class AgentFindingRepository(WorkspaceScopedRepository[AgentFinding]):
+    model = AgentFinding
 
-    def for_run(self, run_id: uuid.UUID) -> list[Finding]:
-        rows = self._scoped().where(Finding.run_id == run_id)
+    def for_run(self, run_id: uuid.UUID) -> list[AgentFinding]:
+        rows = self._scoped().where(AgentFinding.run_id == run_id)
         return list(self.session.execute(rows).scalars().all())

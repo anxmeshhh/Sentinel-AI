@@ -23,7 +23,7 @@ from app.agents.base import SpecialistAgent
 from app.agents.communication_agent import CommunicationAgent
 from app.agents.engineering_agent import EngineeringAgent
 from app.agents.executive_agent import ExecutiveAgent
-from app.models.finding import Finding
+from app.models.finding import AgentFinding
 from app.models.signal import Signal
 
 logger = structlog.get_logger("sentinel.graph")
@@ -32,7 +32,7 @@ logger = structlog.get_logger("sentinel.graph")
 class SentinelState(TypedDict, total=False):
     signals: list[Signal]
     connection_label: str
-    findings: list[Finding]
+    findings: list[AgentFinding]
     node_errors: dict[str, str]
     narrative: str
     top_finding_ids: list[str]

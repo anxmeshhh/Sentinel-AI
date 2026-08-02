@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_workspace_id
 from app.repositories.briefs import BriefRepository
-from app.repositories.findings import FindingRepository
+from app.repositories.findings import AgentFindingRepository
 from app.schemas.brief import BriefOut, BriefSummaryOut
 from app.schemas.finding import FindingOut
 
@@ -20,7 +20,7 @@ def latest_brief(
     brief = BriefRepository(session, workspace_id).latest()
     if brief is None:
         raise HTTPException(status_code=404, detail="No brief has been generated yet")
-    findings = FindingRepository(session, workspace_id).for_run(brief.run_id)
+    findings = AgentFindingRepository(session, workspace_id).for_run(brief.run_id)
     return BriefOut(
         id=brief.id,
         run_id=brief.run_id,

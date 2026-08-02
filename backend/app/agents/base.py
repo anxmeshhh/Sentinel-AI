@@ -7,7 +7,7 @@ confidence scoring, not statistics.
 
 from abc import ABC, abstractmethod
 
-from app.models.finding import Finding
+from app.models.finding import AgentFinding
 from app.models.signal import Signal
 
 
@@ -15,6 +15,6 @@ class SpecialistAgent(ABC):
     name: str
 
     @abstractmethod
-    def analyze(self, signals: list[Signal]) -> list[Finding]:
+    def analyze(self, signals: list[Signal]) -> list[AgentFinding]:
         """Turn a window of signals into zero or more Findings."""
         raise NotImplementedError

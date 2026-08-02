@@ -19,7 +19,9 @@ from app.models.signal import Signal, SignalType
 from app.models.situation import SituationKind
 from app.models.user import User
 from app.providers.registry import spec_for
+from app.domain.finding import FindingSource, FindingTier
 from app.services.connection_state import ConnectionState, connection_state
+from app.services.findings import list_findings
 from app.services.mail_signals import noise_reason, sender_counts
 from app.schemas.attention import (
     AttentionItemOut,
@@ -31,8 +33,6 @@ from app.schemas.attention import (
 )
 from app.services.attention_engine import list_attention, refresh_attention
 from app.services.catchup import build_catchup
-from app.services.investigation import personal_scope
-from app.services.proactive import list_situations
 
 router = APIRouter(prefix="/attention", tags=["attention"])
 
@@ -149,15 +149,6 @@ _STATE_ERROR = {
     ConnectionState.TOKEN_REVOKED: "authentication expired — reconnect needed",
     ConnectionState.ERROR: "last sync failed",
 }
-
-
-def _situation_is_critical(sit) -> bool:
-    """A stalled repository is never an emergency, however long it has been
-    quiet - it is always "review". Other situations become critical only at
-    the very top of the importance scale (a service being torn down, not
-    merely paused). Keeps the critical tier meaningful rather than firing on
-    every high-importance-but-not-urgent finding."""
-    return sit.importance >= 0.9 and sit.kind is not SituationKind.RESOURCE_STALLED
 
 
 def _operational_summary(situations: list, detected: list) -> str | None:
@@ -284,21 +275,23 @@ def sentinel_status(
     providers.sort(key=lambda p: p.label.lower())
 
     # The operational state is the UNION of both surfaces this page shows:
-    # attention items (Now) AND proactive situations (Risks). Counting only
-    # attention items is the bug this fixes - it let the verdict say "all
-    # clear" while stalled repos and an at-risk service sat in the Risks tab.
-    # Situations are scoped exactly like the Risks tab that displays them.
-    open_items = list_attention(session, workspace_id, viewer_user_id=user.id)
-    detected = [i for i in open_items if i.origin == AttentionOrigin.DETECTED]
-    reminders_open = [i for i in open_items if i.origin == AttentionOrigin.MANUAL]
-    situations = list_situations(session, personal_scope(session, workspace_id, user.id))
-
-    # 0.8 is the same cutoff the finding card uses for its red "Critical"
-    # severity dot, so a card and the verdict never disagree on what critical is.
-    critical_count = sum(1 for i in detected if i.priority >= 0.8) + sum(1 for s in situations if _situation_is_critical(s))
-    review_count = sum(1 for i in detected if i.priority < 0.8) + sum(1 for s in situations if not _situation_is_critical(s))
-    reminder_count = len(reminders_open)
+    # attention items (Now) AND proactive situations (Risks) - now read through
+    # the one canonical Finding stream (Intelligence Core, Phase 1) rather than
+    # querying each pipeline here. The tier (critical/review/reminder) is
+    # computed once, in services/findings.py, so a card and this verdict can
+    # never disagree on what "critical" means.
+    findings = list_findings(session, workspace_id, viewer_user_id=user.id)
+    critical_count = sum(1 for f in findings if f.tier is FindingTier.CRITICAL)
+    review_count = sum(1 for f in findings if f.tier is FindingTier.REVIEW)
+    reminder_count = sum(1 for f in findings if f.tier is FindingTier.REMINDER)
     findings_count = critical_count + review_count
+
+    # The deterministic summary phrasing still reads the underlying rows (via
+    # the canonical finding's transitional ``raw`` handle), reconstructing the
+    # exact two lists it has always taken: proactive situations, and detected
+    # (non-reminder) attention items.
+    situations = [f.raw for f in findings if f.source is FindingSource.PROACTIVE]
+    detected = [f.raw for f in findings if f.source is FindingSource.ATTENTION and f.tier is not FindingTier.REMINDER]
     summary = _operational_summary(situations, detected)
     last_synced = max((c.last_synced_at for c in connections if c.last_synced_at is not None), default=None)
 

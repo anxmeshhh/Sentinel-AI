@@ -4,7 +4,7 @@ contributors, risky deploys.
 Design choice: detection is deterministic Python, not the LLM. The agent
 computes real candidates with real evidence (PR numbers, URLs, timestamps)
 first; the LLM is only asked to narrate + score confidence for candidates
-that already exist, matched back by index. This keeps every Finding's
+that already exist, matched back by index. This keeps every AgentFinding's
 evidence traceable to actual ingested rows (PRD "Explainable" principle)
 instead of trusting the model to invent both the finding and its evidence
 from a wall of metrics text.
@@ -19,7 +19,7 @@ import structlog
 from app.agents.base import SpecialistAgent
 from app.agents.llm import LLMClient, LLMError
 from app.core.config import get_settings
-from app.models.finding import Finding
+from app.models.finding import AgentFinding
 from app.models.signal import Signal, SignalType
 
 logger = structlog.get_logger("sentinel.agents.engineering")
@@ -48,7 +48,7 @@ class EngineeringAgent(SpecialistAgent):
     def __init__(self, llm: LLMClient | None = None):
         self._llm = llm or LLMClient()
 
-    def analyze(self, signals: list[Signal]) -> list[Finding]:
+    def analyze(self, signals: list[Signal]) -> list[AgentFinding]:
         prs = [s for s in signals if s.type == SignalType.PR]
         reviews = [s for s in signals if s.type == SignalType.REVIEW_SUBMITTED]
         commits = [s for s in signals if s.type == SignalType.COMMIT]
@@ -79,7 +79,7 @@ class EngineeringAgent(SpecialistAgent):
             return []
 
         settings = get_settings()
-        findings: list[Finding] = []
+        findings: list[AgentFinding] = []
         for result in narrated.get("results", []):
             idx = result.get("index")
             if idx is None or not (0 <= idx < len(candidates)):
@@ -89,7 +89,7 @@ class EngineeringAgent(SpecialistAgent):
                 continue  # suppress low-confidence noise - PRD principle #4
             candidate = candidates[idx]
             findings.append(
-                Finding(
+                AgentFinding(
                     id=uuid.uuid4(),  # set eagerly (not left to the flush-time column default) so the
                     # Executive Agent can reference finding.id in top_finding_ids before any flush.
                     agent=self.name,

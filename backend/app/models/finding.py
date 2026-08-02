@@ -6,12 +6,19 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin, UUIDPk
 
 
-class Finding(Base, UUIDPk, TimestampMixin):
-    """An opinion produced by one specialist agent for one run.
+class AgentFinding(Base, UUIDPk, TimestampMixin):
+    """An opinion produced by one LLM specialist agent for one run.
 
-    Findings are immutable once written - a re-run produces new Finding rows,
-    it never mutates old ones, so the brief history in the UI stays accurate
-    to what was actually said at the time.
+    NOTE ON NAMING: this is deliberately *not* the canonical Finding. The
+    canonical, deterministic Finding is ``app.domain.finding.Finding`` - the
+    single source of truth that unifies the attention and situation pipelines
+    (Intelligence Core, Phase 1). An AgentFinding is a different, LLM-produced
+    concept: one agent's opinion within an agent run, surfaced into attention
+    via AttentionType.FINDING. Kept separate so the canonical name is free.
+
+    Immutable once written - a re-run produces new AgentFinding rows, it never
+    mutates old ones, so the brief history in the UI stays accurate to what was
+    actually said at the time. The table name stays ``findings`` (no migration).
     """
 
     __tablename__ = "findings"

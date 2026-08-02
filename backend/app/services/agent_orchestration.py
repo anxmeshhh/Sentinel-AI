@@ -14,7 +14,7 @@ from app.models.brief import Brief
 from app.models.connection import Connection
 from app.repositories.agent_runs import AgentRunRepository
 from app.repositories.briefs import BriefRepository
-from app.repositories.findings import FindingRepository
+from app.repositories.findings import AgentFindingRepository
 from app.repositories.signals import SignalRepository
 
 logger = structlog.get_logger("sentinel.orchestration")
@@ -39,7 +39,7 @@ def run_agents_for_connection(session: Session, connection: Connection, triggere
         result = graph.invoke({"signals": signals, "connection_label": connection.full_name})
 
         findings = result.get("findings", [])
-        finding_repo = FindingRepository(session, workspace_id)
+        finding_repo = AgentFindingRepository(session, workspace_id)
         for finding in findings:
             finding.run_id = run.id
             finding_repo.add(finding)

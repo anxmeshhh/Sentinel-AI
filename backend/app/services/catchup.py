@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.llm import LLMClient, LLMError
 from app.models.attention_item import AttentionItem, AttentionState
-from app.models.finding import Finding
+from app.models.finding import AgentFinding
 from app.models.signal import Signal, SignalType
 from app.models.workspace import Membership
 
@@ -87,7 +87,7 @@ def _collect_facts(session: Session, workspace_id: uuid.UUID, since: datetime, n
     ).scalars().all()
 
     new_findings = session.execute(
-        select(Finding).where(Finding.workspace_id == workspace_id, Finding.created_at >= since, Finding.severity >= 0.6)
+        select(AgentFinding).where(AgentFinding.workspace_id == workspace_id, AgentFinding.created_at >= since, AgentFinding.severity >= 0.6)
     ).scalars().all()
 
     attention_new = session.execute(

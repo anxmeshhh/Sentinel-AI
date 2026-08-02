@@ -18,7 +18,7 @@ from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionS
 from app.models.base import Base
 from app.models.channel_connection import ChannelConnection, ChannelConnectionResource
 from app.models.connection import Connection, Provider
-from app.models.finding import Finding
+from app.models.finding import AgentFinding
 from app.models.team import ChannelRole, Team, TeamMembership
 from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
@@ -194,7 +194,7 @@ def test_finding_visible_only_when_its_own_connection_is_assigned(session, env):
     )
     session.add(run)
     session.flush()
-    finding = Finding(
+    finding = AgentFinding(
         workspace_id=env["workspace"].id, run_id=run.id, agent="engineering", type="risk",
         severity=0.8, confidence=0.9, summary="Risky deploy", root_cause="x", suggested_action="y", evidence={},
     )

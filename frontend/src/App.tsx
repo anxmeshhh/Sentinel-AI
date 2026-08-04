@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
 import { HierarchyTree } from "./components/HierarchyTree";
+import { MemoryToast } from "./components/MemoryToast";
 import { WorkspaceRail } from "./components/WorkspaceRail";
 import { useAuth } from "./context/AuthContext";
 import { useWorkspace } from "./context/WorkspaceContext";
@@ -93,6 +94,7 @@ function AppShell({ children }: { children: ReactNode }) {
           }}
         />
       )}
+      <MemoryToast />
     </div>
   );
 }

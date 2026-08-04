@@ -66,6 +66,11 @@ class Situation(Base, UUIDPk, TimestampMixin):
     # peak and rising, escalating. The raw material for "is it getting worse".
     peak_member_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     provider_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # How many times this situation has FORMED (1 on creation, +1 each time a
+    # resolved situation re-forms). The recurrence signal the Memory Engine
+    # reads to learn "this keeps happening" - distinct from member_count (how
+    # big it is now) and peak_member_count (how big it ever got).
+    occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     # True when the members span >= 2 providers - the cross-provider synthesis
     # that is the whole point. Single-provider clusters are still real
     # situations (3 stalled PRs on one repo), just flagged as not cross-provider.

@@ -20,6 +20,8 @@ from app.api.routes import (
     actions,
     goals,
     proactive,
+    memory,
+    decisions,
     hierarchy,
     shared_connections,
     connections,
@@ -122,6 +124,8 @@ app.include_router(connections_ai.router)
 app.include_router(connections_github_ai.router)
 app.include_router(drive.router)
 app.include_router(meet.router)
+app.include_router(memory.router)
+app.include_router(decisions.router)
 
 
 @app.get("/health")

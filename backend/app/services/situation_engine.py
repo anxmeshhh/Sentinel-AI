@@ -82,6 +82,10 @@ def _upsert_situation(
         session.add(sit)
         session.flush()
     else:
+        # A resolved situation re-forming is a distinct occurrence - the raw
+        # material the Memory Engine turns into "this keeps happening".
+        if sit.status is SituationStatus.RESOLVED:
+            sit.occurrence_count += 1
         sit.status = SituationStatus.OPEN
         sit.resolved_at = None
         sit.primary_entity_id = entity_id
@@ -167,6 +171,14 @@ def refresh_intelligence(session: Session, scope: Scope) -> list[Situation]:
     from app.services.reasoning_engine import refresh_reasoning
 
     refresh_reasoning(session, scope, findings)
+    # Memory (Phase 6) learns from the situation lifecycle; Decision (Phase 7)
+    # turns reasoning + memory into grounded, confirm-first proposals. Both are
+    # deterministic and run last, once reasoning reflects this pass.
+    from app.services.decision_engine import refresh_decisions
+    from app.services.memory_engine import refresh_memory
+
+    refresh_memory(session, scope)
+    refresh_decisions(session, scope)
     return situations
 
 

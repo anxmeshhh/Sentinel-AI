@@ -71,18 +71,28 @@ def test_every_declared_signal_type_is_real(provider):
         assert isinstance(signal_type, SignalType)
 
 
-def test_no_two_providers_claim_the_same_signal_type():
-    """Signal types identify what a row *is*, and detectors read them without
-    checking the provider. Two providers producing SignalType.EMAIL would
-    make every email detector silently provider-ambiguous - worth a decision
-    rather than a surprise, so this fails until someone makes one."""
-    seen: dict[SignalType, str] = {}
+def test_signal_type_sharing_is_intentional_provider_reuse():
+    """Detectors read SignalType, never the provider - which is exactly what lets
+    a NEW provider reuse the whole Intelligence Core by producing an existing
+    signal type (Outlook Mail -> EMAIL, Outlook Calendar -> CALENDAR_EVENT, so
+    the Gmail/Calendar detectors fire unchanged). Sharing is therefore allowed -
+    but only among declared twins; any OTHER overlap is an accident worth
+    catching, so record a new intentional twin here or this fails."""
+    intentional_twins: dict[SignalType, set[str]] = {
+        SignalType.EMAIL: {"Gmail", "Outlook Mail"},
+        SignalType.CALENDAR_EVENT: {"Google Calendar", "Outlook Calendar"},
+    }
+    claimants: dict[SignalType, set[str]] = {}
     for spec in PROVIDERS.values():
         for signal_type in spec.signal_types:
-            assert signal_type not in seen, (
-                f"{spec.label} and {seen[signal_type]} both produce {signal_type.value}"
+            claimants.setdefault(signal_type, set()).add(spec.label)
+
+    for signal_type, labels in claimants.items():
+        if len(labels) > 1:
+            assert labels == intentional_twins.get(signal_type), (
+                f"Unexpected providers {labels} share {signal_type.value}; "
+                f"if this is deliberate reuse, record it in intentional_twins."
             )
-            seen[signal_type] = spec.label
 
 
 def test_resource_scoped_providers_are_the_ones_that_reach_many_things():

@@ -98,6 +98,19 @@ if MICROSOFT_CONFIGURED:
         client_kwargs={"scope": "openid email profile"},
     )
 
+    # Separate client for the Microsoft 365 "Connect" data flow, mirroring
+    # google_data. offline_access is what makes Entra issue a refresh_token;
+    # Mail.Read + Calendars.Read are Sprint 1's least-privilege Graph scopes
+    # (read-only, metadata used). Extended per sprint as services are added.
+    # "common" allows both work/school and personal Microsoft accounts.
+    oauth.register(
+        name="microsoft_data",
+        client_id=_settings.microsoft_client_id,
+        client_secret=_settings.microsoft_client_secret,
+        server_metadata_url="https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration",
+        client_kwargs={"scope": "openid email offline_access Mail.Read Calendars.Read"},
+    )
+
 # Slack OAuth v2 is driven manually (see integrations/slack_auth.py), not through
 # authlib: v2 uses comma-separated bot scopes and a non-standard token response
 # (the bot token at `access_token`, plus `team`/`authed_user`), so an explicit

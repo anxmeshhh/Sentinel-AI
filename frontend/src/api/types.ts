@@ -3,7 +3,7 @@
 
 export interface Connection {
   id: string;
-  provider: "github" | "google_calendar" | "gmail" | "google_drive" | "slack";
+  provider: "github" | "google_calendar" | "gmail" | "google_drive" | "slack" | "microsoft_outlook_mail" | "microsoft_outlook_calendar";
   org: string;
   repo: string;
   last_synced_at: string | null;

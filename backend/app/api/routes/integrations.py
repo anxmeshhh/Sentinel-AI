@@ -26,12 +26,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.core.auth import InvalidTokenError, create_connect_ticket, decode_connect_ticket
 from app.core.config import get_settings
-from app.core.oauth import GITHUB_CONFIGURED, GOOGLE_CONFIGURED, SLACK_CONFIGURED, oauth
+from app.core.oauth import GITHUB_CONFIGURED, GOOGLE_CONFIGURED, MICROSOFT_CONFIGURED, SLACK_CONFIGURED, oauth
 from app.core.security import encrypt_token
 from app.models.connection import Connection, Provider
 from app.models.email_summary import EmailSummary
 from app.models.signal import Signal
 from app.models.user import User
+from app.providers.workspace_grants import GOOGLE_GRANT, MICROSOFT_GRANT
+from app.services.grants import provision_grant
 from app.schemas.integration import (
     ConnectTicketOut,
     GitHubRepoOut,
@@ -68,6 +70,7 @@ router = APIRouter(prefix="/integrations", tags=["integrations"])
 GOOGLE_CONNECT_PURPOSE = "google_connect"
 GITHUB_CONNECT_PURPOSE = "github_connect"
 SLACK_CONNECT_PURPOSE = "slack_connect"
+MICROSOFT_CONNECT_PURPOSE = "microsoft_connect"
 
 
 @router.post("/google/connect-ticket", response_model=ConnectTicketOut)
@@ -174,6 +177,83 @@ async def google_connect_callback(request: Request, session: Session = Depends(g
     return RedirectResponse(f"{get_settings().frontend_base_url}{return_to}{separator}connected=google")
 
 
+# --- Microsoft 365 ----------------------------------------------------------
+#
+# The exact three-step shape as Google - ticket, redirect, callback - because
+# the constraint is identical (a full-page redirect cannot carry an auth
+# header). The only differences are the authlib client (microsoft_data) and the
+# provisioner call: one grant fans out into the Microsoft child services via the
+# SAME generic provision_grant Google now uses. Sprint 1 provisions Outlook Mail
+# and Calendar; later sprints extend MICROSOFT_GRANT's service list, no route
+# change.
+@router.post("/microsoft/connect-ticket", response_model=ConnectTicketOut)
+def create_microsoft_connect_ticket(
+    user: User = Depends(get_current_user),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+) -> ConnectTicketOut:
+    if not MICROSOFT_CONFIGURED:
+        raise HTTPException(status_code=501, detail="Microsoft 365 integration is not configured yet")
+    ticket = create_connect_ticket(user_id=user.id, workspace_id=workspace_id, purpose=MICROSOFT_CONNECT_PURPOSE)
+    return ConnectTicketOut(ticket=ticket)
+
+
+@router.get("/microsoft/connect")
+async def microsoft_connect(request: Request, ticket: str):
+    if not MICROSOFT_CONFIGURED:
+        raise HTTPException(status_code=501, detail="Microsoft 365 integration is not configured yet")
+    try:
+        user_id, workspace_id = decode_connect_ticket(ticket, expected_purpose=MICROSOFT_CONNECT_PURPOSE)
+    except InvalidTokenError:
+        raise HTTPException(status_code=400, detail="This connect link is invalid or has expired - try again")
+
+    request.session["microsoft_connect_user_id"] = str(user_id)
+    request.session["microsoft_connect_workspace_id"] = str(workspace_id)
+    request.session["microsoft_connect_return_to"] = _safe_return_path(request.query_params.get("return_to"))
+
+    redirect_uri = f"{get_settings().backend_base_url}/integrations/microsoft/callback"
+    # prompt=consent forces a real consent screen (so a scope bump takes effect
+    # on reconnect); offline_access in the scope is what yields a refresh_token.
+    return await oauth.microsoft_data.authorize_redirect(request, redirect_uri, prompt="consent")
+
+
+@router.get("/microsoft/callback")
+async def microsoft_connect_callback(request: Request, session: Session = Depends(get_db)):
+    if not MICROSOFT_CONFIGURED:
+        raise HTTPException(status_code=501, detail="Microsoft 365 integration is not configured yet")
+
+    workspace_id_str = request.session.pop("microsoft_connect_workspace_id", None)
+    user_id_str = request.session.pop("microsoft_connect_user_id", None)
+    return_to = _safe_return_path(request.session.pop("microsoft_connect_return_to", None))
+    if not workspace_id_str or not user_id_str:
+        return RedirectResponse(f"{get_settings().frontend_base_url}/?microsoft_error=session_expired")
+
+    token = await oauth.microsoft_data.authorize_access_token(request)
+    access_token = token["access_token"]
+    refresh_token = token.get("refresh_token")
+    userinfo = token.get("userinfo") or {}
+    # Entra puts the account on email or (for work/school) preferred_username (the UPN).
+    microsoft_account = userinfo.get("email") or userinfo.get("preferred_username") or "unknown-microsoft-account"
+
+    if not refresh_token:
+        return RedirectResponse(f"{get_settings().frontend_base_url}/?microsoft_error=no_refresh_token")
+
+    expires_at_ts = token.get("expires_at") or (time.time() + token.get("expires_in", 3600))
+    expires_at = datetime.fromtimestamp(expires_at_ts, tz=timezone.utc)
+    encrypted = encrypt_token(
+        json.dumps({"access_token": access_token, "refresh_token": refresh_token, "expires_at": expires_at.isoformat()})
+    )
+
+    workspace_id = uuid.UUID(workspace_id_str)
+    provision_grant(
+        session, workspace_id=workspace_id, user_id=uuid.UUID(user_id_str), grant=MICROSOFT_GRANT,
+        account_identity=microsoft_account, encrypted_token=encrypted,
+    )
+    _queue_first_sync(session, workspace_id, uuid.UUID(user_id_str))
+
+    separator = "&" if "?" in return_to else "?"
+    return RedirectResponse(f"{get_settings().frontend_base_url}{return_to}{separator}connected=microsoft")
+
+
 def _queue_first_sync(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> None:
     """Sync immediately after connecting, instead of waiting for the poll.
 
@@ -208,55 +288,19 @@ def _queue_first_sync(session: Session, workspace_id: uuid.UUID, user_id: uuid.U
 def upsert_google_connections(
     session: Session, *, workspace_id: uuid.UUID, user_id: uuid.UUID, google_email: str, encrypted_token: str
 ) -> None:
-    """One Google account per person per workspace.
+    """One Google account per person per workspace - now a thin call into the
+    generalized grant provisioner (services/grants.py), shared with Microsoft.
 
-    Keyed on (workspace, user, provider). The user is part of the key
-    because an OAuth token delegates one individual's access: without it,
-    two members of a shared workspace collided, and the second to connect
-    replaced the first's connection and deleted their synced signals -
-    reproduced before this change, not theorised.
-
-    Re-connecting a *different* Google account as the same person still
-    replaces their own connection, since the previously synced signals
-    describe a mailbox this account can no longer read. That purge is
-    scoped to that user's own connection and never touches a teammate's.
+    The behaviour is unchanged: keyed on (workspace, user, provider); a token
+    delegates one individual's access; re-connecting a different account as the
+    same person replaces their own connections and purges the now-unreadable
+    signals, never a teammate's.
     """
-    for provider, label in [(Provider.GOOGLE_CALENDAR, "calendar"), (Provider.GMAIL, "gmail"), (Provider.GOOGLE_DRIVE, "drive")]:
-        existing = session.execute(
-            select(Connection).where(
-                Connection.workspace_id == workspace_id,
-                Connection.user_id == user_id,
-                Connection.provider == provider,
-            )
-        ).scalars().first()
-        if existing is not None:
-            if existing.org != google_email:
-                logger.info(
-                    "google_account_replaced",
-                    provider=provider.value, old=existing.org, new=google_email,
-                    workspace_id=str(workspace_id), user_id=str(user_id),
-                )
-                session.query(Signal).filter(Signal.connection_id == existing.id).delete()
-                if provider == Provider.GMAIL:
-                    # Summaries are keyed by workspace+message; only this
-                    # user's messages are going away, and a stale summary
-                    # for a message nobody can fetch is dead weight.
-                    session.query(EmailSummary).filter(EmailSummary.workspace_id == workspace_id).delete()
-                existing.org = google_email
-                existing.last_synced_at = None
-            existing.encrypted_token = encrypted_token
-            # A fresh consent is exactly the evidence that the connection is
-            # alive again - otherwise it would stay flagged `expired` in the
-            # readiness checklist forever after one revocation.
-            existing.revoked_at = None
-        else:
-            session.add(
-                Connection(
-                    workspace_id=workspace_id, user_id=user_id, provider=provider,
-                    org=google_email, repo=label, encrypted_token=encrypted_token,
-                )
-            )
-    session.commit()
+    provision_grant(
+        session,
+        workspace_id=workspace_id, user_id=user_id, grant=GOOGLE_GRANT,
+        account_identity=google_email, encrypted_token=encrypted_token,
+    )
 
 
 # --- GitHub -----------------------------------------------------------------

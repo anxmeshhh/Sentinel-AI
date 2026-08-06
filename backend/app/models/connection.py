@@ -14,6 +14,10 @@ class Provider(str, enum.Enum):
     GMAIL = "gmail"
     GOOGLE_DRIVE = "google_drive"
     SLACK = "slack"
+    # Microsoft 365 - one Entra ID grant fans out into these child services
+    # (Sprint 1: mail + calendar), the structural twin of the Google grant.
+    MICROSOFT_OUTLOOK_MAIL = "microsoft_outlook_mail"
+    MICROSOFT_OUTLOOK_CALENDAR = "microsoft_outlook_calendar"
 
 
 class ResourcePriority(str, enum.Enum):

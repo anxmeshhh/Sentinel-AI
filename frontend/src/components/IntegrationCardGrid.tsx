@@ -1,6 +1,6 @@
 import type { Connection } from "../api/types";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { GitHubIcon, GoogleIcon, NotionIcon, SlackIcon, ZoomIcon } from "./ProviderIcons";
+import { GitHubIcon, GoogleIcon, MicrosoftIcon, NotionIcon, SlackIcon, ZoomIcon } from "./ProviderIcons";
 import { ScopeBadge, scopeOf } from "./ScopeBadge";
 import { ServiceCard } from "./ServiceCard";
 
@@ -25,6 +25,12 @@ export function IntegrationCardGrid({ connections }: { connections: Connection[]
   const slackConnected = slackRows.length > 0;
   const slackChannels = slackRows.filter((c) => c.repo);
   const slackWorkspace = slackRows.find((c) => c.org)?.org;
+
+  // Microsoft 365, a workspace provider like Google: one grant, child services.
+  const microsoftServices = connections.filter((c) => c.provider.startsWith("microsoft_"));
+  const microsoftCount = microsoftServices.length;
+  const microsoftUnhealthy = microsoftServices.filter((c) => c.state === "error" || c.state === "token_revoked").length;
+  const microsoftAccount = microsoftServices.find((c) => c.org)?.org;
   const slackLastSync = slackChannels
     .map((c) => c.last_synced_at)
     .filter((t): t is string => Boolean(t))
@@ -89,6 +95,25 @@ export function IntegrationCardGrid({ connections }: { connections: Connection[]
         }
         connected={slackConnected}
         to="/connections/slack"
+      />
+      <ServiceCard
+        icon={<MicrosoftIcon />}
+        name="Microsoft 365"
+        status={
+          microsoftCount === 0
+            ? "Not connected"
+            : microsoftUnhealthy > 0
+              ? `${microsoftUnhealthy} service${microsoftUnhealthy === 1 ? "" : "s"} need attention`
+              : `${microsoftCount} service${microsoftCount === 1 ? "" : "s"} connected`
+        }
+        statusTone={microsoftCount === 0 ? "muted" : microsoftUnhealthy > 0 ? "crit" : "good"}
+        desc={
+          microsoftCount > 0
+            ? `${microsoftAccount ?? "Account"} — Outlook Mail & Calendar. Teams, OneDrive and more coming.`
+            : "Outlook Mail, Calendar, Teams, OneDrive, SharePoint — one Microsoft grant."
+        }
+        connected={microsoftCount > 0}
+        to="/connections/microsoft"
       />
       <ServiceCard icon={<ZoomIcon />} name="Zoom" status="Coming soon" desc="Meeting metadata — not yet available." connected={false} disabled to="/connections/zoom" />
       <ServiceCard icon={<NotionIcon />} name="Notion" status="Coming soon" desc="Stale or missing docs — not yet available." connected={false} disabled to="/connections/notion" />

@@ -10,7 +10,7 @@ import { SentinelPanel, type SuggestionGroup } from "../components/SentinelPanel
 import { workspaceContext } from "../components/context";
 import { ScopeNotice, scopeOf } from "../components/ScopeBadge";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { CalendarIcon, DriveIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
+import { CalendarIcon, DriveIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, MicrosoftIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
 import { ServiceCard } from "../components/ServiceCard";
 import { Icon, LoadingBlock } from "../components/ui";
 
@@ -18,6 +18,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 const PROVIDER_META: Record<string, { label: string; icon: ReactNode }> = {
   google: { label: "Google", icon: <GoogleIcon /> },
+  microsoft: { label: "Microsoft 365", icon: <MicrosoftIcon /> },
   github: { label: "GitHub", icon: <GitHubIcon /> },
   zoom: { label: "Zoom", icon: <ZoomIcon /> },
   slack: { label: "Slack", icon: <SlackIcon /> },
@@ -72,6 +73,8 @@ export function ConnectionWorkspacePage() {
               <LoadingBlock />
             ) : provider === "google" ? (
               <GoogleWorkspace connections={connections} onChanged={load} />
+            ) : provider === "microsoft" ? (
+              <MicrosoftWorkspace connections={connections} onChanged={load} />
             ) : provider === "github" ? (
               <GitHubWorkspace connections={connections} onChanged={load} />
             ) : provider === "slack" ? (
@@ -222,6 +225,74 @@ function meetHealth(calendar: Connection | undefined): Health {
   const cal = serviceHealth(calendar);
   if (cal.healthy) return { status: "Available", tone: "good", healthy: true };
   return { status: "Unavailable — Calendar issue", tone: "crit", healthy: false };
+}
+
+// Microsoft 365 - a workspace provider exactly like Google: one grant, child
+// services. Sprint 1 exposes Outlook Mail and Outlook Calendar; the same page
+// grows as later sprints add Teams/OneDrive/etc. The connect flow is identical
+// to Google's, only the endpoint prefix differs.
+function MicrosoftWorkspace({ connections, onChanged }: { connections: Connection[]; onChanged: () => void }) {
+  const [connecting, setConnecting] = useState(false);
+  const mail = connections.find((c) => c.provider === "microsoft_outlook_mail");
+  const calendar = connections.find((c) => c.provider === "microsoft_outlook_calendar");
+  const connectedCount = [mail, calendar].filter(Boolean).length;
+
+  async function handleConnect() {
+    setConnecting(true);
+    try {
+      const { ticket } = await api.post<{ ticket: string }>("/integrations/microsoft/connect-ticket");
+      window.location.href = `${API_BASE}/integrations/microsoft/connect?ticket=${encodeURIComponent(ticket)}`;
+    } catch {
+      setConnecting(false);
+    }
+  }
+
+  async function handleDisconnectAll() {
+    const ids = [mail?.id, calendar?.id].filter((id): id is string => Boolean(id));
+    await Promise.all(ids.map((id) => api.delete(`/connections/${id}`)));
+    onChanged();
+  }
+
+  const mailH = serviceHealth(mail);
+  const calH = serviceHealth(calendar);
+
+  return (
+    <div>
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <ServiceCard
+          icon={<MailIcon />}
+          name="Outlook Mail"
+          status={mailH.status}
+          statusTone={mailH.tone}
+          desc={mail?.org ?? "Subject, participants, timestamps — never message bodies"}
+          connected={mailH.healthy}
+        />
+        <ServiceCard
+          icon={<CalendarIcon />}
+          name="Outlook Calendar"
+          status={calH.status}
+          statusTone={calH.tone}
+          desc={calendar?.org ?? "Meetings, attendees, Teams links"}
+          connected={calH.healthy}
+        />
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <button onClick={handleConnect} disabled={connecting} className="btn-primary">
+          {connecting ? "Redirecting…" : connectedCount > 0 ? "Reconnect Microsoft 365" : "Connect Microsoft 365"}
+        </button>
+        {connectedCount > 0 && (
+          <button onClick={handleDisconnectAll} className="text-caption text-crit underline underline-offset-2">
+            Disconnect all
+          </button>
+        )}
+      </div>
+
+      <p className="text-caption text-ink-faint">
+        Teams, OneDrive, SharePoint, OneNote, Planner and To Do arrive in the next sprints — one grant already covers them.
+      </p>
+    </div>
+  );
 }
 
 function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]; onChanged: () => void }) {

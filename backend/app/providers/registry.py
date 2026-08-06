@@ -158,6 +158,26 @@ PROVIDERS: dict[Provider, ProviderSpec] = {
             signal_types=(SignalType.CHANNEL_ACTIVITY, SignalType.MENTION, SignalType.FLAGGED_MESSAGE),
             resource_scoped=False,
         ),
+        # --- Microsoft 365 (Sprint 1) -------------------------------------
+        # The twins of Gmail and Google Calendar: same retrieval, same auth,
+        # and - crucially - the SAME signal types. Outlook messages normalize
+        # to EMAIL and Outlook events to CALENDAR_EVENT in the Graph client, so
+        # they flow through the existing detectors and the whole Intelligence
+        # Core with zero downstream change. Both ride one Microsoft Graph grant.
+        ProviderSpec(
+            key=Provider.MICROSOFT_OUTLOOK_MAIL,
+            label="Outlook Mail",
+            retrieval=Retrieval.INGESTED,
+            auth=AuthKind.OAUTH,
+            signal_types=(SignalType.EMAIL,),
+        ),
+        ProviderSpec(
+            key=Provider.MICROSOFT_OUTLOOK_CALENDAR,
+            label="Outlook Calendar",
+            retrieval=Retrieval.INGESTED,
+            auth=AuthKind.OAUTH,
+            signal_types=(SignalType.CALENDAR_EVENT,),
+        ),
     )
 }
 

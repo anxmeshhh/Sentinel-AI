@@ -14,6 +14,8 @@ from app.integrations.github_client import GitHubClient
 from app.integrations.gmail_client import GmailClient
 from app.integrations.google_auth import get_valid_access_token
 from app.integrations.google_calendar_client import GoogleCalendarClient
+from app.integrations.graph_client import GraphClient
+from app.integrations.microsoft_auth import get_valid_access_token as get_valid_microsoft_token
 from app.models.connection import Connection, Provider
 from app.models.signal import SignalType
 from app.providers import spec_for
@@ -73,17 +75,15 @@ def ingest_connection(session: Session, connection: Connection) -> int:
     metrics: dict = {}
     started = time.monotonic()
     try:
-        if connection.provider == Provider.GITHUB:
-            count = _ingest_github(session, connection, since, signal_repo)
-        elif connection.provider == Provider.GOOGLE_CALENDAR:
-            count = _ingest_google_calendar(session, connection, since, signal_repo)
-        elif connection.provider == Provider.GMAIL:
-            count = _ingest_gmail(session, connection, since, signal_repo)
-        elif connection.provider == Provider.SLACK:
-            count = _ingest_slack(session, connection, since, signal_repo, metrics)
-        else:
+        # One handler per ingesting provider, looked up in the registry below -
+        # so adding a provider is one registration, not another elif. All
+        # handlers share the same signature; the `metrics` dict lets a handler
+        # report provider-specific run detail (e.g. Slack's messages scanned).
+        handler = _INGEST_HANDLERS.get(connection.provider)
+        if handler is None:
             # The registry says this provider ingests, but nothing here does it.
             raise ValueError(f"{spec.label} declares ingestion but has no handler")
+        count = handler(session, connection, since, signal_repo, metrics)
     except Exception as exc:
         # Record the failure as a metric before re-raising, so a broken sync is
         # visible (and retried by the task) rather than silent. last_synced_at
@@ -126,7 +126,7 @@ def ingest_connection(session: Session, connection: Connection) -> int:
     return count
 
 
-def _ingest_github(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository) -> int:
+def _ingest_github(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None) -> int:
     # A connection whose repository has not been chosen yet is not a failure
     # and not something to retry - the user simply has not finished
     # connecting. Syncing "" would 404 on every call.
@@ -294,7 +294,7 @@ def _ingest_slack(
     return count
 
 
-def _ingest_google_calendar(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository) -> int:
+def _ingest_google_calendar(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None) -> int:
     access_token = get_valid_access_token(session, connection)
     count = 0
     with GoogleCalendarClient(access_token) as client:
@@ -311,7 +311,7 @@ def _ingest_google_calendar(session: Session, connection: Connection, since: dat
     return count
 
 
-def _ingest_gmail(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository) -> int:
+def _ingest_gmail(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None) -> int:
     access_token = get_valid_access_token(session, connection)
     count = 0
     with GmailClient(access_token) as client:
@@ -326,3 +326,54 @@ def _ingest_gmail(session: Session, connection: Connection, since: datetime, sig
             )
             count += 1
     return count
+
+
+def _ingest_outlook_mail(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None) -> int:
+    """Outlook Mail -> EMAIL signals. Identical to Gmail apart from the client;
+    the Graph client normalizes to the same payload, so the same detectors fire."""
+    access_token = get_valid_microsoft_token(session, connection)
+    count = 0
+    with GraphClient(access_token) as client:
+        for message in client.fetch_messages(since):
+            signal_repo.upsert(
+                connection_id=connection.id,
+                type=SignalType.EMAIL,
+                external_id=message["external_id"],
+                actor=message["actor"],
+                payload=message["payload"],
+                occurred_at=message["occurred_at"],
+            )
+            count += 1
+    return count
+
+
+def _ingest_outlook_calendar(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None) -> int:
+    """Outlook Calendar -> CALENDAR_EVENT signals, normalized to the Google
+    Calendar payload shape so meeting detection works unchanged."""
+    access_token = get_valid_microsoft_token(session, connection)
+    count = 0
+    with GraphClient(access_token) as client:
+        for event in client.fetch_events(since):
+            signal_repo.upsert(
+                connection_id=connection.id,
+                type=SignalType.CALENDAR_EVENT,
+                external_id=event["external_id"],
+                actor=event["actor"],
+                payload=event["payload"],
+                occurred_at=event["occurred_at"],
+            )
+            count += 1
+    return count
+
+
+# One handler per ingesting provider. Adding a provider means adding a handler
+# and one line here - never another branch in ingest_connection (the dispatch
+# generalization approved for the Microsoft sprint).
+_INGEST_HANDLERS = {
+    Provider.GITHUB: _ingest_github,
+    Provider.GMAIL: _ingest_gmail,
+    Provider.GOOGLE_CALENDAR: _ingest_google_calendar,
+    Provider.SLACK: _ingest_slack,
+    Provider.MICROSOFT_OUTLOOK_MAIL: _ingest_outlook_mail,
+    Provider.MICROSOFT_OUTLOOK_CALENDAR: _ingest_outlook_calendar,
+}

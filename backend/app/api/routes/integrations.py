@@ -44,6 +44,9 @@ from app.schemas.integration import (
     SlackChannelAdd,
     SlackChannelOut,
     SlackChannelResourceOut,
+    TeamsChannelAdd,
+    TeamsChannelOut,
+    TeamsChannelResourceOut,
 )
 from app.services.github_connections import (
     account_connections,
@@ -55,6 +58,7 @@ from app.services.github_connections import (
     set_priority,
 )
 from app.integrations import slack_auth
+from app.integrations.graph_client import fetch_account_identity
 from app.services.slack_connections import add_channel, connect_slack_workspace, monitored_channels, slack_workspace
 
 logger = structlog.get_logger("sentinel.integrations")
@@ -227,12 +231,15 @@ async def microsoft_connect_callback(request: Request, session: Session = Depend
     if not workspace_id_str or not user_id_str:
         return RedirectResponse(f"{get_settings().frontend_base_url}/?microsoft_error=session_expired")
 
+    # No ID token is requested for this client (see core/oauth.py), so this is
+    # a plain OAuth2 token exchange with nothing for authlib to validate -
+    # deliberately avoids the "common" endpoint's unsubstituted issuer
+    # template, which crashes strict ID-token validation. Account identity
+    # comes straight from Graph instead, right below.
     token = await oauth.microsoft_data.authorize_access_token(request)
     access_token = token["access_token"]
     refresh_token = token.get("refresh_token")
-    userinfo = token.get("userinfo") or {}
-    # Entra puts the account on email or (for work/school) preferred_username (the UPN).
-    microsoft_account = userinfo.get("email") or userinfo.get("preferred_username") or "unknown-microsoft-account"
+    microsoft_account = fetch_account_identity(access_token)
 
     if not refresh_token:
         return RedirectResponse(f"{get_settings().frontend_base_url}/?microsoft_error=no_refresh_token")
@@ -913,3 +920,196 @@ def _repository_out(session: Session, connection: Connection) -> "GitHubReposito
         last_success_at=connection.last_success_at,
         signal_count=session.query(Signal).filter(Signal.connection_id == connection.id).count(),
     )
+
+
+# --- Microsoft Teams (Sprint 2, Phase 1: metadata + channel management) -----
+#
+# Teams rides the Microsoft grant - no second OAuth. Discovery lists the teams
+# and channels the connected account belongs to; management is the same
+# list/add/remove/pause/resume/classify surface Slack and GitHub already use,
+# over the same shared provider_account helper. Nothing here is Teams-specific
+# except the Graph calls themselves.
+
+
+def _teams_token(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> str:
+    """The Microsoft grant's access token, reached via the Teams anchor row."""
+    from app.integrations.microsoft_auth import get_valid_access_token as ms_token
+    from app.services.teams_connections import teams_account
+
+    conn = teams_account(session, workspace_id, user_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Connect Microsoft 365 first")
+    return ms_token(session, conn)
+
+
+@router.get("/microsoft/teams/channels", response_model=list[TeamsChannelOut])
+def list_teams_channels(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> list[TeamsChannelOut]:
+    """Every channel of every team the connected account belongs to, flagged with
+    whether Sentinel already monitors it. Scoped to the caller's own grant."""
+    from app.integrations.graph_client import GraphClient
+    from app.services.teams_connections import monitored_channels as monitored_teams_channels
+
+    token = _teams_token(session, workspace_id, user.id)
+    monitored_ids = {c.repo for c in monitored_teams_channels(session, workspace_id, user.id)}
+    out: list[TeamsChannelOut] = []
+    try:
+        with GraphClient(token) as client:
+            for team in client.list_joined_teams():
+                for ch in client.list_channels(team["id"]):
+                    out.append(TeamsChannelOut(
+                        id=ch["id"], name=ch["name"], team_id=team["id"], team_name=team["name"],
+                        description=ch["description"], membership_type=ch["membership_type"],
+                        monitored=ch["id"] in monitored_ids,
+                    ))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("teams_channel_list_failed", error=str(exc)[:200])
+        raise HTTPException(status_code=502, detail="Microsoft Teams could not be reached just now") from exc
+    return out
+
+
+def _owned_teams_channel(
+    session: Session, connection_id: uuid.UUID, workspace_id: uuid.UUID, user_id: uuid.UUID
+) -> Connection:
+    """A monitored Teams channel belonging to this caller, or 404. Ownership is
+    checked against the record, never the path."""
+    connection = session.get(Connection, connection_id)
+    if (
+        connection is None
+        or connection.provider != Provider.MICROSOFT_TEAMS
+        or connection.workspace_id != workspace_id
+        or connection.user_id != user_id
+        or not connection.repo
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
+    return connection
+
+
+def _teams_channel_out(session: Session, connection: Connection) -> TeamsChannelResourceOut:
+    from app.services.connection_state import connection_state
+
+    meta = connection.last_sync_meta or {}
+    return TeamsChannelResourceOut(
+        connection_id=connection.id,
+        channel_id=connection.repo,
+        team_id=connection.org or "",
+        name=connection.full_name,
+        state=connection_state(connection).value,
+        paused=connection.paused_at is not None,
+        priority=connection.priority.value,
+        last_synced_at=connection.last_synced_at,
+        signal_count=session.query(Signal).filter(Signal.connection_id == connection.id).count(),
+        # Honest capability reporting: None until first sync, then whether this
+        # tenant actually grants message access (see the ingestion handler).
+        messages_accessible=meta.get("messages_accessible"),
+    )
+
+
+@router.get("/microsoft/teams/monitored", response_model=list[TeamsChannelResourceOut])
+def list_monitored_teams_channels(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> list[TeamsChannelResourceOut]:
+    from app.services.teams_connections import monitored_channels as monitored_teams_channels
+
+    return [_teams_channel_out(session, c) for c in monitored_teams_channels(session, workspace_id, user.id)]
+
+
+@router.post("/microsoft/teams/monitored", response_model=TeamsChannelResourceOut, status_code=201)
+def add_monitored_teams_channel(
+    payload: TeamsChannelAdd,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> TeamsChannelResourceOut:
+    """Start monitoring one Teams channel."""
+    from app.services.teams_connections import TeamsAccountError
+    from app.services.teams_connections import add_channel as add_teams_channel
+
+    try:
+        channel = add_teams_channel(
+            session, workspace_id=workspace_id, user_id=user.id,
+            team_id=payload.team_id, team_name=payload.team_name,
+            channel_id=payload.channel_id, channel_name=payload.channel_name,
+        )
+    except TeamsAccountError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    _queue_first_sync(session, workspace_id, user.id)
+    return _teams_channel_out(session, channel)
+
+
+@router.delete("/microsoft/teams/monitored/{connection_id}", status_code=204)
+def remove_monitored_teams_channel(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> None:
+    from app.services.provider_account import remove_resource
+
+    remove_resource(session, _owned_teams_channel(session, connection_id, workspace_id, user.id))
+
+
+@router.post("/microsoft/teams/monitored/{connection_id}/pause", response_model=TeamsChannelResourceOut)
+def pause_monitored_teams_channel(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> TeamsChannelResourceOut:
+    from app.services.provider_account import set_paused as pause_resource
+
+    connection = _owned_teams_channel(session, connection_id, workspace_id, user.id)
+    return _teams_channel_out(session, pause_resource(session, connection, paused=True))
+
+
+@router.post("/microsoft/teams/monitored/{connection_id}/resume", response_model=TeamsChannelResourceOut)
+def resume_monitored_teams_channel(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> TeamsChannelResourceOut:
+    from app.services.provider_account import set_paused as pause_resource
+
+    connection = _owned_teams_channel(session, connection_id, workspace_id, user.id)
+    return _teams_channel_out(session, pause_resource(session, connection, paused=False))
+
+
+@router.patch("/microsoft/teams/monitored/{connection_id}/priority", response_model=TeamsChannelResourceOut)
+def classify_monitored_teams_channel(
+    connection_id: uuid.UUID,
+    payload: ResourcePrioritySet,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> TeamsChannelResourceOut:
+    """Classify how much a channel matters - the same five levels a repository or
+    a Slack channel uses. CRITICAL is what promotes a mention in it to a finding,
+    and what makes its silence meaningful."""
+    from app.models.connection import ResourcePriority
+    from app.services.provider_account import set_priority as prioritize
+
+    connection = _owned_teams_channel(session, connection_id, workspace_id, user.id)
+    return _teams_channel_out(session, prioritize(session, connection, ResourcePriority(payload.priority)))
+
+
+@router.post("/microsoft/teams/monitored/{connection_id}/sync", response_model=TeamsChannelResourceOut)
+def sync_monitored_teams_channel(
+    connection_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> TeamsChannelResourceOut:
+    """Sync one channel now, rather than at the next scheduled poll."""
+    connection = _owned_teams_channel(session, connection_id, workspace_id, user.id)
+    if connection.paused_at is not None:
+        raise HTTPException(status_code=409, detail="This channel is paused - resume it first")
+    _sync_one(session, connection)
+    return _teams_channel_out(session, connection)

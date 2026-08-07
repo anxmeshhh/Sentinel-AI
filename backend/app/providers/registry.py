@@ -178,6 +178,20 @@ PROVIDERS: dict[Provider, ProviderSpec] = {
             auth=AuthKind.OAUTH,
             signal_types=(SignalType.CALENDAR_EVENT,),
         ),
+        ProviderSpec(
+            key=Provider.MICROSOFT_TEAMS,
+            label="Microsoft Teams",
+            retrieval=Retrieval.INGESTED,
+            auth=AuthKind.OAUTH,
+            # The same conversation signals Slack produces - deliberately, so the
+            # shared conversation detectors fire for both without knowing which
+            # chat provider produced them.
+            signal_types=(SignalType.CHANNEL_ACTIVITY, SignalType.MENTION, SignalType.FLAGGED_MESSAGE),
+            # NOT resource_scoped, for the same reason Slack isn't: each monitored
+            # channel is its own bounded Connection, so the connection IS the
+            # allow-list rather than a flag on one sprawling grant.
+            resource_scoped=False,
+        ),
     )
 }
 

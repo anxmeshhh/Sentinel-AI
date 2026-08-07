@@ -235,7 +235,11 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
   const [connecting, setConnecting] = useState(false);
   const mail = connections.find((c) => c.provider === "microsoft_outlook_mail");
   const calendar = connections.find((c) => c.provider === "microsoft_outlook_calendar");
-  const connectedCount = [mail, calendar].filter(Boolean).length;
+  // Teams rows: the grant leaves a bare anchor (no repo) until channels are
+  // chosen, so "connected" and "how many monitored" are different questions.
+  const teamsRows = connections.filter((c) => c.provider === "microsoft_teams");
+  const teamsChannels = teamsRows.filter((c) => c.repo);
+  const connectedCount = [mail, calendar].filter(Boolean).length + (teamsRows.length > 0 ? 1 : 0);
 
   async function handleConnect() {
     setConnecting(true);
@@ -248,13 +252,18 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
   }
 
   async function handleDisconnectAll() {
-    const ids = [mail?.id, calendar?.id].filter((id): id is string => Boolean(id));
+    const ids = [mail?.id, calendar?.id, ...teamsRows.map((c) => c.id)].filter((id): id is string => Boolean(id));
     await Promise.all(ids.map((id) => api.delete(`/connections/${id}`)));
     onChanged();
   }
 
   const mailH = serviceHealth(mail);
   const calH = serviceHealth(calendar);
+  // A connected Teams anchor with no channels yet is not unhealthy - it is
+  // waiting on a human choice, and says so rather than showing a scary state.
+  const teamsH = teamsChannels.length > 0
+    ? serviceHealth(teamsChannels[0])
+    : { status: teamsRows.length > 0 ? "Connected — add a channel" : "Not connected", tone: "muted" as const, healthy: false };
 
   return (
     <div>
@@ -275,6 +284,18 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
           desc={calendar?.org ?? "Meetings, attendees, Teams links"}
           connected={calH.healthy}
         />
+        <ServiceCard
+          icon={<MicrosoftIcon />}
+          name="Microsoft Teams"
+          status={
+            teamsChannels.length > 0
+              ? `${teamsChannels.length} channel${teamsChannels.length === 1 ? "" : "s"} monitored`
+              : teamsH.status
+          }
+          statusTone={teamsChannels.length > 0 ? "good" : teamsH.tone}
+          desc="Blockers, mentions and incidents forming — correlated with your repos, mail and meetings."
+          connected={teamsChannels.length > 0}
+        />
       </div>
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -289,7 +310,7 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
       </div>
 
       <p className="text-caption text-ink-faint">
-        Teams, OneDrive, SharePoint, OneNote, Planner and To Do arrive in the next sprints — one grant already covers them.
+        OneDrive, SharePoint, OneNote, Planner and To Do arrive in the next sprints — one grant already covers them.
       </p>
     </div>
   );

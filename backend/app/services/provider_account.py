@@ -88,6 +88,14 @@ def connect_account(
         for connection in existing:
             session.query(Signal).filter(Signal.connection_id == connection.id).delete()
             session.delete(connection)
+        # Force the DELETEs out before the replacement anchor is inserted below.
+        # Without this, SQLAlchemy's unit of work emits INSERTs before DELETEs
+        # within one flush, so the new anchor collides with the outgoing row on
+        # the (workspace, user, provider, repo) unique key and the whole
+        # reconnect fails. Latent for GitHub and Slack - an account *switch* is
+        # rare - and surfaced by Microsoft Teams, where the grant provisions an
+        # anchor on every connect.
+        session.flush()
         existing = []
 
     if existing:

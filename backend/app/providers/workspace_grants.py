@@ -26,6 +26,13 @@ class WorkspaceGrantSpec:
     # (provider, resource-label) pairs. The label is stored as Connection.repo,
     # the human-facing name of the child service within the grant.
     services: tuple[tuple[Provider, str], ...]
+    # Providers the grant reaches but whose resources the user CHOOSES rather
+    # than receiving fixed (Teams channels; later, Planner plans). These are
+    # provisioned as bare anchors - repo="" - so the grant records the account
+    # and holds the token, and each chosen resource is then added as its own
+    # Connection through provider_account. Ingestion already skips bare anchors,
+    # so an unconfigured one is inert rather than a broken sync.
+    anchors: tuple[Provider, ...] = ()
 
     @property
     def providers(self) -> tuple[Provider, ...]:
@@ -52,6 +59,10 @@ MICROSOFT_GRANT = WorkspaceGrantSpec(
         (Provider.MICROSOFT_OUTLOOK_MAIL, "mail"),
         (Provider.MICROSOFT_OUTLOOK_CALENDAR, "calendar"),
     ),
+    # Teams reaches many channels, and which ones matter is a human decision -
+    # so the grant only records the account here; channels are added one at a
+    # time (Sprint 2), exactly like Slack channels and GitHub repositories.
+    anchors=(Provider.MICROSOFT_TEAMS,),
 )
 
 # Providers whose per-account replacement should also clear cached mail

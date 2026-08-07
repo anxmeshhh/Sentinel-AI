@@ -38,6 +38,9 @@ GITHUB_BACKFILL = timedelta(days=90)
 # baseline and catch anything still live. Bounded further by SLACK_MAX_MESSAGES.
 SLACK_BACKFILL = timedelta(days=14)
 SLACK_MAX_MESSAGES = 1500
+# Teams channels are lower-volume than Slack and Graph pages at 50; a smaller
+# cap keeps a sync bounded without losing a normal channel's traffic.
+TEAMS_MAX_MESSAGES = 400
 
 
 def ingest_connection(session: Session, connection: Connection) -> int:
@@ -366,6 +369,100 @@ def _ingest_outlook_calendar(session: Session, connection: Connection, since: da
     return count
 
 
+def _ingest_microsoft_teams(
+    session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None
+) -> int:
+    """Turn a monitored Teams channel's new messages into the SAME operational
+    signals Slack produces - never a copy of the conversation.
+
+    Metadata-first by design. Channel messages sit behind ChannelMessage.Read.All,
+    a Microsoft *protected* API that many tenants will not have granted. When it
+    is unavailable this is not an error and not a broken sync: the channel stays
+    monitored, the run records `messages_accessible: false`, and zero signals are
+    produced rather than faking activity we cannot see. Granting the permission
+    later turns full ingestion on with no change anywhere else - the signals are
+    the same three kinds the shared conversation detectors already read.
+    """
+    from app.integrations.graph_client import GraphClient
+    from app.services.conversation_signals import extract_teams_mentions, match_lexicon, strip_html
+
+    metrics = metrics if metrics is not None else {}
+    team_id, channel_id = connection.org or "", connection.repo
+    if not team_id:
+        # A channel row without its team id cannot be addressed in Graph. Report
+        # it rather than failing the whole sync loop.
+        metrics["error"] = "missing_team_id"
+        return 0
+
+    access_token = get_valid_microsoft_token(session, connection)
+    with GraphClient(access_token) as client:
+        messages, allowed = client.channel_messages(team_id, channel_id, since, cap=TEAMS_MAX_MESSAGES)
+
+    metrics["messages_accessible"] = allowed
+    if not allowed:
+        # The honest state: monitoring is active, message-derived intelligence is
+        # not available in this tenant. Surfaced on the connection so the product
+        # can say so plainly instead of looking like a channel with no activity.
+        metrics["degraded"] = "channel_messages_permission_missing"
+        return 0
+
+    count = 0
+    participants: set[str] = set()
+    newest: datetime | None = None
+    newest_id = ""
+    for m in messages:
+        occurred = m["created_at"]
+        if newest is None or occurred > newest:
+            newest, newest_id = occurred, m["id"]
+        actor = m["actor_id"] or m["actor_name"]
+        if actor:
+            participants.add(actor)
+        if m["message_type"] != "message":
+            continue  # systemEventMessage: joins/renames are activity, never a signal
+
+        text = strip_html(m["body_html"])
+        snippet = text[:200]
+        author = {"actor_name": m["actor_name"]}
+        thread = {"reply_count": m["reply_count"], "url": m["url"]}
+
+        mentions = extract_teams_mentions(m["body_html"], m["mentions"])
+        if mentions:
+            signal_repo.upsert(
+                connection_id=connection.id, type=SignalType.MENTION, external_id=m["id"], actor=actor,
+                occurred_at=occurred, payload={"mentions": mentions, "snippet": snippet, **author, **thread},
+            )
+            count += 1
+
+        matched = match_lexicon(text)
+        # Teams has a first-class "urgent"/"important" flag with no Slack
+        # equivalent; treating it as a lexicon hit means the existing detectors
+        # weigh it exactly like an explicitly urgent message, with no new type.
+        if m["importance"] in ("high", "urgent") and "urgent" not in matched:
+            matched = sorted(matched + ["urgent"])
+        if matched:
+            signal_repo.upsert(
+                connection_id=connection.id, type=SignalType.FLAGGED_MESSAGE, external_id=m["id"], actor=actor,
+                occurred_at=occurred, payload={"matched": matched, "snippet": snippet, **author, **thread},
+            )
+            count += 1
+
+    # One activity marker per non-empty batch, keyed on the batch's newest
+    # message - the same compact "alive up to T" record Slack writes, which is
+    # what quiet-channel detection reads.
+    scanned = len(messages)
+    if newest is not None:
+        signal_repo.upsert(
+            connection_id=connection.id, type=SignalType.CHANNEL_ACTIVITY, external_id=newest_id, actor="",
+            occurred_at=newest,
+            payload={"message_count": scanned, "participants": len(participants)},
+        )
+        count += 1
+
+    metrics["messages_scanned"] = scanned
+    metrics["participants"] = len(participants)
+    return count
+
+
 # One handler per ingesting provider. Adding a provider means adding a handler
 # and one line here - never another branch in ingest_connection (the dispatch
 # generalization approved for the Microsoft sprint).
@@ -376,4 +473,5 @@ _INGEST_HANDLERS = {
     Provider.SLACK: _ingest_slack,
     Provider.MICROSOFT_OUTLOOK_MAIL: _ingest_outlook_mail,
     Provider.MICROSOFT_OUTLOOK_CALENDAR: _ingest_outlook_calendar,
+    Provider.MICROSOFT_TEAMS: _ingest_microsoft_teams,
 }

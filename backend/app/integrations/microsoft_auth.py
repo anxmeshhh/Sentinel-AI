@@ -25,9 +25,12 @@ logger = structlog.get_logger("sentinel.microsoft_auth")
 # a single-tenant app would substitute its tenant id here.
 TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 REFRESH_BUFFER = timedelta(minutes=5)
-# Graph data scopes for Sprint 1. offline_access is what makes Entra issue a
-# refresh_token at all. Extended per sprint as services are added.
-SCOPES = "offline_access openid email Mail.Read Calendars.Read"
+# Graph data scopes for Sprint 1 - kept in lockstep with core/oauth.py's
+# microsoft_data client (a refresh only extends the SAME scopes; a mismatch
+# here would silently narrow access on the next token refresh). No openid/
+# email: this app requests no ID token at all, see core/oauth.py for why.
+# User.Read is what lets Graph's /me resolve the account identity.
+SCOPES = "offline_access User.Read Mail.Read Calendars.Read Team.ReadBasic.All Channel.ReadBasic.All"
 
 
 class MicrosoftAuthError(Exception):

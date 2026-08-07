@@ -73,6 +73,26 @@ def _parse(ts: str | None) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
+def fetch_account_identity(access_token: str) -> str:
+    """The signed-in account's address, for the ONE moment we need it: right
+    after connecting, to label the grant's child connections (Connection.org).
+
+    Deliberately NOT sourced from an ID token - see core/oauth.py's
+    microsoft_data registration for why we request no ID token at all. Asking
+    Graph directly is authoritative for both account kinds this app supports:
+    `mail` for a normal mailbox, falling back to `userPrincipalName` (always
+    present, even when `mail` is null - which happens for some personal
+    Microsoft accounts with no primary SMTP address set).
+    """
+    resp = httpx.get(
+        f"{API_BASE}/me", params={"$select": "mail,userPrincipalName"},
+        headers={"Authorization": f"Bearer {access_token}"}, timeout=20.0,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return data.get("mail") or data.get("userPrincipalName") or "unknown-microsoft-account"
+
+
 class GraphClient:
     def __init__(self, access_token: str, timeout: float = 20.0):
         self._client = httpx.Client(
@@ -145,6 +165,79 @@ class GraphClient:
                 },
             })
         return out
+
+    # --- Microsoft Teams -------------------------------------------------
+    #
+    # Two tiers, on purpose. Metadata (teams, channels, members) needs only the
+    # ordinary Team.ReadBasic.All / Channel.ReadBasic.All scopes. Channel
+    # MESSAGES need ChannelMessage.Read.All, which Microsoft classifies as a
+    # PROTECTED API: it requires tenant admin consent and, at scale, a licensed
+    # export model. So message access is treated as a capability that may or may
+    # not be present, never assumed - see channel_messages().
+    def list_joined_teams(self) -> list[dict]:
+        """The teams the signed-in user belongs to."""
+        params = {"$select": "id,displayName,description"}
+        return [
+            {"id": t["id"], "name": t.get("displayName") or "(unnamed team)", "description": t.get("description") or ""}
+            for t in self._paginate("/me/joinedTeams", params, 100)
+        ]
+
+    def list_channels(self, team_id: str) -> list[dict]:
+        params = {"$select": "id,displayName,description,membershipType"}
+        return [
+            {
+                "id": c["id"],
+                "name": c.get("displayName") or "(unnamed channel)",
+                "description": c.get("description") or "",
+                "membership_type": c.get("membershipType") or "standard",
+            }
+            for c in self._paginate(f"/teams/{team_id}/channels", params, 200)
+        ]
+
+    def list_channel_members(self, team_id: str, channel_id: str) -> list[dict]:
+        """Members of one channel. Best-effort: private-channel membership can be
+        restricted even when the channel is listable, so callers treat a failure
+        as "unknown membership" rather than an error."""
+        rows = self._paginate(f"/teams/{team_id}/channels/{channel_id}/members", {}, 200)
+        return [{"id": m.get("userId") or m.get("id"), "name": m.get("displayName") or ""} for m in rows]
+
+    def channel_messages(self, team_id: str, channel_id: str, since: datetime, cap: int = 200) -> tuple[list[dict], bool]:
+        """(messages, allowed). `allowed` is False when the tenant has not granted
+        the protected ChannelMessage.Read.All permission.
+
+        Returning a flag instead of raising is deliberate: no message access is a
+        normal, expected configuration - not a failure - and the caller degrades
+        to metadata-only monitoring rather than marking the sync broken.
+        """
+        params = {"$top": "50"}
+        try:
+            raw = self._paginate(f"/teams/{team_id}/channels/{channel_id}/messages", params, cap)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (401, 403):
+                logger.info("graph_teams_messages_forbidden", team_id=team_id, channel_id=channel_id)
+                return [], False
+            raise
+
+        out: list[dict] = []
+        for m in raw:
+            created = _parse(m.get("createdDateTime"))
+            if created is None or created < since:
+                continue
+            body = (m.get("body") or {}).get("content") or ""
+            frm = ((m.get("from") or {}).get("user") or {})
+            out.append({
+                "id": m.get("id"),
+                "created_at": created,
+                "actor_id": frm.get("id") or "",
+                "actor_name": frm.get("displayName") or "",
+                "body_html": body,
+                "mentions": m.get("mentions") or [],
+                "importance": (m.get("importance") or "normal").lower(),
+                "message_type": (m.get("messageType") or "message").lower(),
+                "reply_count": len(m.get("replies") or []),
+                "url": m.get("webUrl"),
+            })
+        return out, True
 
     # --- Outlook Calendar -> CALENDAR_EVENT signals ----------------------
     def fetch_events(self, since: datetime) -> list[dict]:

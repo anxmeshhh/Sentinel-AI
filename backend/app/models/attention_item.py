@@ -31,13 +31,15 @@ class AttentionType(str, enum.Enum):
     FINDING = "finding"
     MANUAL = "manual"
     DEADLINE = "deadline"  # a dated commitment found in an email subject or document (Phase 2t)
-    # Slack operational findings (Phase 3), each from a deterministic detector
-    # over ingested Slack signals - no LLM. A mention in a channel a person
-    # marked critical; a message flagged as a blocker; a burst of urgent signals
-    # (repeated, or a multi-person incident forming).
-    SLACK_MENTION = "slack_mention"
-    SLACK_BLOCKER = "slack_blocker"
-    SLACK_URGENT = "slack_urgent"
+    # Conversation findings, from deterministic detectors over ingested chat
+    # signals - no LLM. Provider-neutral on purpose: a blocker reads the same
+    # in Teams as in Slack, so both share these types (and the same detectors)
+    # rather than each chat provider growing a parallel set. A mention in a
+    # channel a person marked critical; a message flagged as a blocker; a burst
+    # of urgent signals (repeated, or a multi-person incident forming).
+    CONVERSATION_MENTION = "conversation_mention"
+    CONVERSATION_BLOCKER = "conversation_blocker"
+    CONVERSATION_URGENT = "conversation_urgent"
 
 
 class AttentionState(str, enum.Enum):

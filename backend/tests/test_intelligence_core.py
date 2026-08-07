@@ -111,7 +111,7 @@ def test_github_finding_resolves_to_a_repo_entity(session, env):
 
 
 def test_slack_finding_resolves_to_a_channel_entity(session, env):
-    session.add(_attn(env, env["slack"], type=AttentionType.SLACK_BLOCKER, provider="slack", title="blocked"))
+    session.add(_attn(env, env["slack"], type=AttentionType.CONVERSATION_BLOCKER, provider="slack", title="blocked"))
     session.commit()
     _run(env)
     chan = session.execute(select(Entity).where(Entity.kind == EntityKind.CHANNEL)).scalar_one()
@@ -162,7 +162,7 @@ def test_cross_provider_correlation_via_text_bridge(session, env):
     'payments' correlate into ONE cross-provider situation - the whole point."""
     session.add_all([
         _attn(env, env["gh"], priority=0.9, title="stale PR", why="review needed"),
-        _attn(env, env["slack"], type=AttentionType.SLACK_BLOCKER, provider="slack",
+        _attn(env, env["slack"], type=AttentionType.CONVERSATION_BLOCKER, provider="slack",
               priority=0.85, title="we're blocked on the payments deploy", why="waiting on approval"),
     ])
     session.commit()
@@ -259,7 +259,7 @@ def test_personal_findings_never_enter_a_channel_scope(session, env):
 def test_end_to_end_refresh_for_workspace(session, env):
     session.add_all([
         _attn(env, env["gh"], priority=0.9, title="stale PR"),
-        _attn(env, env["slack"], type=AttentionType.SLACK_BLOCKER, provider="slack",
+        _attn(env, env["slack"], type=AttentionType.CONVERSATION_BLOCKER, provider="slack",
               priority=0.85, title="blocked on the payments deploy"),
     ])
     session.commit()

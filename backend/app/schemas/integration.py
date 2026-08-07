@@ -103,3 +103,44 @@ class ResourcePrioritySet(BaseModel):
     resource uses, so Slack and GitHub share one vocabulary."""
 
     priority: str = Field(pattern="^(critical|normal|low|archived|experimental)$")
+
+
+class TeamsChannelOut(BaseModel):
+    """One Teams channel the connected Microsoft account can see, for the picker.
+    `monitored` marks the ones Sentinel already watches."""
+
+    id: str
+    name: str
+    team_id: str
+    team_name: str
+    description: str = ""
+    membership_type: str = "standard"
+    monitored: bool = False
+
+
+class TeamsChannelResourceOut(BaseModel):
+    """One Teams channel Sentinel is monitoring - the same shape as the Slack and
+    GitHub resource views, because a channel is a resource the same way a
+    repository is: its own sync state, pause, priority and signal count.
+
+    `messages_accessible` is the honest extra: Teams message reading sits behind
+    a protected Graph permission, so a channel can be correctly monitored while
+    producing no message-derived signals. Null means "not yet synced"."""
+
+    connection_id: uuid.UUID
+    channel_id: str
+    team_id: str
+    name: str
+    state: str
+    paused: bool
+    priority: str
+    last_synced_at: datetime | None
+    signal_count: int = 0
+    messages_accessible: bool | None = None
+
+
+class TeamsChannelAdd(BaseModel):
+    team_id: str = Field(min_length=1, max_length=200)
+    team_name: str = Field(min_length=1, max_length=300)
+    channel_id: str = Field(min_length=1, max_length=200)
+    channel_name: str = Field(min_length=1, max_length=300)

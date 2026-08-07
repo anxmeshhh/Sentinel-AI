@@ -196,7 +196,7 @@ def test_unknown_action_kind_requires_confirmation(session, env):
     scope, sit, _ = _form(env, ["blk1", "blk2"])
     # relabel the findings' kind by using slack blocker attention items
     for i in env["_s"].execute(select(AttentionItem)).scalars().all():
-        i.type = AttentionType.SLACK_BLOCKER
+        i.type = AttentionType.CONVERSATION_BLOCKER
     env["_s"].commit()
     findings = list_findings(session, scope)
     extract_entities(session, scope, findings)

@@ -103,12 +103,31 @@ if MICROSOFT_CONFIGURED:
     # Mail.Read + Calendars.Read are Sprint 1's least-privilege Graph scopes
     # (read-only, metadata used). Extended per sprint as services are added.
     # "common" allows both work/school and personal Microsoft accounts.
+    #
+    # Deliberately NO "openid"/"email" scope here, so Microsoft issues no ID
+    # token and authlib never tries to validate one. Reason: the "common"
+    # endpoint's discovery document advertises issuer
+    # "https://login.microsoftonline.com/{tenantid}/v2.0" - a LITERAL,
+    # unsubstituted template, confirmed directly against Microsoft's live
+    # metadata - while a real ID token's `iss` claim is the concrete signed-in
+    # tenant. authlib compares the two verbatim, they can never match, and
+    # authorize_access_token() raises mid-validation before our code even
+    # runs. We only need the access_token to call Graph, so skipping the ID
+    # token sidesteps a landmine baked into Microsoft's multi-tenant endpoint
+    # rather than working around it after the fact. Account identity is
+    # resolved from Graph's own /me instead (see integrations.py callback).
     oauth.register(
         name="microsoft_data",
         client_id=_settings.microsoft_client_id,
         client_secret=_settings.microsoft_client_secret,
         server_metadata_url="https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid email offline_access Mail.Read Calendars.Read"},
+        # User.Read is the baseline Graph needs to serve /me at all (that's
+        # what fetch_account_identity calls) - confirmed directly: without it
+        # Graph returns 403 on /me even with Mail.Read/Calendars.Read granted,
+        # since those only cover mail/calendar resources, not the profile
+        # endpoint itself. It's the single most common Graph delegated scope
+        # and needs no admin consent on a personal or standard work account.
+        client_kwargs={"scope": "offline_access User.Read Mail.Read Calendars.Read Team.ReadBasic.All Channel.ReadBasic.All"},
     )
 
 # Slack OAuth v2 is driven manually (see integrations/slack_auth.py), not through

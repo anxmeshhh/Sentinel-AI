@@ -79,8 +79,8 @@ def _sig(session, env, conn, sig_type, *, actor, minutes_ago=5, matched=None, me
 def test_mention_in_critical_channel_is_a_finding(session, env):
     ch = _channel(session, env, priority=ResourcePriority.CRITICAL)
     _sig(session, env, ch, SignalType.MENTION, actor="U1", mentions={"users": ["U9"]})
-    [c] = ae._detect_slack_priority_mentions(session, env["workspace"].id, NOW)
-    assert c["type"] == AttentionType.SLACK_MENTION
+    [c] = ae._detect_conversation_priority_mentions(session, env["workspace"].id, NOW)
+    assert c["type"] == AttentionType.CONVERSATION_MENTION
     assert c["evidence_url"].startswith("https://slack.com/app_redirect")
     assert "#incidents" in c["title"]
 
@@ -90,7 +90,7 @@ def test_mention_in_a_normal_channel_is_not_surfaced(session, env):
     worth Sentinel's briefing."""
     ch = _channel(session, env, priority=ResourcePriority.NORMAL)
     _sig(session, env, ch, SignalType.MENTION, actor="U1", mentions={"users": ["U9"]})
-    assert ae._detect_slack_priority_mentions(session, env["workspace"].id, NOW) == []
+    assert ae._detect_conversation_priority_mentions(session, env["workspace"].id, NOW) == []
 
 
 # --- BLOCKER_DISCUSSION -----------------------------------------------------
@@ -99,15 +99,15 @@ def test_mention_in_a_normal_channel_is_not_surfaced(session, env):
 def test_flagged_blocker_is_a_finding(session, env):
     ch = _channel(session, env)
     _sig(session, env, ch, SignalType.FLAGGED_MESSAGE, actor="U1", matched=["blocked"])
-    [c] = ae._detect_slack_blockers(session, env["workspace"].id, NOW)
-    assert c["type"] == AttentionType.SLACK_BLOCKER
+    [c] = ae._detect_conversation_blockers(session, env["workspace"].id, NOW)
+    assert c["type"] == AttentionType.CONVERSATION_BLOCKER
     assert c["evidence_url"]
 
 
 def test_urgent_but_not_a_blocker_is_not_a_blocker_finding(session, env):
     ch = _channel(session, env)
     _sig(session, env, ch, SignalType.FLAGGED_MESSAGE, actor="U1", matched=["urgent"])  # no blocker term
-    assert ae._detect_slack_blockers(session, env["workspace"].id, NOW) == []
+    assert ae._detect_conversation_blockers(session, env["workspace"].id, NOW) == []
 
 
 # --- REPEATED_URGENT / ESCALATION_FORMING -----------------------------------
@@ -117,8 +117,8 @@ def test_repeated_urgent_signals_form_one_finding(session, env):
     ch = _channel(session, env)
     for _ in range(3):
         _sig(session, env, ch, SignalType.FLAGGED_MESSAGE, actor="U1", matched=["urgent"])
-    [c] = ae._detect_slack_urgent(session, env["workspace"].id, NOW)
-    assert c["type"] == AttentionType.SLACK_URGENT
+    [c] = ae._detect_conversation_urgent(session, env["workspace"].id, NOW)
+    assert c["type"] == AttentionType.CONVERSATION_URGENT
     assert "Repeated urgent" in c["title"]
     assert c["priority"] == 0.65
 
@@ -127,7 +127,7 @@ def test_a_multi_person_incident_forming_is_higher_severity(session, env):
     ch = _channel(session, env)
     _sig(session, env, ch, SignalType.FLAGGED_MESSAGE, actor="U1", matched=["outage"])
     _sig(session, env, ch, SignalType.FLAGGED_MESSAGE, actor="U2", matched=["incident"])
-    [c] = ae._detect_slack_urgent(session, env["workspace"].id, NOW)
+    [c] = ae._detect_conversation_urgent(session, env["workspace"].id, NOW)
     assert "incident forming" in c["title"]
     assert c["priority"] == 0.85  # incident + 2 people outranks plain repetition
 
@@ -135,14 +135,14 @@ def test_a_multi_person_incident_forming_is_higher_severity(session, env):
 def test_urgent_below_threshold_is_not_a_finding(session, env):
     ch = _channel(session, env)
     _sig(session, env, ch, SignalType.FLAGGED_MESSAGE, actor="U1", matched=["urgent"])  # only one, one person
-    assert ae._detect_slack_urgent(session, env["workspace"].id, NOW) == []
+    assert ae._detect_conversation_urgent(session, env["workspace"].id, NOW) == []
 
 
 def test_a_burst_is_one_finding_not_fifty(session, env):
     ch = _channel(session, env)
     for _ in range(20):
         _sig(session, env, ch, SignalType.FLAGGED_MESSAGE, actor="U1", matched=["urgent"])
-    found = ae._detect_slack_urgent(session, env["workspace"].id, NOW)
+    found = ae._detect_conversation_urgent(session, env["workspace"].id, NOW)
     assert len(found) == 1  # aggregated per channel
 
 
@@ -154,13 +154,13 @@ def test_findings_dedup_and_auto_resolve_through_refresh(session, env):
     _sig(session, env, ch, SignalType.MENTION, actor="U1", mentions={"users": ["U9"]}, ext="m1")
     ae.refresh_attention(session, env["workspace"].id)
     items = session.execute(
-        select(AttentionItem).where(AttentionItem.type == AttentionType.SLACK_MENTION)
+        select(AttentionItem).where(AttentionItem.type == AttentionType.CONVERSATION_MENTION)
     ).scalars().all()
     assert len(items) == 1 and items[0].state == AttentionState.NEW
 
     # Running again with the same signal must not create a second row (dedup).
     ae.refresh_attention(session, env["workspace"].id)
-    assert session.execute(select(func.count()).where(AttentionItem.type == AttentionType.SLACK_MENTION)).scalar() == 1
+    assert session.execute(select(func.count()).where(AttentionItem.type == AttentionType.CONVERSATION_MENTION)).scalar() == 1
 
     # The mention ages out of the window; the finding auto-resolves.
     session.query(Signal).filter(Signal.connection_id == ch.id).delete()
@@ -173,8 +173,8 @@ def test_paused_channel_produces_no_findings(session, env):
     ch = _channel(session, env, priority=ResourcePriority.CRITICAL, paused=True)
     _sig(session, env, ch, SignalType.MENTION, actor="U1", mentions={"users": ["U9"]})
     _sig(session, env, ch, SignalType.FLAGGED_MESSAGE, actor="U1", matched=["blocked"])
-    assert ae._detect_slack_priority_mentions(session, env["workspace"].id, NOW) == []
-    assert ae._detect_slack_blockers(session, env["workspace"].id, NOW) == []
+    assert ae._detect_conversation_priority_mentions(session, env["workspace"].id, NOW) == []
+    assert ae._detect_conversation_blockers(session, env["workspace"].id, NOW) == []
 
 
 # --- CRITICAL_CHANNEL_INACTIVE reuses the generic RESOURCE_STALLED ----------

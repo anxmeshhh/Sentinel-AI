@@ -3,7 +3,7 @@
 
 export interface Connection {
   id: string;
-  provider: "github" | "google_calendar" | "gmail" | "google_drive" | "slack" | "microsoft_outlook_mail" | "microsoft_outlook_calendar";
+  provider: "github" | "google_calendar" | "gmail" | "google_drive" | "slack" | "microsoft_outlook_mail" | "microsoft_outlook_calendar" | "microsoft_teams";
   org: string;
   repo: string;
   last_synced_at: string | null;
@@ -527,9 +527,9 @@ export interface AttentionItem {
     | "finding"
     | "manual"
     | "deadline"
-    | "slack_mention"
-    | "slack_blocker"
-    | "slack_urgent";
+    | "conversation_mention"
+    | "conversation_blocker"
+    | "conversation_urgent";
   origin: "detected" | "manual";
   state: "new" | "done" | "snoozed" | "dismissed";
   source_provider: string | null;

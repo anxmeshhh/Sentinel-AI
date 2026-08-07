@@ -81,6 +81,12 @@ def test_signal_type_sharing_is_intentional_provider_reuse():
     intentional_twins: dict[SignalType, set[str]] = {
         SignalType.EMAIL: {"Gmail", "Outlook Mail"},
         SignalType.CALENDAR_EVENT: {"Google Calendar", "Outlook Calendar"},
+        # Slack and Teams are the two chat providers, and they deliberately emit
+        # the SAME conversation signals so the shared conversation detectors fire
+        # for both without knowing which one produced them.
+        SignalType.CHANNEL_ACTIVITY: {"Slack", "Microsoft Teams"},
+        SignalType.MENTION: {"Slack", "Microsoft Teams"},
+        SignalType.FLAGGED_MESSAGE: {"Slack", "Microsoft Teams"},
     }
     claimants: dict[SignalType, set[str]] = {}
     for spec in PROVIDERS.values():

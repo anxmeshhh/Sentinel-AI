@@ -26,12 +26,17 @@ from app.models.entity import Entity, EntityMention
 from app.services.findings import list_findings
 from app.services.situation_engine import MIN_CLUSTER
 
-# A signal kind -> provider map, so an evidence item carries its provider even
-# when the finding itself is provider-agnostic (proactive situations).
+# A signal kind -> provider FALLBACK, used only when the finding itself does not
+# name its provider (proactive situations are provider-agnostic by design).
+#
+# Deliberately no entry for the chat kinds: mention/flagged_message/
+# channel_activity are produced by BOTH Slack and Teams, so guessing from the
+# kind would mislabel half of them. Those findings always carry their own
+# provider, which is what _evidence_for prefers - the map is the fallback, not
+# the source of truth.
 _SIGNAL_PROVIDER = {
     "pr": "github", "review_submitted": "github", "commit": "github", "issue": "github",
     "email": "gmail", "calendar_event": "google_calendar", "drive_file": "google_drive",
-    "channel_activity": "slack", "mention": "slack", "flagged_message": "slack",
 }
 
 
@@ -57,7 +62,9 @@ def _evidence_for(finding: Finding) -> list[EvidenceItem]:
         out.append(EvidenceItem(
             signal_id=e.get("signal_id"), kind=kind, title=e.get("title") or "",
             actor=e.get("actor"), occurred_at=_parse(e.get("occurred_at")),
-            url=e.get("url"), provider=_SIGNAL_PROVIDER.get(kind),
+            # The finding's own provider wins; the kind map only fills the gap
+            # for provider-agnostic proactive findings.
+            url=e.get("url"), provider=finding.provider or _SIGNAL_PROVIDER.get(kind),
         ))
     if not out and (finding.evidence_url or finding.provider):
         out.append(EvidenceItem(

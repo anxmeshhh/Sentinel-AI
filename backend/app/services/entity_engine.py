@@ -49,6 +49,13 @@ def _resource_entity_for_connection(conn: Connection | None) -> tuple[EntityKind
         return (EntityKind.REPO, f"github:{conn.org}/{conn.repo}", conn.repo)
     if conn.provider == Provider.SLACK and conn.repo:
         return (EntityKind.CHANNEL, f"slack:{conn.repo}", conn.display_name or conn.full_name)
+    # Microsoft Teams: a monitored channel is a CHANNEL entity exactly like a
+    # Slack one. This single line is the whole of Teams' correlation support -
+    # everything above it (situations, context, reasoning, memory, decisions)
+    # already works on entities and never learns that Teams exists. The channel
+    # id is globally unique in Graph, so it alone canonicalizes the entity.
+    if conn.provider == Provider.MICROSOFT_TEAMS and conn.repo:
+        return (EntityKind.CHANNEL, f"msteams:{conn.repo}", conn.display_name or conn.full_name)
     return None
 
 

@@ -22,6 +22,7 @@ from app.models.connection import Connection
 from app.models.email_summary import EmailSummary
 from app.models.signal import Signal
 from app.providers.workspace_grants import MAIL_PROVIDERS, WorkspaceGrantSpec
+from app.services import provider_account
 
 logger = structlog.get_logger("sentinel.grants")
 
@@ -36,6 +37,19 @@ def provision_grant(
     encrypted_token: str,
 ) -> None:
     """Create or refresh every child connection of one grant for one user."""
+    # Anchor providers (Teams channels, later Planner plans) delegate to
+    # provider_account.connect_account - the same path GitHub and Slack use.
+    # That matters on reconnect: an anchor provider has MANY rows (the anchor
+    # plus every chosen resource) all sharing this one grant's token, and
+    # connect_account already refreshes every row, clears revocation, and wipes
+    # the old account's resources if a different account signs in. Reimplementing
+    # that here would be a second, weaker copy of logic that already exists.
+    for provider in grant.anchors:
+        provider_account.connect_account(
+            session, workspace_id=workspace_id, user_id=user_id, provider=provider,
+            account_identity=account_identity, encrypted_token=encrypted_token,
+        )
+
     for provider, label in grant.services:
         existing = session.execute(
             select(Connection).where(

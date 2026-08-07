@@ -18,6 +18,9 @@ class Provider(str, enum.Enum):
     # (Sprint 1: mail + calendar), the structural twin of the Google grant.
     MICROSOFT_OUTLOOK_MAIL = "microsoft_outlook_mail"
     MICROSOFT_OUTLOOK_CALENDAR = "microsoft_outlook_calendar"
+    # Teams is resource-scoped like Slack: the grant creates a bare anchor, and
+    # each channel the user chooses to monitor becomes its own Connection row.
+    MICROSOFT_TEAMS = "microsoft_teams"
 
 
 class ResourcePriority(str, enum.Enum):

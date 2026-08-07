@@ -106,9 +106,16 @@ def test_resource_scoped_providers_are_the_ones_that_reach_many_things():
     grants nothing until specific resources are allow-listed. Drive reaches
     every file in an account; a mailbox and a repo are each one bounded
     scope."""
-    assert RESOURCE_SCOPED_PROVIDERS == {Provider.GOOGLE_DRIVE}
+    # The file/document stores: one grant reaches every item, so a channel must
+    # allow-list specific resources before it sees any of them.
+    assert RESOURCE_SCOPED_PROVIDERS == {
+        Provider.GOOGLE_DRIVE, Provider.MICROSOFT_ONEDRIVE, Provider.MICROSOFT_ONENOTE,
+    }
+    # Bounded scopes are not resource-scoped: a mailbox, a repo, a chat channel
+    # and a personal task list are each one thing the connection already names.
     assert spec_for(Provider.GMAIL).resource_scoped is False
     assert spec_for(Provider.GITHUB).resource_scoped is False
+    assert spec_for(Provider.MICROSOFT_TODO).resource_scoped is False
 
 
 def test_every_provider_can_now_report_its_own_death():

@@ -239,6 +239,104 @@ class GraphClient:
             })
         return out, True
 
+    # --- OneDrive -> DRIVE_FILE signals ----------------------------------
+    def recent_files(self, since: datetime, cap: int = 150) -> list[dict]:
+        """Files CHANGED since the checkpoint - metadata only, never content.
+
+        Uses the drive's delta feed, which is the incremental primitive here:
+        it returns what actually changed rather than paging the whole tree, so a
+        sync stays bounded no matter how large the drive is.
+        """
+        params = {"$top": "50"}
+        raw = self._paginate("/me/drive/root/delta", params, cap * 3)
+        out: list[dict] = []
+        for f in raw:
+            if f.get("deleted") or f.get("folder"):
+                continue  # folders and tombstones are not document activity
+            modified = _parse(f.get("lastModifiedDateTime"))
+            if modified is None or modified < since:
+                continue
+            by = ((f.get("lastModifiedBy") or {}).get("user") or {})
+            created_by = ((f.get("createdBy") or {}).get("user") or {})
+            out.append({
+                "id": f["id"],
+                "name": f.get("name") or "(unnamed)",
+                "modified_at": modified,
+                "modified_by": by.get("displayName") or "",
+                "created_by": created_by.get("displayName") or "",
+                "mime_type": ((f.get("file") or {}).get("mimeType")),
+                "size": f.get("size"),
+                # Presence of `shared` is Graph's own marker that the item is
+                # not private to this account - the closest thing to a
+                # collaboration signal available without extra permissions.
+                "shared": bool(f.get("shared")),
+                "url": f.get("webUrl"),
+            })
+        out.sort(key=lambda x: x["modified_at"], reverse=True)
+        return out[:cap]
+
+    # --- OneNote -> NOTE signals -----------------------------------------
+    def recent_notes(self, since: datetime, cap: int = 100) -> list[dict]:
+        """Note pages modified since the checkpoint. Titles and timestamps
+        only - the page's HTML content is never fetched."""
+        params = {
+            "$select": "id,title,createdDateTime,lastModifiedDateTime,links,parentNotebook,parentSection",
+            "$orderby": "lastModifiedDateTime desc",
+            "$top": "50",
+        }
+        out: list[dict] = []
+        for p in self._paginate("/me/onenote/pages", params, cap):
+            modified = _parse(p.get("lastModifiedDateTime"))
+            if modified is None or modified < since:
+                continue
+            links = p.get("links") or {}
+            out.append({
+                "id": p["id"],
+                "title": p.get("title") or "(untitled page)",
+                "modified_at": modified,
+                "notebook": ((p.get("parentNotebook") or {}).get("displayName") or ""),
+                "section": ((p.get("parentSection") or {}).get("displayName") or ""),
+                "url": ((links.get("oneNoteWebUrl") or {}).get("href")),
+            })
+        return out
+
+    # --- Microsoft To Do -> TASK signals ----------------------------------
+    def tasks(self, cap: int = 300) -> list[dict]:
+        """Every task across the account's To Do lists.
+
+        Deliberately NOT filtered by a `since` checkpoint: a task's importance
+        comes from its DUE DATE, not from when it was last edited. A task
+        created last month and due today must surface today, which an
+        incremental-by-modification fetch would miss entirely.
+        """
+        out: list[dict] = []
+        lists = self._paginate("/me/todo/lists", {"$top": "25"}, 25)
+        for lst in lists:
+            list_id, list_name = lst.get("id"), lst.get("displayName") or "Tasks"
+            if not list_id:
+                continue
+            rows = self._paginate(
+                f"/me/todo/lists/{list_id}/tasks",
+                {"$top": "50", "$select": "id,title,status,importance,dueDateTime,completedDateTime,createdDateTime,lastModifiedDateTime"},
+                cap,
+            )
+            for t in rows:
+                due = t.get("dueDateTime") or {}
+                out.append({
+                    "id": t["id"],
+                    "title": t.get("title") or "(untitled task)",
+                    "list": list_name,
+                    "status": (t.get("status") or "notStarted"),
+                    "importance": (t.get("importance") or "normal").lower(),
+                    "due_at": _parse(due.get("dateTime")) if due else None,
+                    "completed_at": _parse((t.get("completedDateTime") or {}).get("dateTime")),
+                    "created_at": _parse(t.get("createdDateTime")),
+                    "modified_at": _parse(t.get("lastModifiedDateTime")),
+                })
+            if len(out) >= cap:
+                break
+        return out[:cap]
+
     # --- Outlook Calendar -> CALENDAR_EVENT signals ----------------------
     def fetch_events(self, since: datetime) -> list[dict]:
         now = datetime.now(timezone.utc)

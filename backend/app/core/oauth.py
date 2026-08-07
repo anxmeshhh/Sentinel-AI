@@ -127,7 +127,7 @@ if MICROSOFT_CONFIGURED:
         # since those only cover mail/calendar resources, not the profile
         # endpoint itself. It's the single most common Graph delegated scope
         # and needs no admin consent on a personal or standard work account.
-        client_kwargs={"scope": "offline_access User.Read Mail.Read Calendars.Read Team.ReadBasic.All Channel.ReadBasic.All"},
+        client_kwargs={"scope": "offline_access User.Read Mail.Read Calendars.Read Team.ReadBasic.All Channel.ReadBasic.All Files.Read Notes.Read Tasks.Read"},
     )
 
 # Slack OAuth v2 is driven manually (see integrations/slack_auth.py), not through

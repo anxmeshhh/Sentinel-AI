@@ -21,6 +21,9 @@ class Provider(str, enum.Enum):
     # Teams is resource-scoped like Slack: the grant creates a bare anchor, and
     # each channel the user chooses to monitor becomes its own Connection row.
     MICROSOFT_TEAMS = "microsoft_teams"
+    MICROSOFT_ONEDRIVE = "microsoft_onedrive"
+    MICROSOFT_ONENOTE = "microsoft_onenote"
+    MICROSOFT_TODO = "microsoft_todo"
 
 
 class ResourcePriority(str, enum.Enum):

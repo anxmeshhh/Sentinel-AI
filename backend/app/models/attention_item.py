@@ -40,6 +40,10 @@ class AttentionType(str, enum.Enum):
     CONVERSATION_MENTION = "conversation_mention"
     CONVERSATION_BLOCKER = "conversation_blocker"
     CONVERSATION_URGENT = "conversation_urgent"
+    # Work-item findings, from deterministic detectors over TASK signals. Named
+    # for the operational fact, not the provider, so Planner/Jira reuse them.
+    TASK_OVERDUE = "task_overdue"
+    TASK_DUE_TODAY = "task_due_today"
 
 
 class AttentionState(str, enum.Enum):

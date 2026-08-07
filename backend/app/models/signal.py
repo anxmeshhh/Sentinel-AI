@@ -35,6 +35,12 @@ class SignalType(str, enum.Enum):
     CHANNEL_ACTIVITY = "channel_activity"
     MENTION = "mention"
     FLAGGED_MESSAGE = "flagged_message"
+    # Deliberately provider-neutral, so the detectors that read them work for
+    # any provider that produces the same shape: a note/page edit (OneNote now,
+    # Notion or Confluence later) and a work item (Microsoft To Do now, Planner
+    # or Jira later).
+    NOTE = "note"
+    TASK = "task"
 
 
 class Signal(Base, UUIDPk, TimestampMixin):

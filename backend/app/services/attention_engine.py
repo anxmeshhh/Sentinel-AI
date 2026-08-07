@@ -193,6 +193,93 @@ def _detect_conversation_urgent(session: Session, workspace_id: uuid.UUID, now: 
     return candidates
 
 
+# --- Work items (TASK signals) ---------------------------------------------
+# Provider-agnostic on purpose: these read SignalType.TASK, so Microsoft To Do
+# today and Planner or Jira later fire the same two findings with no new code.
+# Completed tasks are excluded at the source - a done task is never a finding.
+TASK_CAP = 8
+
+
+def _open_task_signals(session: Session, workspace_id: uuid.UUID):
+    """Incomplete tasks from non-paused connections, soonest-due first."""
+    rows = session.execute(
+        select(Signal, Connection)
+        .join(Connection, Connection.id == Signal.connection_id)
+        .where(
+            Signal.workspace_id == workspace_id,
+            Signal.type == SignalType.TASK,
+            Connection.paused_at.is_(None),
+        )
+        .order_by(Signal.occurred_at.asc())
+    ).all()
+    return [(sig, conn) for sig, conn in rows if not (sig.payload or {}).get("completed")]
+
+
+def _detect_overdue_tasks(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """A task whose due date has passed and which is not done. The clearest
+    finding a task list can produce - no judgement needed, just a date."""
+    candidates: list[dict] = []
+    for sig, conn in _open_task_signals(session, workspace_id):
+        payload = sig.payload or {}
+        due = _parse_iso(payload.get("due_at"))
+        if due is None or due >= now:
+            continue
+        days = max(1, (now - due).days)
+        high = payload.get("importance") == "high"
+        candidates.append({
+            "dedupe_key": f"task_overdue:{sig.external_id}",
+            "connection_id": conn.id,
+            "type": AttentionType.TASK_OVERDUE,
+            "source_provider": conn.provider.value,
+            "title": f"Overdue: {payload.get('title') or 'task'}",
+            "why": (f"Was due {days}d ago in {payload.get('list') or 'your tasks'}"
+                    + (" — marked high importance" if high else "")),
+            "evidence_url": None,
+            # An overdue task the person flagged important outranks the rest.
+            "priority": 0.8 if high else 0.65,
+            "due_at": due,
+        })
+        if len(candidates) >= TASK_CAP:
+            break
+    return candidates
+
+
+def _detect_tasks_due_today(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """Due today and not done - actionable while it is still today, and it
+    auto-resolves tomorrow by becoming overdue instead."""
+    candidates: list[dict] = []
+    for sig, conn in _open_task_signals(session, workspace_id):
+        payload = sig.payload or {}
+        due = _parse_iso(payload.get("due_at"))
+        if due is None or due < now or due.date() != now.date():
+            continue
+        high = payload.get("importance") == "high"
+        candidates.append({
+            "dedupe_key": f"task_due_today:{sig.external_id}",
+            "connection_id": conn.id,
+            "type": AttentionType.TASK_DUE_TODAY,
+            "source_provider": conn.provider.value,
+            "title": f"Due today: {payload.get('title') or 'task'}",
+            "why": f"Due today in {payload.get('list') or 'your tasks'}" + (" — high importance" if high else ""),
+            "evidence_url": None,
+            "priority": 0.7 if high else 0.55,
+            "due_at": due,
+        })
+        if len(candidates) >= TASK_CAP:
+            break
+    return candidates
+
+
+def _parse_iso(raw) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 def refresh_attention(
     session: Session, workspace_id: uuid.UUID, *, viewer_user_id: uuid.UUID | None = None
 ) -> list[AttentionItem]:
@@ -216,6 +303,8 @@ def refresh_attention(
         + _detect_conversation_priority_mentions(session, workspace_id, now)
         + _detect_conversation_blockers(session, workspace_id, now)
         + _detect_conversation_urgent(session, workspace_id, now)
+        + _detect_overdue_tasks(session, workspace_id, now)
+        + _detect_tasks_due_today(session, workspace_id, now)
     ):
         detected[candidate["dedupe_key"]] = candidate
 

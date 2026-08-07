@@ -1168,6 +1168,12 @@ def microsoft_capabilities(
             connected_keys.add("outlook_calendar")
         elif c.provider == Provider.MICROSOFT_TEAMS and c.repo:
             connected_keys.add("teams")
+        elif c.provider == Provider.MICROSOFT_ONEDRIVE:
+            connected_keys.add("onedrive")
+        elif c.provider == Provider.MICROSOFT_ONENOTE:
+            connected_keys.add("onenote")
+        elif c.provider == Provider.MICROSOFT_TODO:
+            connected_keys.add("todo")
 
     services = [
         MicrosoftServiceOut(

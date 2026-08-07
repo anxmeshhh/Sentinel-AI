@@ -58,6 +58,9 @@ MICROSOFT_GRANT = WorkspaceGrantSpec(
     services=(
         (Provider.MICROSOFT_OUTLOOK_MAIL, "mail"),
         (Provider.MICROSOFT_OUTLOOK_CALENDAR, "calendar"),
+        (Provider.MICROSOFT_ONEDRIVE, "onedrive"),
+        (Provider.MICROSOFT_ONENOTE, "onenote"),
+        (Provider.MICROSOFT_TODO, "todo"),
     ),
     # Teams reaches many channels, and which ones matter is a human decision -
     # so the grant only records the account here; channels are added one at a

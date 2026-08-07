@@ -68,15 +68,16 @@ def test_google_grant_provisions_its_three_services(session, env):
 def test_microsoft_grant_provisions_its_services_via_the_same_path(session, env):
     provision_grant(session, workspace_id=env["ws"].id, user_id=env["a"].id, grant=MICROSOFT_GRANT,
                     account_identity="a@contoso.com", encrypted_token="tok")
-    # Two fixed services plus the Teams ANCHOR: Teams reaches many channels, so
+    # Five fixed services plus the Teams ANCHOR: Teams reaches many channels, so
     # the grant records the account and leaves the choosing to the user.
     assert _providers(session, env["ws"].id, env["a"].id) == [
-        "microsoft_outlook_calendar", "microsoft_outlook_mail", "microsoft_teams",
+        "microsoft_onedrive", "microsoft_onenote", "microsoft_outlook_calendar",
+        "microsoft_outlook_mail", "microsoft_teams", "microsoft_todo",
     ]
     # Child connections share the grant's token + identity, and carry the service label.
     conns = session.execute(select(Connection).where(Connection.user_id == env["a"].id)).scalars().all()
     assert all(c.org == "a@contoso.com" and c.encrypted_token == "tok" for c in conns)
-    assert {c.repo for c in conns} == {"mail", "calendar", ""}  # "" = the Teams anchor
+    assert {c.repo for c in conns} == {"mail", "calendar", "onedrive", "onenote", "todo", ""}  # "" = Teams anchor
 
 
 def test_reprovision_same_account_is_idempotent_and_clears_revocation(session, env):
@@ -90,7 +91,7 @@ def test_reprovision_same_account_is_idempotent_and_clears_revocation(session, e
     provision_grant(session, workspace_id=env["ws"].id, user_id=env["a"].id, grant=MICROSOFT_GRANT,
                     account_identity="a@contoso.com", encrypted_token="tok2")
     conns = session.execute(select(Connection).where(Connection.user_id == env["a"].id)).scalars().all()
-    assert len(conns) == 3  # mail + calendar + Teams anchor, not duplicated
+    assert len(conns) == 6  # five services + Teams anchor, not duplicated
     refreshed = session.get(Connection, mail.id)
     assert refreshed.encrypted_token == "tok2" and refreshed.revoked_at is None
 
@@ -117,7 +118,7 @@ def test_grant_is_scoped_per_user(session, env):
                     account_identity="a@contoso.com", encrypted_token="tokA")
     provision_grant(session, workspace_id=env["ws"].id, user_id=env["b"].id, grant=MICROSOFT_GRANT,
                     account_identity="b@contoso.com", encrypted_token="tokB")
-    # Two members, no collision - each owns their own three connections.
-    assert len(_providers(session, env["ws"].id, env["a"].id)) == 3
-    assert len(_providers(session, env["ws"].id, env["b"].id)) == 3
-    assert session.execute(select(Connection)).scalars().all().__len__() == 6
+    # Two members, no collision - each owns their own six connections.
+    assert len(_providers(session, env["ws"].id, env["a"].id)) == 6
+    assert len(_providers(session, env["ws"].id, env["b"].id)) == 6
+    assert session.execute(select(Connection)).scalars().all().__len__() == 12

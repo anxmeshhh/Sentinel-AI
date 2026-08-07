@@ -192,6 +192,40 @@ PROVIDERS: dict[Provider, ProviderSpec] = {
             # allow-list rather than a flag on one sprawling grant.
             resource_scoped=False,
         ),
+        # --- Microsoft 365 (Sprint 3) --------------------------------------
+        ProviderSpec(
+            key=Provider.MICROSOFT_ONEDRIVE,
+            label="OneDrive",
+            # INGESTED, unlike Google Drive which is LIVE. The difference is what
+            # is read: Drive is *searched* (arbitrary files, on demand), while
+            # OneDrive here ingests only files CHANGED since the last sync -
+            # bounded, incremental metadata, the same shape as a mailbox poll.
+            # Nothing is stored beyond name/type/timestamps; never file content.
+            retrieval=Retrieval.INGESTED,
+            auth=AuthKind.OAUTH,
+            signal_types=(SignalType.DRIVE_FILE,),
+            # Fail-closed when shared: one grant reaches every file the account
+            # can see, so a channel must allow-list specific resources - the same
+            # reasoning that makes Google Drive resource-scoped.
+            resource_scoped=True,
+        ),
+        ProviderSpec(
+            key=Provider.MICROSOFT_ONENOTE,
+            label="OneNote",
+            retrieval=Retrieval.INGESTED,
+            auth=AuthKind.OAUTH,
+            signal_types=(SignalType.NOTE,),
+            resource_scoped=True,
+        ),
+        ProviderSpec(
+            key=Provider.MICROSOFT_TODO,
+            label="Microsoft To Do",
+            retrieval=Retrieval.INGESTED,
+            auth=AuthKind.OAUTH,
+            signal_types=(SignalType.TASK,),
+            # A person's own task lists are one bounded scope, like a mailbox.
+            resource_scoped=False,
+        ),
     )
 }
 

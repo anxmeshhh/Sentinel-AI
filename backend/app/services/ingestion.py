@@ -463,6 +463,108 @@ def _ingest_microsoft_teams(
     return count
 
 
+def _ingest_onedrive(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None) -> int:
+    """OneDrive -> DRIVE_FILE signals: which documents changed, never their content.
+
+    Metadata only (name, type, size, who touched it, whether it is shared), the
+    same privacy posture as the mail and calendar handlers.
+    """
+    from app.integrations.graph_client import GraphClient
+
+    metrics = metrics if metrics is not None else {}
+    access_token = get_valid_microsoft_token(session, connection)
+    count = shared = 0
+    with GraphClient(access_token) as client:
+        files = client.recent_files(since)
+        for f in files:
+            if f["shared"]:
+                shared += 1
+            signal_repo.upsert(
+                connection_id=connection.id, type=SignalType.DRIVE_FILE, external_id=f["id"],
+                actor=f["modified_by"] or f["created_by"] or "", occurred_at=f["modified_at"],
+                payload={
+                    "name": f["name"], "mime_type": f["mime_type"], "size": f["size"],
+                    "shared": f["shared"], "modified_by": f["modified_by"], "url": f["url"],
+                },
+            )
+            count += 1
+    metrics["files_changed"] = count
+    metrics["shared_files"] = shared
+    return count
+
+
+def _ingest_onenote(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None) -> int:
+    """OneNote -> NOTE signals: which pages were edited. Titles and locations
+    only; page content is never fetched."""
+    from app.integrations.graph_client import GraphClient
+
+    metrics = metrics if metrics is not None else {}
+    access_token = get_valid_microsoft_token(session, connection)
+    count = 0
+    with GraphClient(access_token) as client:
+        for p in client.recent_notes(since):
+            signal_repo.upsert(
+                connection_id=connection.id, type=SignalType.NOTE, external_id=p["id"],
+                actor="", occurred_at=p["modified_at"],
+                payload={
+                    "title": p["title"], "notebook": p["notebook"],
+                    "section": p["section"], "url": p["url"],
+                },
+            )
+            count += 1
+    metrics["pages_changed"] = count
+    return count
+
+
+def _ingest_microsoft_todo(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None) -> int:
+    """Microsoft To Do -> TASK signals.
+
+    Every task is upserted, not just recently-edited ones: a task's operational
+    weight comes from its DUE DATE, so one created weeks ago and due today has
+    to be present today. Upsert keyed on the task id means re-reading the same
+    task updates it in place rather than duplicating - which is also what makes
+    a completion visible (status flips on the existing row).
+
+    `occurred_at` is the due date when there is one, so the signal sits on the
+    timeline where it actually matters, falling back to the last edit.
+    """
+    from app.integrations.graph_client import GraphClient
+
+    metrics = metrics if metrics is not None else {}
+    access_token = get_valid_microsoft_token(session, connection)
+    now = datetime.now(timezone.utc)
+    count = overdue = due_today = completed = 0
+
+    with GraphClient(access_token) as client:
+        for t in client.tasks():
+            is_done = t["status"] == "completed" or t["completed_at"] is not None
+            due = t["due_at"]
+            if is_done:
+                completed += 1
+            elif due is not None:
+                if due < now:
+                    overdue += 1
+                elif due.date() == now.date():
+                    due_today += 1
+            signal_repo.upsert(
+                connection_id=connection.id, type=SignalType.TASK, external_id=t["id"],
+                actor="", occurred_at=(due or t["modified_at"] or t["created_at"] or now),
+                payload={
+                    "title": t["title"], "list": t["list"], "status": t["status"],
+                    "importance": t["importance"], "completed": is_done,
+                    "due_at": due.isoformat() if due else None,
+                    "completed_at": t["completed_at"].isoformat() if t["completed_at"] else None,
+                },
+            )
+            count += 1
+
+    metrics["tasks"] = count
+    metrics["overdue"] = overdue
+    metrics["due_today"] = due_today
+    metrics["completed"] = completed
+    return count
+
+
 # One handler per ingesting provider. Adding a provider means adding a handler
 # and one line here - never another branch in ingest_connection (the dispatch
 # generalization approved for the Microsoft sprint).
@@ -474,4 +576,7 @@ _INGEST_HANDLERS = {
     Provider.MICROSOFT_OUTLOOK_MAIL: _ingest_outlook_mail,
     Provider.MICROSOFT_OUTLOOK_CALENDAR: _ingest_outlook_calendar,
     Provider.MICROSOFT_TEAMS: _ingest_microsoft_teams,
+    Provider.MICROSOFT_ONEDRIVE: _ingest_onedrive,
+    Provider.MICROSOFT_ONENOTE: _ingest_onenote,
+    Provider.MICROSOFT_TODO: _ingest_microsoft_todo,
 }

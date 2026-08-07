@@ -315,11 +315,12 @@ class GraphClient:
             list_id, list_name = lst.get("id"), lst.get("displayName") or "Tasks"
             if not list_id:
                 continue
-            rows = self._paginate(
-                f"/me/todo/lists/{list_id}/tasks",
-                {"$top": "50", "$select": "id,title,status,importance,dueDateTime,completedDateTime,createdDateTime,lastModifiedDateTime"},
-                cap,
-            )
+            # No $select here, deliberately: Graph REJECTS `$select=title` on
+            # todoTask with 400 "Invalid request" - verified field by field
+            # against the live API. A task is a small object, so requesting the
+            # whole thing costs nothing and avoids a quirk that would otherwise
+            # fail every To Do sync.
+            rows = self._paginate(f"/me/todo/lists/{list_id}/tasks", {"$top": "50"}, cap)
             for t in rows:
                 due = t.get("dueDateTime") or {}
                 out.append({

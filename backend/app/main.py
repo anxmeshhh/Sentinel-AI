@@ -27,6 +27,7 @@ from app.api.routes import (
     connections,
     connections_ai,
     connections_github_ai,
+    connections_microsoft_ai,
     drive,
     findings,
     integrations,
@@ -122,6 +123,7 @@ app.include_router(mail.router)
 app.include_router(calendar.router)
 app.include_router(connections_ai.router)
 app.include_router(connections_github_ai.router)
+app.include_router(connections_microsoft_ai.router)
 app.include_router(drive.router)
 app.include_router(meet.router)
 app.include_router(memory.router)

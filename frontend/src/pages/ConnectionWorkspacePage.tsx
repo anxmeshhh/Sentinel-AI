@@ -112,6 +112,52 @@ const ASSISTANTS: Record<string, AssistantConfig> = {
       "Find my most recently edited Drive files",
     ],
   },
+  microsoft: {
+    contextLabel: "Microsoft 365",
+    endpointBase: "/connections/microsoft",
+    placeholder: "Ask about your mail, calendar or channels…",
+    // Every prompt here is audited against what Sentinel actually stores, so a
+    // suggested prompt never lands on "I don't have that". The wording avoids
+    // saying "Microsoft"/"Outlook" - the assistant is permanently scoped, so
+    // naming the provider back at the user is noise.
+    suggestionGroups: [
+      {
+        label: "Mail",
+        prompts: [
+          "Which emails need my attention?",
+          "Summarize my important unread emails.",
+          "What arrived today?",
+          "Which unread emails are addressed directly to me?",
+          "Which conversations have the most back-and-forth?",
+        ],
+      },
+      {
+        label: "Calendar",
+        prompts: [
+          "What meetings should I prepare for?",
+          "What's on my schedule today?",
+          "Are there any overlapping meetings?",
+          "Which meetings are most important?",
+        ],
+      },
+      {
+        label: "Channels",
+        prompts: [
+          "Which channels require attention?",
+          "What's the status of my monitored channels?",
+        ],
+      },
+      {
+        label: "Workspace",
+        prompts: [
+          "What requires my attention today?",
+          "Summarize my workspace.",
+          "What should I prioritize?",
+          "Give me my briefing.",
+        ],
+      },
+    ],
+  },
   github: {
     contextLabel: "GitHub",
     endpointBase: "/connections/github",

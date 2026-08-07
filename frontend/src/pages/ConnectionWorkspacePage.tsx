@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
-import type { Connection, GitHubRepo, GitHubRepository, SlackChannel, SlackChannelResource } from "../api/types";
+import type { Connection, GitHubRepo, GitHubRepository, MicrosoftCapabilities, MicrosoftService, SlackChannel, SlackChannelResource } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { ConnectScopeDialog } from "../components/ConnectScopeDialog";
 import { SentinelPanel, type SuggestionGroup } from "../components/SentinelPanel";
@@ -279,13 +279,28 @@ function meetHealth(calendar: Connection | undefined): Health {
 // to Google's, only the endpoint prefix differs.
 function MicrosoftWorkspace({ connections, onChanged }: { connections: Connection[]; onChanged: () => void }) {
   const [connecting, setConnecting] = useState(false);
-  const mail = connections.find((c) => c.provider === "microsoft_outlook_mail");
-  const calendar = connections.find((c) => c.provider === "microsoft_outlook_calendar");
-  // Teams rows: the grant leaves a bare anchor (no repo) until channels are
-  // chosen, so "connected" and "how many monitored" are different questions.
-  const teamsRows = connections.filter((c) => c.provider === "microsoft_teams");
-  const teamsChannels = teamsRows.filter((c) => c.repo);
-  const connectedCount = [mail, calendar].filter(Boolean).length + (teamsRows.length > 0 ? 1 : 0);
+  const [caps, setCaps] = useState<MicrosoftCapabilities | null>(null);
+  const [capsLoading, setCapsLoading] = useState(true);
+
+  const microsoftRows = connections.filter((c) => c.provider.startsWith("microsoft_"));
+  const teamsChannels = connections.filter((c) => c.provider === "microsoft_teams" && c.repo);
+  const connectedCount = microsoftRows.length;
+
+  // Capabilities are asked of Microsoft, so they refresh whenever the set of
+  // connections changes - which is exactly when a different account has been
+  // connected. No hardcoded assumption about what this account includes.
+  useEffect(() => {
+    let cancelled = false;
+    setCapsLoading(true);
+    api
+      .get<MicrosoftCapabilities>("/integrations/microsoft/capabilities")
+      .then((c) => !cancelled && setCaps(c))
+      .catch(() => !cancelled && setCaps(null))
+      .finally(() => !cancelled && setCapsLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [connections.length, microsoftRows.map((c) => c.org).join(",")]);
 
   async function handleConnect() {
     setConnecting(true);
@@ -298,53 +313,125 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
   }
 
   async function handleDisconnectAll() {
-    const ids = [mail?.id, calendar?.id, ...teamsRows.map((c) => c.id)].filter((id): id is string => Boolean(id));
-    await Promise.all(ids.map((id) => api.delete(`/connections/${id}`)));
+    await Promise.all(microsoftRows.map((c) => api.delete(`/connections/${c.id}`)));
     onChanged();
   }
 
-  const mailH = serviceHealth(mail);
-  const calH = serviceHealth(calendar);
-  // A connected Teams anchor with no channels yet is not unhealthy - it is
-  // waiting on a human choice, and says so rather than showing a scary state.
-  const teamsH = teamsChannels.length > 0
-    ? serviceHealth(teamsChannels[0])
-    : { status: teamsRows.length > 0 ? "Connected — add a channel" : "Not connected", tone: "muted" as const, healthy: false };
+  const ICONS: Record<string, ReactNode> = {
+    outlook_mail: <MailIcon />,
+    outlook_calendar: <CalendarIcon />,
+    teams: <MicrosoftIcon />,
+    onedrive: <DriveIcon />,
+    sharepoint: <DriveIcon />,
+    onenote: <MailIcon />,
+    planner: <CalendarIcon />,
+    todo: <CalendarIcon />,
+  };
+
+  /** What one service card should say. An unavailable service is a capability
+   *  statement, never an error - it explains what it needs and how to get it. */
+  function cardFor(svc: MicrosoftService) {
+    if (!svc.available) {
+      return { status: `🔒 ${svc.status}`, tone: "muted" as const, connected: false, desc: svc.reason ?? svc.description };
+    }
+    if (svc.key === "teams" && teamsChannels.length > 0) {
+      return {
+        status: `${teamsChannels.length} channel${teamsChannels.length === 1 ? "" : "s"} monitored`,
+        tone: "good" as const, connected: true, desc: svc.description,
+      };
+    }
+    if (svc.connected) {
+      const row = connections.find(
+        (c) =>
+          (svc.key === "outlook_mail" && c.provider === "microsoft_outlook_mail") ||
+          (svc.key === "outlook_calendar" && c.provider === "microsoft_outlook_calendar"),
+      );
+      const health = row ? serviceHealth(row) : null;
+      return {
+        status: health?.status ?? "Connected",
+        tone: health?.tone ?? ("good" as const),
+        connected: health?.healthy ?? true,
+        desc: svc.description,
+      };
+    }
+    // Available to this account, but Sentinel isn't reading it yet. Not an
+    // error either - it is the next thing the user could turn on.
+    return { status: "Available — not set up yet", tone: "muted" as const, connected: false, desc: svc.description };
+  }
+
+  const available = caps?.services.filter((s) => s.available) ?? [];
+  const locked = caps?.services.filter((s) => !s.available) ?? [];
 
   return (
     <div>
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <ServiceCard
-          icon={<MailIcon />}
-          name="Outlook Mail"
-          status={mailH.status}
-          statusTone={mailH.tone}
-          desc={mail?.org ?? "Subject, participants, timestamps — never message bodies"}
-          connected={mailH.healthy}
-        />
-        <ServiceCard
-          icon={<CalendarIcon />}
-          name="Outlook Calendar"
-          status={calH.status}
-          statusTone={calH.tone}
-          desc={calendar?.org ?? "Meetings, attendees, Teams links"}
-          connected={calH.healthy}
-        />
-        <ServiceCard
-          icon={<MicrosoftIcon />}
-          name="Microsoft Teams"
-          status={
-            teamsChannels.length > 0
-              ? `${teamsChannels.length} channel${teamsChannels.length === 1 ? "" : "s"} monitored`
-              : teamsH.status
-          }
-          statusTone={teamsChannels.length > 0 ? "good" : teamsH.tone}
-          desc="Blockers, mentions and incidents forming — correlated with your repos, mail and meetings."
-          connected={teamsChannels.length > 0}
-        />
-      </div>
+      {/* What kind of account this is, stated plainly - it is the reason some
+          services below are unavailable, so it belongs above them. */}
+      {caps?.connected && (
+        <div className="mb-4 rounded-md border border-border bg-surface/50 px-4 py-3">
+          <div className="text-small font-semibold text-ink">{caps.account_type_label}</div>
+          <div className="mt-0.5 text-caption text-ink-faint">
+            {caps.account}
+            {caps.tenant_name ? ` · ${caps.tenant_name}` : ""}
+            {locked.length > 0
+              ? ` · ${available.length} of ${caps.services.length} services available on this account type`
+              : ` · all ${caps.services.length} services available`}
+          </div>
+        </div>
+      )}
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      {capsLoading && !caps ? (
+        <LoadingBlock />
+      ) : (
+        <>
+          <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {available.map((svc) => {
+              const c = cardFor(svc);
+              return (
+                <ServiceCard
+                  key={svc.key}
+                  icon={ICONS[svc.key] ?? <MicrosoftIcon />}
+                  name={svc.label}
+                  status={c.status}
+                  statusTone={c.tone}
+                  desc={c.desc}
+                  connected={c.connected}
+                />
+              );
+            })}
+          </div>
+
+          {/* Unavailable services are still shown - the point is to teach what
+              exists and what it needs, not to hide it or call it an error. */}
+          {locked.length > 0 && (
+            <div className="mb-6">
+              <div className="mb-2 text-caption font-semibold uppercase tracking-wide text-ink-faint">
+                Available on work or school accounts
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {locked.map((svc) => {
+                  const c = cardFor(svc);
+                  return (
+                    <ServiceCard
+                      key={svc.key}
+                      icon={ICONS[svc.key] ?? <MicrosoftIcon />}
+                      name={svc.label}
+                      status={c.status}
+                      statusTone={c.tone}
+                      desc={c.desc}
+                      connected={false}
+                    />
+                  );
+                })}
+              </div>
+              {locked[0]?.unlock && (
+                <p className="mt-3 text-caption text-ink-faint">{locked[0].unlock}</p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="mb-2 flex flex-wrap items-center gap-3">
         <button onClick={handleConnect} disabled={connecting} className="btn-primary">
           {connecting ? "Redirecting…" : connectedCount > 0 ? "Reconnect Microsoft 365" : "Connect Microsoft 365"}
         </button>
@@ -354,10 +441,6 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
           </button>
         )}
       </div>
-
-      <p className="text-caption text-ink-faint">
-        OneDrive, SharePoint, OneNote, Planner and To Do arrive in the next sprints — one grant already covers them.
-      </p>
     </div>
   );
 }

@@ -222,6 +222,27 @@ def microsoft_context(session: Session, workspace_id, user_id) -> dict:
     teams["data_blocked"] = bool(accessible_flags) and all(f is False for f in accessible_flags)
     teams["never_synced"] = bool(teams_channels) and all(c["last_synced_at"] is None for c in teams["channels"])
 
+    # The account type, taken from the same detection the connection page uses,
+    # so the advisor and the UI can never tell different stories about why a
+    # service is unavailable. Read from cache when warm; never fails the answer.
+    account_type = None
+    if teams_rows:
+        try:
+            from app.integrations.microsoft_auth import get_valid_access_token as ms_token
+            from app.services.microsoft_capabilities import detect_account
+
+            anchor = teams_rows[0]
+            acct = detect_account(ms_token(session, anchor), cache_key=(str(anchor.id), anchor.org))
+            account_type = acct.type_label if acct.detected else None
+            # A personal account has no organizational Teams at all - a stronger
+            # and more useful statement than "messages were not returned".
+            teams["account_unsupported"] = not acct.is_organizational and acct.detected
+        except Exception:  # noqa: BLE001 - the advisor must answer regardless
+            teams["account_unsupported"] = False
+    else:
+        teams["account_unsupported"] = False
+    teams["account_type"] = account_type
+
     # --- Sentinel intelligence (findings + correlated situations) ---------
     scope = personal_scope(session, workspace_id, user_id)
     ms_provider_values = {p.value for p in MICROSOFT_PROVIDERS}
@@ -312,12 +333,19 @@ def _render_context(ctx: dict) -> str:
         for ch in t["channels"]:
             state = "paused" if ch["paused"] else "active"
             lines.append(f"    - {ch['name']} — priority {ch['priority']}, {state}")
-        if t["data_blocked"]:
+        if t.get("account_unsupported"):
             lines.append(
-                "  IMPORTANT: Microsoft is NOT returning channel data for this account. "
-                "Teams channel messages require a licensed Microsoft 365 work or school tenant; "
-                "this account is not one, so there is no channel activity to report - "
-                "this is a licensing/permission limit, NOT a quiet channel."
+                f"  IMPORTANT: this workspace is connected with a {t.get('account_type') or 'personal Microsoft account'}. "
+                "Microsoft only provides Teams channels on organizational (Business, Enterprise or "
+                "Education) tenants, so there is no channel activity to report and never will be on "
+                "this account. This is an account-type capability, NOT a quiet channel and NOT an error. "
+                "If asked, say so plainly and mention that connecting a work or school account enables it."
+            )
+        elif t["data_blocked"]:
+            lines.append(
+                "  IMPORTANT: Microsoft is NOT returning channel messages for this account - the "
+                "protected channel-message permission has not been granted in this tenant. There is "
+                "no channel activity to report; this is a permission limit, NOT a quiet channel."
             )
         elif t["never_synced"]:
             lines.append("  These channels have not synced yet, so there is no activity to report.")

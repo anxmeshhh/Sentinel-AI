@@ -144,3 +144,29 @@ class TeamsChannelAdd(BaseModel):
     team_name: str = Field(min_length=1, max_length=300)
     channel_id: str = Field(min_length=1, max_length=200)
     channel_name: str = Field(min_length=1, max_length=300)
+
+
+class MicrosoftServiceOut(BaseModel):
+    """One Microsoft service and what this account can do with it.
+
+    `available` is a capability, not health: an unavailable service is one this
+    account type does not include, which the UI explains rather than erroring on.
+    `connected` is whether Sentinel actually holds a connection for it."""
+
+    key: str
+    label: str
+    description: str
+    available: bool
+    status: str
+    reason: str | None = None
+    unlock: str | None = None
+    connected: bool = False
+
+
+class MicrosoftCapabilitiesOut(BaseModel):
+    connected: bool
+    account_type: str          # personal | business | enterprise | education | work_school | unknown | none
+    account_type_label: str
+    account: str | None = None
+    tenant_name: str | None = None
+    services: list[MicrosoftServiceOut] = []

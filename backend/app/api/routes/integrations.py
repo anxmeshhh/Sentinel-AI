@@ -44,6 +44,8 @@ from app.schemas.integration import (
     SlackChannelAdd,
     SlackChannelOut,
     SlackChannelResourceOut,
+    MicrosoftCapabilitiesOut,
+    MicrosoftServiceOut,
     TeamsChannelAdd,
     TeamsChannelOut,
     TeamsChannelResourceOut,
@@ -1113,3 +1115,73 @@ def sync_monitored_teams_channel(
         raise HTTPException(status_code=409, detail="This channel is paused - resume it first")
     _sync_one(session, connection)
     return _teams_channel_out(session, connection)
+
+
+@router.get("/microsoft/capabilities", response_model=MicrosoftCapabilitiesOut)
+def microsoft_capabilities(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> MicrosoftCapabilitiesOut:
+    """What the connected Microsoft account can actually do.
+
+    Every supported service is listed, whether or not this account has it -
+    an unavailable service is a capability statement ("requires a work or
+    school account"), never an error. The account type is detected by asking
+    Microsoft, so connecting a different account changes this automatically.
+    """
+    from app.services.microsoft_capabilities import AccountType, MicrosoftAccount, capabilities_for, detect_account
+
+    conns = session.execute(
+        select(Connection).where(
+            Connection.workspace_id == workspace_id,
+            Connection.user_id == user.id,
+            Connection.provider.in_(MICROSOFT_GRANT.providers + MICROSOFT_GRANT.anchors),
+        )
+    ).scalars().all()
+
+    if not conns:
+        return MicrosoftCapabilitiesOut(
+            connected=False, account_type="none", account_type_label="Not connected",
+            account=None, tenant_name=None, services=[],
+        )
+
+    # Detection needs a live token; a failure degrades to UNKNOWN rather than
+    # failing the page, so the UI can still list the services.
+    anchor = conns[0]
+    try:
+        from app.integrations.microsoft_auth import get_valid_access_token as ms_token
+
+        token = ms_token(session, anchor)
+        account = detect_account(token, cache_key=(str(anchor.id), anchor.org))
+    except Exception as exc:  # noqa: BLE001 - never break the connection page
+        logger.warning("microsoft_capabilities_token_failed", error=str(exc)[:160])
+        account = MicrosoftAccount(AccountType.UNKNOWN, "Microsoft account", detected=False)
+
+    # Which services Sentinel actually holds a connection for, so the UI can
+    # tell "available and connected" from "available, not set up yet".
+    connected_keys = set()
+    for c in conns:
+        if c.provider == Provider.MICROSOFT_OUTLOOK_MAIL:
+            connected_keys.add("outlook_mail")
+        elif c.provider == Provider.MICROSOFT_OUTLOOK_CALENDAR:
+            connected_keys.add("outlook_calendar")
+        elif c.provider == Provider.MICROSOFT_TEAMS and c.repo:
+            connected_keys.add("teams")
+
+    services = [
+        MicrosoftServiceOut(
+            key=cap.key, label=cap.label, description=cap.description,
+            available=cap.available, status=cap.status, reason=cap.reason,
+            unlock=cap.unlock, connected=cap.key in connected_keys,
+        )
+        for cap in capabilities_for(account)
+    ]
+    return MicrosoftCapabilitiesOut(
+        connected=True,
+        account_type=account.account_type.value,
+        account_type_label=account.type_label,
+        account=anchor.org,
+        tenant_name=account.tenant_name,
+        services=services,
+    )

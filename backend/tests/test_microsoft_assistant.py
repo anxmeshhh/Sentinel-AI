@@ -141,8 +141,9 @@ def test_no_conflicts_when_meetings_are_sequential(session, env):
 # ------------------------------------------------------------------ teams
 
 def test_blocked_teams_data_is_reported_as_blocked_not_quiet(session, env):
-    """The honesty test: a channel Microsoft refuses to return data for must be
-    distinguishable from a channel that is simply quiet."""
+    """The honesty test: a channel whose messages Microsoft refuses must be
+    distinguishable from a channel that is simply quiet. This is the PERMISSION
+    path - the tenant supports Teams but has not granted message access."""
     _conn(env, Provider.MICROSOFT_TEAMS, repo="C1", display="Platform / deploys",
           meta={"ok": True, "messages_accessible": False, "degraded": "channel_messages_permission_missing"})
     session.commit()
@@ -152,8 +153,31 @@ def test_blocked_teams_data_is_reported_as_blocked_not_quiet(session, env):
     assert ctx["teams"]["data_blocked"] is True
     from app.services.microsoft_assistant import _render_context
     rendered = _render_context(ctx)
-    assert "licensed Microsoft 365 work or school tenant" in rendered
-    assert "NOT a quiet channel" in rendered
+    assert "permission limit, NOT a quiet channel" in rendered
+
+
+def test_personal_account_teams_is_explained_as_account_type_not_an_error(session, env, monkeypatch):
+    """The ACCOUNT-TYPE path, which is stronger than the permission one: on a
+    personal account Teams does not exist at all, so the advisor must say that
+    rather than implying a setting could be flipped."""
+    from app.services import microsoft_capabilities as mc
+
+    monkeypatch.setattr(mc, "detect_account",
+                        lambda token, cache_key=None: mc.MicrosoftAccount(
+                            mc.AccountType.PERSONAL, "Personal Microsoft account"))
+    monkeypatch.setattr("app.integrations.microsoft_auth.get_valid_access_token",
+                        lambda session, connection: "tok")
+    _conn(env, Provider.MICROSOFT_TEAMS, repo="C1", display="Platform / deploys",
+          meta={"ok": True, "messages_accessible": False})
+    session.commit()
+
+    ctx = microsoft_context(session, env["ws"].id, env["user"].id)
+    assert ctx["teams"]["account_unsupported"] is True
+    from app.services.microsoft_assistant import _render_context
+    rendered = _render_context(ctx)
+    assert "Personal Microsoft account" in rendered
+    assert "capability, NOT a quiet channel and NOT an error" in rendered
+    assert "connecting a work or school account enables it" in rendered
 
 
 def test_accessible_teams_channel_is_not_flagged_blocked(session, env):

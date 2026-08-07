@@ -855,3 +855,26 @@ export interface ChannelExclusion {
   label: string;
   reason: string | null;
 }
+
+/** One Microsoft service and what the connected account can do with it.
+ *  `available` is a CAPABILITY (does this account type include it), not health -
+ *  an unavailable service is explained, never shown as an error. */
+export interface MicrosoftService {
+  key: string;
+  label: string;
+  description: string;
+  available: boolean;
+  status: string;
+  reason: string | null;
+  unlock: string | null;
+  connected: boolean;
+}
+
+export interface MicrosoftCapabilities {
+  connected: boolean;
+  account_type: string;
+  account_type_label: string;
+  account: string | null;
+  tenant_name: string | null;
+  services: MicrosoftService[];
+}

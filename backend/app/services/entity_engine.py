@@ -187,4 +187,24 @@ def extract_entities(session: Session, scope: Scope, findings: list[Finding]) ->
     for key, mention in existing_by_key.items():
         if key not in desired_keys:
             session.delete(mention)
+
+    # Prune ORPHANS: mentions whose finding no longer exists at all.
+    #
+    # The reconciliation above only covers findings passed in on this run, so a
+    # mention survived indefinitely once its finding vanished entirely (a
+    # resolved situation, a dismissed item). Measured on real data: an entity
+    # showed 2 mentions while only 1 live finding referenced it, which
+    # overstates how close that entity is to correlating. Correlation itself was
+    # never fooled - it intersects with live findings - but the stored state was
+    # wrong, and wrong state eventually becomes a wrong decision.
+    live_ids = set(finding_ids)
+    for mention in session.execute(
+        select(EntityMention).where(
+            EntityMention.workspace_id == workspace_id,
+            EntityMention.scope_key == scope_key,
+        )
+    ).scalars().all():
+        if mention.finding_id not in live_ids:
+            session.delete(mention)
+
     session.flush()

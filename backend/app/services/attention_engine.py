@@ -280,6 +280,87 @@ def _parse_iso(raw) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
+
+# How long an important, unread message sits before it stops being "recent mail"
+# and starts being something that fell through the cracks. Deliberately well
+# past EMAIL_LOOKBACK_DAYS so the two detectors never describe the same message.
+UNANSWERED_MAIL_DAYS = 14
+# Below this it is an untidy inbox, not an operational problem. Chosen so the
+# finding means "a habit has formed", not "you have unread mail".
+UNANSWERED_MAIL_MIN = 3
+
+
+def _detect_unanswered_mail(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """Important mail that arrived a while ago and was never opened.
+
+    The gap this closes: _detect_important_emails only looks back
+    EMAIL_LOOKBACK_DAYS, which is right for "what just arrived" but exactly
+    backwards for "what got dropped" - a flagged message from three weeks ago is
+    MORE concerning than one from this morning, not less. Measured on real data:
+    27 messages qualified as unread+important while the recency detector could
+    see only 1.
+
+    Aggregated to ONE finding per mailbox on purpose. Twenty-seven separate
+    items would be noise and would drown the feed; a single "these are piling
+    up" is the operational fact. It auto-resolves when they are read or the
+    count falls back below the threshold.
+    """
+    cutoff = now - timedelta(days=UNANSWERED_MAIL_DAYS)
+    rows = session.execute(
+        select(Signal, Connection)
+        .join(Connection, Connection.id == Signal.connection_id)
+        .where(
+            Signal.workspace_id == workspace_id,
+            Signal.type == SignalType.EMAIL,
+            Signal.occurred_at < cutoff,
+            Connection.paused_at.is_(None),
+        )
+        .order_by(Signal.occurred_at.asc())
+    ).all()
+
+    # Grouped per mailbox connection: two mailboxes with three stale messages
+    # each is two situations, not one combined six.
+    by_connection: dict = {}
+    for sig, conn in rows:
+        payload = sig.payload or {}
+        labels = set(payload.get("label_ids") or [])
+        if "UNREAD" not in labels:
+            continue
+        starred = "STARRED" in labels
+        important = "IMPORTANT" in labels
+        # The same precision rule the recency detector uses - promotional mail
+        # marked "important" by the provider is not an operational signal.
+        if bool(labels & {"CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "SPAM"}) and not starred:
+            continue
+        if not (starred or important):
+            continue
+        by_connection.setdefault(conn.id, {"conn": conn, "items": []})["items"].append((sig, payload))
+
+    candidates: list[dict] = []
+    for group in by_connection.values():
+        conn, items = group["conn"], group["items"]
+        if len(items) < UNANSWERED_MAIL_MIN:
+            continue
+        oldest_sig, oldest_payload = items[0]
+        oldest_days = _age_days(now, oldest_sig.occurred_at)
+        subject = (oldest_payload.get("subject") or "(no subject)")[:80]
+        candidates.append({
+            # One row per mailbox, so re-running updates rather than stacking.
+            "dedupe_key": f"unanswered_mail:{conn.id}",
+            "connection_id": conn.id,
+            "type": AttentionType.UNANSWERED_MAIL,
+            "source_provider": conn.provider.value,
+            "title": f"{len(items)} important messages are still unread",
+            "why": (f"Unread and flagged important for over {UNANSWERED_MAIL_DAYS} days in "
+                    f"{conn.org} — the oldest is {oldest_days}d old: “{subject}”"),
+            "evidence_url": None,
+            # Below critical on purpose: this is a backlog, not an emergency.
+            # It rises with the age of the oldest message, capped.
+            "priority": min(0.7, 0.45 + 0.01 * oldest_days),
+        })
+    return candidates
+
+
 def refresh_attention(
     session: Session, workspace_id: uuid.UUID, *, viewer_user_id: uuid.UUID | None = None
 ) -> list[AttentionItem]:
@@ -296,6 +377,7 @@ def refresh_attention(
     detected: dict[str, dict] = {}
     for candidate in (
         _detect_important_emails(session, workspace_id, now)
+        + _detect_unanswered_mail(session, workspace_id, now)
         + _detect_upcoming_meetings(session, workspace_id, now)
         + _detect_stale_prs(session, workspace_id, now)
         + _detect_findings(session, workspace_id, now)

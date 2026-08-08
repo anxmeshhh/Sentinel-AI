@@ -40,6 +40,11 @@ class AttentionType(str, enum.Enum):
     CONVERSATION_MENTION = "conversation_mention"
     CONVERSATION_BLOCKER = "conversation_blocker"
     CONVERSATION_URGENT = "conversation_urgent"
+    # Important mail that was never dealt with. Distinct from IMPORTANT_EMAIL,
+    # which is about mail that just ARRIVED: this is about mail that arrived a
+    # while ago and is still sitting there - the classic dropped ball. Reads
+    # EMAIL signals, so Gmail and Outlook both produce it with no branch.
+    UNANSWERED_MAIL = "unanswered_mail"
     # Work-item findings, from deterministic detectors over TASK signals. Named
     # for the operational fact, not the provider, so Planner/Jira reuse them.
     TASK_OVERDUE = "task_overdue"

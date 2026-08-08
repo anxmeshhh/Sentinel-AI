@@ -54,6 +54,7 @@ SERVICE_PROVIDERS: dict[str, tuple[Provider, ...]] = {
     "google_calendar": (Provider.GOOGLE_CALENDAR,),
     "github": (Provider.GITHUB,),
     "slack": (Provider.SLACK,),
+    "zoom": (Provider.ZOOM,),
 }
 
 
@@ -485,3 +486,235 @@ def onenote_page(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail="Couldn't open that page just now") from exc
     return {"page_id": page_id, "text": strip_html(html)}
+
+
+# --- Zoom read surface ------------------------------------------------------
+#
+# Meetings are served from Sentinel's own ingested signals (instant, already
+# normalized to the shared calendar shape). Everything the signals deliberately
+# do NOT carry - a meeting's agenda, its participants, its recordings - is
+# fetched live and never stored, the same posture as a mail body or a note's
+# text. Recordings additionally carry short-lived download URLs that have no
+# business in a database.
+#
+# Plan-gated reads (participants, recordings) return 200 with `available: false`
+# and a true explanation rather than an error status. A free account hitting a
+# paid feature is a fact about the account, not a fault, and the page should
+# teach that instead of showing a red box.
+
+
+def _zoom_connection(session: Session, workspace_id, user_id) -> Connection:
+    conns = _connections(session, workspace_id, user_id, (Provider.ZOOM,))
+    if not conns:
+        raise HTTPException(status_code=404, detail="Zoom is not connected")
+    return conns[0]
+
+
+def _zoom_client_for(session: Session, workspace_id, user_id):
+    from app.integrations.zoom_auth import get_valid_access_token
+    from app.integrations.zoom_client import ZoomClient
+
+    conn = _zoom_connection(session, workspace_id, user_id)
+    return ZoomClient(get_valid_access_token(session, conn)), conn
+
+
+@router.get("/zoom/meetings")
+def zoom_meetings(
+    filter: str = "upcoming",
+    q: str | None = None,
+    limit: int = 100,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    """Meetings as Sentinel has them, from the CALENDAR_EVENT signals Zoom
+    ingestion writes - the very same rows the meeting detector reads."""
+    from datetime import datetime, timezone
+
+    conn = _zoom_connection(session, workspace_id, user.id)
+    rows = session.execute(
+        select(Signal)
+        .where(Signal.connection_id == conn.id, Signal.type == SignalType.CALENDAR_EVENT)
+        .order_by(Signal.occurred_at.desc())
+        .limit(500)
+    ).scalars().all()
+
+    now = datetime.now(timezone.utc)
+    out: list[dict] = []
+    for s in rows:
+        p = s.payload or {}
+        start = s.occurred_at
+        if start is not None and start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        upcoming = start is not None and start >= now
+        item = {
+            "id": str(s.id),
+            "meeting_id": p.get("zoom_meeting_id") or s.external_id,
+            "uuid": p.get("zoom_uuid") or "",
+            "topic": p.get("title") or "(no title)",
+            "start": start.isoformat() if start else None,
+            "end": p.get("end"),
+            "join_url": p.get("meet_url") or "",
+            "host": p.get("organizer") or s.actor,
+            "timezone": p.get("timezone") or "",
+            "status": p.get("status") or "confirmed",
+            "upcoming": upcoming,
+        }
+        if filter == "upcoming" and not upcoming:
+            continue
+        if filter == "past" and upcoming:
+            continue
+        if q and q.lower() not in item["topic"].lower():
+            continue
+        out.append(item)
+        if len(out) >= min(limit, 200):
+            break
+
+    # Upcoming reads best soonest-first; past reads best most-recent-first.
+    out.sort(key=lambda m: m["start"] or "", reverse=(filter != "upcoming"))
+    return out
+
+
+@router.get("/zoom/meetings/{meeting_id}")
+def zoom_meeting_detail(
+    meeting_id: str,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Live detail: the agenda, settings and start URL the ingested signal
+    deliberately does not carry."""
+    client, _ = _zoom_client_for(session, workspace_id, user.id)
+    try:
+        with client:
+            meeting = client.meeting(meeting_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail="Couldn't open that meeting just now") from exc
+    return {
+        **meeting,
+        "start": meeting["start"].isoformat() if meeting["start"] else None,
+        "end": meeting["end"].isoformat() if meeting["end"] else None,
+    }
+
+
+@router.get("/zoom/past/{meeting_uuid}/participants")
+def zoom_participants(
+    meeting_uuid: str,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Who actually attended."""
+    from app.integrations.zoom_client import ZoomPlanError
+
+    client, _ = _zoom_client_for(session, workspace_id, user.id)
+    try:
+        with client:
+            people = client.past_participants(meeting_uuid)
+    except ZoomPlanError:
+        return {
+            "available": False,
+            "reason": "Zoom restricts attendance reporting to paid plans.",
+            "participants": [],
+        }
+    except Exception:  # noqa: BLE001 - a meeting that never ran has no report
+        return {
+            "available": False,
+            "reason": "No attendance report yet - Zoom only has one once a meeting has actually run.",
+            "participants": [],
+        }
+    return {
+        "available": True,
+        "reason": None,
+        "participants": [
+            {
+                "name": p["name"],
+                "email": p["email"],
+                "joined_at": p["joined_at"].isoformat() if p["joined_at"] else None,
+                "left_at": p["left_at"].isoformat() if p["left_at"] else None,
+                "duration": p["duration"],
+            }
+            for p in people
+        ],
+    }
+
+
+@router.get("/zoom/recordings")
+def zoom_recordings(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Cloud recordings, read live."""
+    from app.integrations.zoom_client import ZoomPlanError
+
+    client, _ = _zoom_client_for(session, workspace_id, user.id)
+    try:
+        with client:
+            items = client.recordings()
+    except ZoomPlanError:
+        return {
+            "available": False,
+            "reason": (
+                "Cloud recording is part of Zoom's paid plans. This account can record locally, "
+                "but local recordings never reach Zoom's API - so Sentinel cannot see them."
+            ),
+            "recordings": [],
+        }
+    except Exception:  # noqa: BLE001
+        return {"available": False, "reason": "Sentinel couldn't read recordings just now.", "recordings": []}
+    return {
+        "available": True,
+        "reason": None,
+        "recordings": [{**r, "start": r["start"].isoformat() if r["start"] else None} for r in items],
+    }
+
+
+@router.get("/zoom/recordings/{meeting_uuid}/transcript")
+def zoom_transcript(
+    meeting_uuid: str,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """A recording's transcript as plain text, fetched live and never stored.
+
+    Resolved from the recording list rather than accepting a URL from the
+    caller: taking a caller-supplied download URL would turn this endpoint into
+    an open proxy for any address, authenticated with the user's Zoom token.
+    """
+    from app.integrations.zoom_client import ZoomPlanError
+
+    client, _ = _zoom_client_for(session, workspace_id, user.id)
+    try:
+        with client:
+            match = next((r for r in client.recordings() if r["uuid"] == meeting_uuid), None)
+            if match is None:
+                raise HTTPException(status_code=404, detail="No recording found for that meeting")
+            transcript = next((f for f in match["files"] if f["type"].upper() == "TRANSCRIPT"), None)
+            if transcript is None:
+                return {"available": False, "reason": "That recording has no transcript.", "text": ""}
+            text = client.transcript_text(transcript["download_url"])
+    except ZoomPlanError:
+        return {"available": False, "reason": "Transcripts need a Zoom plan that includes cloud recording.", "text": ""}
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001
+        return {"available": False, "reason": "Sentinel couldn't read that transcript just now.", "text": ""}
+    return {"available": True, "reason": None, "text": text}
+
+
+@router.get("/zoom/account")
+def zoom_account(
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """What this Zoom account can actually do, asked of Zoom rather than assumed
+    (see services/zoom_capabilities.py)."""
+    from app.integrations.zoom_auth import get_valid_access_token
+    from app.services.zoom_capabilities import describe_account
+
+    conn = _zoom_connection(session, workspace_id, user.id)
+    token = get_valid_access_token(session, conn)
+    return describe_account(token, account_key=f"{conn.workspace_id}:{conn.org}").as_dict()

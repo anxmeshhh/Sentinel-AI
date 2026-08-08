@@ -2001,6 +2001,257 @@ _DRIVE_NOTE_ACTIONS = (
 )
 
 
+# --- Zoom meeting writes ----------------------------------------------------
+#
+# The same three-verb shape as the Outlook Calendar actions, and the same honest
+# difference between them in what can be taken back:
+#   create  COMPENSATABLE   the meeting can be deleted
+#   update  COMPENSATABLE   the previous values are captured first, so they go back
+#   delete  IRREVERSIBLE    Zoom notifies registrants, and that cannot be unsent
+#
+# Risk does NOT escalate on attendees the way the calendar actions do, and that
+# is deliberate rather than an oversight: creating a Zoom meeting invites nobody.
+# It mints a join link. Zoom only notifies people who were already registered on
+# an existing meeting, which is why `delete` is the one that carries the warning.
+
+
+class CreateZoomMeetingParams(BaseModel):
+    topic: str = Field(min_length=1, max_length=200)
+    start: datetime
+    duration: int = Field(default=30, ge=1, le=24 * 60)
+    agenda: str = Field(default="", max_length=2000)
+    timezone_name: str = Field(default="UTC", max_length=64)
+
+
+class UpdateZoomMeetingParams(BaseModel):
+    meeting_id: str = Field(min_length=1, max_length=64)
+    topic: str | None = Field(default=None, max_length=200)
+    start: datetime | None = None
+    duration: int | None = Field(default=None, ge=1, le=24 * 60)
+    agenda: str | None = Field(default=None, max_length=2000)
+
+
+class DeleteZoomMeetingParams(BaseModel):
+    meeting_id: str = Field(min_length=1, max_length=64)
+    topic: str = Field(default="", max_length=200)
+    # Whether Zoom mails the registrants. Carried so the preview can say which
+    # of the two things is about to happen, and the audit record proves it.
+    notify: bool = True
+
+
+def _zoom_connection(session: Session, action) -> Connection | None:
+    """The Zoom account this action may write to, resolved from the action's own
+    scope - never from the caller. Identical resolution to every other provider."""
+    kind, _, owner_id = action.scope_key.partition(":")
+    if kind == "personal":
+        return session.execute(
+            select(Connection).where(
+                Connection.workspace_id == action.workspace_id,
+                Connection.user_id == uuid.UUID(owner_id),
+                Connection.provider == Provider.ZOOM,
+                Connection.revoked_at.is_(None),
+            )
+        ).scalars().first()
+
+    from app.services.channel_authorization import authorized_connections
+
+    for auth in authorized_connections(session, uuid.UUID(owner_id)).values():
+        if auth.connection.provider == Provider.ZOOM and auth.connection.revoked_at is None:
+            return auth.connection
+    return None
+
+
+def _zoom_client(session: Session, action):
+    from app.integrations.zoom_auth import get_valid_access_token as zoom_token
+    from app.integrations.zoom_client import ZoomClient
+
+    connection = _zoom_connection(session, action)
+    if connection is None:
+        raise ActionUnavailable("No Zoom account is authorized for this context")
+    return ZoomClient(zoom_token(session, connection))
+
+
+def _preview_zoom_create(params: CreateZoomMeetingParams) -> dict:
+    return {
+        "summary": f"Schedule “{params.topic}” on {params.start:%a %d %b at %H:%M} for {params.duration} min",
+        "topic": params.topic,
+        "when": f"{params.start:%a %d %b %H:%M} ({params.duration} min)",
+        # Said explicitly because it is the question a user actually has, and the
+        # answer differs from the calendar actions sitting next to it.
+        "notifies": False,
+        "effect": "Creates a real Zoom meeting and returns its join link. Nobody is invited or notified.",
+    }
+
+
+def _execute_zoom_create(session: Session, action) -> dict:
+    params = CreateZoomMeetingParams(**action.params)
+    with _zoom_client(session, action) as client:
+        meeting = client.create_meeting(
+            topic=params.topic, start=params.start, duration=params.duration,
+            agenda=params.agenda, timezone_name=params.timezone_name,
+        )
+    return {
+        "meeting_id": meeting["id"],
+        "topic": meeting["topic"],
+        "join_url": meeting["join_url"],
+        "start": meeting["start"].isoformat() if meeting["start"] else None,
+    }
+
+
+def _verify_zoom_meeting(session: Session, action, result: dict) -> tuple[bool, str]:
+    """Execution is not completion: the meeting is read back from Zoom."""
+    try:
+        with _zoom_client(session, action) as client:
+            meeting = client.meeting(result["meeting_id"])
+    except Exception:  # noqa: BLE001 - a failed read-back is "cannot confirm"
+        return False, "Applied, but Sentinel could not read it back to confirm"
+    when = f" at {meeting['start']:%a %d %b %H:%M}" if meeting["start"] else ""
+    return True, f"Zoom has “{meeting['topic']}”{when}"
+
+
+def _compensate_zoom_create(session: Session, action) -> str:
+    result = action.result or {}
+    meeting_id = result.get("meeting_id")
+    if not meeting_id:
+        raise ActionRejected("No meeting id was recorded, so it cannot be removed")
+    with _zoom_client(session, action) as client:
+        # notify=False: nobody was told it existed, so nobody is told it is gone.
+        client.delete_meeting(meeting_id, notify=False)
+    return "The meeting was deleted from Zoom"
+
+
+def _preview_zoom_update(params: UpdateZoomMeetingParams) -> dict:
+    changes = []
+    if params.topic is not None:
+        changes.append(f"topic → “{params.topic}”")
+    if params.start is not None:
+        changes.append(f"start → {params.start:%a %d %b %H:%M}")
+    if params.duration is not None:
+        changes.append(f"duration → {params.duration} min")
+    if params.agenda is not None:
+        changes.append("agenda updated")
+    return {
+        "summary": "Update the meeting: " + ("; ".join(changes) or "no changes"),
+        "changes": changes,
+        "reversible": True,
+    }
+
+
+def _execute_zoom_update(session: Session, action) -> dict:
+    """Reads the CURRENT values before changing anything - that snapshot is what
+    makes the undo real rather than aspirational."""
+    params = UpdateZoomMeetingParams(**action.params)
+    with _zoom_client(session, action) as client:
+        before = client.meeting(params.meeting_id)
+        client.update_meeting(
+            params.meeting_id, topic=params.topic, start=params.start,
+            duration=params.duration, agenda=params.agenda,
+        )
+    return {
+        "meeting_id": params.meeting_id,
+        "topic": params.topic or before["topic"],
+        "previous": {
+            "topic": before["topic"],
+            "start": before["start"].isoformat() if before["start"] else None,
+            "duration": before["duration"],
+            "agenda": before["agenda"],
+        },
+    }
+
+
+def _compensate_zoom_update(session: Session, action) -> str:
+    from datetime import datetime as _dt
+
+    result = action.result or {}
+    previous = result.get("previous") or {}
+    if not previous:
+        raise ActionRejected("The previous values were not recorded, so this cannot be put back")
+    with _zoom_client(session, action) as client:
+        client.update_meeting(
+            result["meeting_id"],
+            topic=previous.get("topic"),
+            start=_dt.fromisoformat(previous["start"]) if previous.get("start") else None,
+            duration=previous.get("duration"),
+            agenda=previous.get("agenda"),
+        )
+    return "The meeting was restored to its previous topic, time and agenda"
+
+
+def _preview_zoom_delete(params: DeleteZoomMeetingParams) -> dict:
+    return {
+        "summary": f"Delete “{params.topic or params.meeting_id}”",
+        "topic": params.topic,
+        "irreversible": True,
+        "warning": (
+            "This deletes the Zoom meeting and emails everyone registered for it. "
+            "The join link stops working immediately and the notification cannot be recalled."
+            if params.notify
+            else "This deletes the Zoom meeting. The join link stops working immediately and it cannot be undone."
+        ),
+    }
+
+
+def _execute_zoom_delete(session: Session, action) -> dict:
+    params = DeleteZoomMeetingParams(**action.params)
+    with _zoom_client(session, action) as client:
+        client.delete_meeting(params.meeting_id, notify=params.notify)
+    return {"meeting_id": params.meeting_id, "topic": params.topic, "deleted": True}
+
+
+def _verify_zoom_delete(session: Session, action, result: dict) -> tuple[bool, str]:
+    """Confirmed by absence: reading it back should fail."""
+    try:
+        with _zoom_client(session, action) as client:
+            client.meeting(result["meeting_id"])
+    except Exception:  # noqa: BLE001 - a 404 here is the success case
+        return True, "The meeting is no longer in Zoom"
+    return False, "Deleted, but the meeting can still be read back"
+
+
+_ZOOM_ACTIONS = (
+    ActionSpec(
+        key="zoom.create_meeting",
+        label="Schedule a Zoom meeting",
+        risk=ActionRisk.MEDIUM,
+        params_model=CreateZoomMeetingParams,
+        external=True,
+        preview=_preview_zoom_create,
+        execute=_execute_zoom_create,
+        verify=_verify_zoom_meeting,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_zoom_create,
+    ),
+    ActionSpec(
+        key="zoom.update_meeting",
+        label="Edit a Zoom meeting",
+        risk=ActionRisk.MEDIUM,
+        params_model=UpdateZoomMeetingParams,
+        external=True,
+        preview=_preview_zoom_update,
+        execute=_execute_zoom_update,
+        verify=_verify_zoom_meeting,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_zoom_update,
+    ),
+    ActionSpec(
+        key="zoom.delete_meeting",
+        label="Delete a Zoom meeting",
+        risk=ActionRisk.HIGH,
+        params_model=DeleteZoomMeetingParams,
+        external=True,
+        preview=_preview_zoom_delete,
+        execute=_execute_zoom_delete,
+        verify=_verify_zoom_delete,
+        # No compensate, on purpose. Recreating the meeting would mint a NEW
+        # join link and would not unsend the cancellation registrants received -
+        # so this module's rule applies: no inverse means IRREVERSIBLE, stated
+        # plainly, rather than an undo button that cannot deliver.
+        reversibility=Reversibility.IRREVERSIBLE,
+        autonomy_eligible=False,
+    ),
+)
+
+
 # --- the allow-list --------------------------------------------------------
 
 REGISTRY: dict[str, ActionSpec] = {
@@ -2116,6 +2367,7 @@ REGISTRY: dict[str, ActionSpec] = {
         *_TODO_ACTIONS,
         *_DRIVE_NOTE_ACTIONS,
         *_ONENOTE_STRUCTURE_ACTIONS,
+        *_ZOOM_ACTIONS,
     )
 }
 

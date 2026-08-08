@@ -68,6 +68,18 @@ MICROSOFT_GRANT = WorkspaceGrantSpec(
     anchors=(Provider.MICROSOFT_TEAMS,),
 )
 
+# Zoom is the DEGENERATE case: one grant, one service. It is here not because
+# Zoom fans out - it does not - but because provisioning needs exactly what
+# provision_grant already does: create-or-refresh the connection, clear a stale
+# revoked_at on re-consent, and (the part worth reusing) purge the signals of a
+# previous account when a different person's Zoom signs in as the same user.
+# A second hand-written copy of that would be a weaker copy.
+ZOOM_GRANT = WorkspaceGrantSpec(
+    key="zoom",
+    label="Zoom",
+    services=((Provider.ZOOM, "meetings"),),
+)
+
 # Providers whose per-account replacement should also clear cached mail
 # summaries (keyed by workspace+message), since a new mailbox invalidates them.
 MAIL_PROVIDERS: frozenset[Provider] = frozenset({Provider.GMAIL, Provider.MICROSOFT_OUTLOOK_MAIL})

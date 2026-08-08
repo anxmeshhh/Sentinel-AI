@@ -144,3 +144,9 @@ if MICROSOFT_CONFIGURED:
 # exchange is more predictable than bending authlib to it. This flag only gates
 # whether the routes are live.
 SLACK_CONFIGURED = bool(_settings.slack_client_id and _settings.slack_client_secret)
+
+# Zoom is driven manually too (see integrations/zoom_auth.py), for a different
+# reason: Zoom authenticates the TOKEN REQUEST ITSELF with HTTP Basic
+# (Base64(client_id:client_secret)) rather than posting the credentials as form
+# fields, and it publishes no OpenID discovery document to register against.
+ZOOM_CONFIGURED = bool(_settings.zoom_client_id and _settings.zoom_client_secret)

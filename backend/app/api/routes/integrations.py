@@ -26,13 +26,20 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.core.auth import InvalidTokenError, create_connect_ticket, decode_connect_ticket
 from app.core.config import get_settings
-from app.core.oauth import GITHUB_CONFIGURED, GOOGLE_CONFIGURED, MICROSOFT_CONFIGURED, SLACK_CONFIGURED, oauth
+from app.core.oauth import (
+    GITHUB_CONFIGURED,
+    GOOGLE_CONFIGURED,
+    MICROSOFT_CONFIGURED,
+    SLACK_CONFIGURED,
+    ZOOM_CONFIGURED,
+    oauth,
+)
 from app.core.security import encrypt_token
 from app.models.connection import Connection, Provider
 from app.models.email_summary import EmailSummary
 from app.models.signal import Signal
 from app.models.user import User
-from app.providers.workspace_grants import GOOGLE_GRANT, MICROSOFT_GRANT
+from app.providers.workspace_grants import GOOGLE_GRANT, MICROSOFT_GRANT, ZOOM_GRANT
 from app.services.grants import provision_grant
 from app.schemas.integration import (
     ConnectTicketOut,
@@ -59,7 +66,7 @@ from app.services.github_connections import (
     set_paused,
     set_priority,
 )
-from app.integrations import slack_auth
+from app.integrations import slack_auth, zoom_auth
 from app.integrations.graph_client import fetch_account_identity
 from app.services.slack_connections import add_channel, connect_slack_workspace, monitored_channels, slack_workspace
 
@@ -77,6 +84,7 @@ GOOGLE_CONNECT_PURPOSE = "google_connect"
 GITHUB_CONNECT_PURPOSE = "github_connect"
 SLACK_CONNECT_PURPOSE = "slack_connect"
 MICROSOFT_CONNECT_PURPOSE = "microsoft_connect"
+ZOOM_CONNECT_PURPOSE = "zoom_connect"
 
 
 @router.post("/google/connect-ticket", response_model=ConnectTicketOut)
@@ -261,6 +269,84 @@ async def microsoft_connect_callback(request: Request, session: Session = Depend
 
     separator = "&" if "?" in return_to else "?"
     return RedirectResponse(f"{get_settings().frontend_base_url}{return_to}{separator}connected=microsoft")
+
+
+# --- Zoom -------------------------------------------------------------------
+#
+# The same ticket -> redirect -> callback shape as Google and Microsoft, with one
+# difference: the ticket travels in OAuth's own `state` parameter rather than the
+# server session. Zoom's consent screen can bounce through zoom.us domains, and
+# `state` is the mechanism designed to survive that - it is also what protects
+# the callback from CSRF, since a forged callback cannot mint a signed ticket.
+@router.post("/zoom/connect-ticket", response_model=ConnectTicketOut)
+def create_zoom_connect_ticket(
+    user: User = Depends(get_current_user),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+) -> ConnectTicketOut:
+    if not ZOOM_CONFIGURED:
+        raise HTTPException(status_code=501, detail="Zoom integration is not configured yet")
+    ticket = create_connect_ticket(user_id=user.id, workspace_id=workspace_id, purpose=ZOOM_CONNECT_PURPOSE)
+    return ConnectTicketOut(ticket=ticket)
+
+
+@router.get("/zoom/connect")
+async def zoom_connect(request: Request, ticket: str):
+    if not ZOOM_CONFIGURED:
+        raise HTTPException(status_code=501, detail="Zoom integration is not configured yet")
+    try:
+        decode_connect_ticket(ticket, expected_purpose=ZOOM_CONNECT_PURPOSE)
+    except InvalidTokenError:
+        raise HTTPException(status_code=400, detail="This connect link is invalid or has expired - try again")
+
+    # The return path cannot ride in `state` (that carries the ticket), so it
+    # stays in the session, where losing it degrades to the default rather than
+    # breaking the connection.
+    request.session["zoom_connect_return_to"] = _safe_return_path(request.query_params.get("return_to"))
+    redirect_uri = f"{get_settings().backend_base_url}/integrations/zoom/callback"
+    return RedirectResponse(zoom_auth.authorize_url(redirect_uri, state=ticket))
+
+
+@router.get("/zoom/callback")
+async def zoom_connect_callback(request: Request, code: str = "", state: str = "", session: Session = Depends(get_db)):
+    if not ZOOM_CONFIGURED:
+        raise HTTPException(status_code=501, detail="Zoom integration is not configured yet")
+
+    frontend = get_settings().frontend_base_url
+    return_to = _safe_return_path(request.session.pop("zoom_connect_return_to", None))
+    if not code or not state:
+        # The user pressed Decline, or Zoom returned an error instead of a code.
+        return RedirectResponse(f"{frontend}/?zoom_error=declined")
+
+    try:
+        user_id, workspace_id = decode_connect_ticket(state, expected_purpose=ZOOM_CONNECT_PURPOSE)
+    except InvalidTokenError:
+        return RedirectResponse(f"{frontend}/?zoom_error=session_expired")
+
+    redirect_uri = f"{get_settings().backend_base_url}/integrations/zoom/callback"
+    try:
+        token = zoom_auth.exchange_code(code, redirect_uri)
+    except zoom_auth.ZoomAuthError as exc:
+        logger.warning("zoom_connect_failed", error=str(exc)[:200])
+        return RedirectResponse(f"{frontend}/?zoom_error=exchange_failed")
+
+    if not token.get("refresh_token"):
+        # Without it the connection would die in an hour with no way back.
+        return RedirectResponse(f"{frontend}/?zoom_error=no_refresh_token")
+
+    try:
+        account = zoom_auth.fetch_account_identity(token["access_token"])
+    except zoom_auth.ZoomAuthError as exc:
+        logger.warning("zoom_identity_failed", error=str(exc)[:200])
+        return RedirectResponse(f"{frontend}/?zoom_error=identity_failed")
+
+    provision_grant(
+        session, workspace_id=workspace_id, user_id=user_id, grant=ZOOM_GRANT,
+        account_identity=account, encrypted_token=zoom_auth.token_blob(token),
+    )
+    _queue_first_sync(session, workspace_id, user_id)
+
+    separator = "&" if "?" in return_to else "?"
+    return RedirectResponse(f"{frontend}{return_to}{separator}connected=zoom")
 
 
 def _queue_first_sync(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> None:

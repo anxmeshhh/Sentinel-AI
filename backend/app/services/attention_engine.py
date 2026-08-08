@@ -570,13 +570,21 @@ def _detect_important_emails(session: Session, workspace_id: uuid.UUID, now: dat
 
 
 def _detect_upcoming_meetings(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
-    signals = session.execute(
-        select(Signal).where(Signal.workspace_id == workspace_id, Signal.type == SignalType.CALENDAR_EVENT)
-    ).scalars().all()
+    # Joined to Connection so each finding can be attributed to the provider it
+    # actually came from. This used to be hardcoded "google_calendar", which was
+    # already wrong for Outlook (its meetings never reached the Outlook rail,
+    # since the workspace intelligence endpoint filters findings by provider)
+    # and would have been wrong again for Zoom. The detector itself stays
+    # provider-neutral - it reads CALENDAR_EVENT and nothing else.
+    rows = session.execute(
+        select(Signal, Connection)
+        .join(Connection, Connection.id == Signal.connection_id)
+        .where(Signal.workspace_id == workspace_id, Signal.type == SignalType.CALENDAR_EVENT)
+    ).all()
 
     candidates = []
     horizon = now + timedelta(hours=MEETING_HORIZON_HOURS)
-    for s in signals:
+    for s, conn in rows:
         if s.payload.get("status") == "cancelled":
             continue
         start_raw = s.payload.get("start")
@@ -593,8 +601,16 @@ def _detect_upcoming_meetings(session: Session, workspace_id: uuid.UUID, now: da
 
         hours_away = (start - now).total_seconds() / 3600
         when = "starting now" if hours_away < 0.25 else f"in {round(hours_away)}h" if hours_away >= 1 else f"in {round(hours_away * 60)}min"
+        # None means "this provider does not tell us" (Zoom's meeting list has no
+        # roster), which is different from 0. Only a real count is shown.
         attendees = s.payload.get("attendee_count") or 0
-        why = f"Starts {when}" + (f" · {attendees} attendees" if attendees else "") + (" · has Meet link" if s.payload.get("meet_url") else "")
+        why = (
+            f"Starts {when}"
+            + (f" · {attendees} attendees" if attendees else "")
+            # Provider-neutral wording: the same sentence is true of a Meet link,
+            # a Teams link and a Zoom link, and the payload key is already shared.
+            + (" · has a join link" if s.payload.get("meet_url") else "")
+        )
         candidates.append(
             {
                 # Recurring events keep one external_id per occurrence set -
@@ -602,7 +618,7 @@ def _detect_upcoming_meetings(session: Session, workspace_id: uuid.UUID, now: da
                 "dedupe_key": f"meeting:{s.external_id}:{start.date().isoformat()}",
                 "connection_id": s.connection_id,
                 "type": AttentionType.UPCOMING_MEETING,
-                "source_provider": "google_calendar",
+                "source_provider": conn.provider.value,
                 "title": s.payload.get("title") or "Untitled meeting",
                 "why": why,
                 "evidence_url": s.payload.get("url"),

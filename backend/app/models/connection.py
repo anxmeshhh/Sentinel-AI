@@ -24,6 +24,10 @@ class Provider(str, enum.Enum):
     MICROSOFT_ONEDRIVE = "microsoft_onedrive"
     MICROSOFT_ONENOTE = "microsoft_onenote"
     MICROSOFT_TODO = "microsoft_todo"
+    # Zoom is ONE bounded service (a person's meetings), not a grant that fans
+    # out - so it takes the Gmail shape (a single connection, repo="meetings")
+    # rather than the Google/Microsoft WorkspaceGrantSpec shape.
+    ZOOM = "zoom"
 
 
 class ResourcePriority(str, enum.Enum):

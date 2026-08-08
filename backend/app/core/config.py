@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     # channels it is invited to, which is the access boundary by design.
     slack_client_id: str | None = None
     slack_client_secret: str | None = None
+    # Zoom (General/user-managed OAuth app). Per-user grant like GitHub: each
+    # person authorizes their own Zoom account, so the token is theirs.
+    zoom_client_id: str | None = None
+    zoom_client_secret: str | None = None
     # Legacy single shared PAT. Kept only so an existing .env doesn't fail to
     # load; nothing reads it any more.
     github_default_token: str | None = None

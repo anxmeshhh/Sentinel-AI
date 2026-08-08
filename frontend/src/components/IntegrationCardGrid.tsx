@@ -31,6 +31,10 @@ export function IntegrationCardGrid({ connections }: { connections: Connection[]
   const microsoftCount = microsoftServices.length;
   const microsoftUnhealthy = microsoftServices.filter((c) => c.state === "error" || c.state === "token_revoked").length;
   const microsoftAccount = microsoftServices.find((c) => c.org)?.org;
+
+  // Zoom: one bounded service, so one row - no child services to count.
+  const zoomRow = connections.find((c) => c.provider === "zoom");
+  const zoomUnhealthy = zoomRow?.state === "error" || zoomRow?.state === "token_revoked";
   const slackLastSync = slackChannels
     .map((c) => c.last_synced_at)
     .filter((t): t is string => Boolean(t))
@@ -115,7 +119,19 @@ export function IntegrationCardGrid({ connections }: { connections: Connection[]
         connected={microsoftCount > 0}
         to="/connections/microsoft"
       />
-      <ServiceCard icon={<ZoomIcon />} name="Zoom" status="Coming soon" desc="Meeting metadata — not yet available." connected={false} disabled to="/connections/zoom" />
+      <ServiceCard
+        icon={<ZoomIcon />}
+        name="Zoom"
+        status={!zoomRow ? "Not connected" : zoomUnhealthy ? "Reconnect needed" : "Connected"}
+        statusTone={!zoomRow ? "muted" : zoomUnhealthy ? "crit" : "good"}
+        desc={
+          zoomRow
+            ? `${zoomRow.org} — meetings, participants and recordings.`
+            : "Meetings, participants and recordings — schedule and edit without leaving Sentinel."
+        }
+        connected={Boolean(zoomRow)}
+        to="/zoom"
+      />
       <ServiceCard icon={<NotionIcon />} name="Notion" status="Coming soon" desc="Stale or missing docs — not yet available." connected={false} disabled to="/connections/notion" />
     </div>
     </>

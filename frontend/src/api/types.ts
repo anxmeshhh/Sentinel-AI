@@ -1,9 +1,26 @@
 // Mirrors backend/app/schemas/*.py - keep in sync by hand until a codegen
 // step (e.g. openapi-typescript) is worth adding.
 
+/** Mirrors backend Provider (app/models/connection.py). It had drifted - the
+ *  Sprint 3 Microsoft services were missing - so a comparison against them
+ *  silently type-errored rather than narrowing. Kept complete here. */
+export type ProviderKey =
+  | "github"
+  | "google_calendar"
+  | "gmail"
+  | "google_drive"
+  | "slack"
+  | "microsoft_outlook_mail"
+  | "microsoft_outlook_calendar"
+  | "microsoft_teams"
+  | "microsoft_onedrive"
+  | "microsoft_onenote"
+  | "microsoft_todo"
+  | "zoom";
+
 export interface Connection {
   id: string;
-  provider: "github" | "google_calendar" | "gmail" | "google_drive" | "slack" | "microsoft_outlook_mail" | "microsoft_outlook_calendar" | "microsoft_teams";
+  provider: ProviderKey;
   org: string;
   repo: string;
   last_synced_at: string | null;
@@ -1027,4 +1044,91 @@ export interface NoteBrowse {
   sections: { id: string; name: string; notebook_id: string }[];
   pages: NotePage[];
   account: string | null;
+}
+
+// --- Zoom -------------------------------------------------------------------
+
+export interface ZoomMeeting {
+  id: string;
+  /** Numeric, stable - what create/update/delete address. */
+  meeting_id: string;
+  /** Per-occurrence - what participant and recording lookups key on. */
+  uuid: string;
+  topic: string;
+  start: string | null;
+  end: string | null;
+  join_url: string;
+  host: string;
+  timezone: string;
+  status: string;
+  upcoming: boolean;
+}
+
+export interface ZoomMeetingDetail {
+  id: string;
+  uuid: string;
+  topic: string;
+  agenda: string;
+  start: string | null;
+  end: string | null;
+  duration: number;
+  timezone: string;
+  join_url: string;
+  start_url: string;
+  host_email: string;
+  status: string;
+  waiting_room: boolean;
+  join_before_host: boolean;
+  auto_recording: string;
+}
+
+/** Three states, mirroring the backend: a plan limit is a capability, not an
+ *  error, and "we could not tell" is its own honest answer. */
+export type ZoomCapabilityState = "available" | "requires_plan" | "unknown";
+
+export interface ZoomCapability {
+  state: ZoomCapabilityState;
+  label: string;
+  detail: string;
+}
+
+export interface ZoomAccount {
+  email: string;
+  display_name: string;
+  plan: "basic" | "licensed" | "on_prem" | "unknown";
+  timezone: string;
+  personal_meeting_url: string;
+  capabilities: {
+    meetings: ZoomCapability;
+    recordings: ZoomCapability;
+    participants: ZoomCapability;
+  };
+}
+
+export interface ZoomParticipants {
+  available: boolean;
+  reason: string | null;
+  participants: {
+    name: string;
+    email: string;
+    joined_at: string | null;
+    left_at: string | null;
+    duration: number | null;
+  }[];
+}
+
+export interface ZoomRecordings {
+  available: boolean;
+  reason: string | null;
+  recordings: {
+    meeting_id: string;
+    uuid: string;
+    topic: string;
+    start: string | null;
+    duration: number | null;
+    total_size: number | null;
+    share_url: string;
+    has_transcript: boolean;
+    files: { id: string; type: string; extension: string; size: number | null; play_url: string; download_url: string }[];
+  }[];
 }

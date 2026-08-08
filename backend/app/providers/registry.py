@@ -226,6 +226,27 @@ PROVIDERS: dict[Provider, ProviderSpec] = {
             # A person's own task lists are one bounded scope, like a mailbox.
             resource_scoped=False,
         ),
+        # --- Zoom -----------------------------------------------------------
+        # Declares CALENDAR_EVENT and nothing else, which is the entire point: a
+        # Zoom meeting IS a calendar event that happens to carry a join link, so
+        # it normalizes to the shape Google Calendar and Outlook already produce
+        # and fires the existing meeting detector unchanged. No Zoom signal type,
+        # no Zoom detector, no Zoom branch anywhere downstream.
+        #
+        # Cloud recordings are deliberately NOT a signal type here. Nothing
+        # downstream would detect on them, and this codebase does not add signals
+        # no detector reads; recordings are read live in the workspace instead,
+        # which also keeps their (sensitive, expiring) URLs out of storage.
+        ProviderSpec(
+            key=Provider.ZOOM,
+            label="Zoom",
+            retrieval=Retrieval.INGESTED,
+            auth=AuthKind.OAUTH,
+            signal_types=(SignalType.CALENDAR_EVENT,),
+            # One account = one bounded set of that person's own meetings, the
+            # same reasoning that makes a mailbox unbounded-but-not-sprawling.
+            resource_scoped=False,
+        ),
     )
 }
 

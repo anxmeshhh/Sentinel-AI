@@ -28,6 +28,7 @@ import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
 import { MicrosoftTodoPage } from "./pages/MicrosoftTodoPage";
 import { OneDrivePage } from "./pages/OneDrivePage";
 import { OneNotePage } from "./pages/OneNotePage";
+import { ZoomPage } from "./pages/ZoomPage";
 import { OutlookCalendarPage } from "./pages/OutlookCalendarPage";
 import { OutlookMailPage } from "./pages/OutlookMailPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
@@ -157,6 +158,7 @@ export function App() {
       <Route path="/microsoft/todo" element={<RequireAuth><MicrosoftTodoPage /></RequireAuth>} />
       <Route path="/microsoft/onedrive" element={<RequireAuth><OneDrivePage /></RequireAuth>} />
       <Route path="/microsoft/onenote" element={<RequireAuth><OneNotePage /></RequireAuth>} />
+      <Route path="/zoom" element={<RequireAuth><ZoomPage /></RequireAuth>} />
       <Route path="/calendar" element={<RequireAuth><CalendarPage /></RequireAuth>} />
       <Route path="/drive" element={<RequireAuth><DrivePage /></RequireAuth>} />
       <Route path="/meet" element={<RequireAuth><MeetPage /></RequireAuth>} />

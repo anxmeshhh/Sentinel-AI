@@ -565,6 +565,47 @@ def _ingest_microsoft_todo(session: Session, connection: Connection, since: date
     return count
 
 
+def _ingest_zoom(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None) -> int:
+    """Zoom -> CALENDAR_EVENT signals.
+
+    The whole Zoom ingestion story is this function being boring. A Zoom meeting
+    normalizes to the same payload a Google or Outlook event produces (the client
+    does that), so it upserts through the identical path and fires the identical
+    meeting detector. There is no Zoom signal type, no Zoom detector, and nothing
+    downstream learns that Zoom exists.
+
+    Cloud recordings are deliberately not ingested: no detector reads them, and
+    this codebase does not store signals nothing consumes. They are read live in
+    the workspace, which also keeps Zoom's short-lived download URLs out of the
+    database.
+    """
+    from app.integrations.zoom_auth import get_valid_access_token as get_valid_zoom_token
+    from app.integrations.zoom_client import ZoomClient
+
+    metrics = metrics if metrics is not None else {}
+    access_token = get_valid_zoom_token(session, connection)
+    count = upcoming = 0
+    now = datetime.now(timezone.utc)
+
+    with ZoomClient(access_token) as client:
+        for meeting in client.fetch_meetings(since):
+            if meeting["occurred_at"] >= now:
+                upcoming += 1
+            signal_repo.upsert(
+                connection_id=connection.id,
+                type=SignalType.CALENDAR_EVENT,
+                external_id=meeting["external_id"],
+                actor=meeting["actor"],
+                payload=meeting["payload"],
+                occurred_at=meeting["occurred_at"],
+            )
+            count += 1
+
+    metrics["meetings"] = count
+    metrics["upcoming"] = upcoming
+    return count
+
+
 # One handler per ingesting provider. Adding a provider means adding a handler
 # and one line here - never another branch in ingest_connection (the dispatch
 # generalization approved for the Microsoft sprint).
@@ -579,4 +620,5 @@ _INGEST_HANDLERS = {
     Provider.MICROSOFT_ONEDRIVE: _ingest_onedrive,
     Provider.MICROSOFT_ONENOTE: _ingest_onenote,
     Provider.MICROSOFT_TODO: _ingest_microsoft_todo,
+    Provider.ZOOM: _ingest_zoom,
 }

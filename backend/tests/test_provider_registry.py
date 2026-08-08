@@ -80,7 +80,11 @@ def test_signal_type_sharing_is_intentional_provider_reuse():
     catching, so record a new intentional twin here or this fails."""
     intentional_twins: dict[SignalType, set[str]] = {
         SignalType.EMAIL: {"Gmail", "Outlook Mail"},
-        SignalType.CALENDAR_EVENT: {"Google Calendar", "Outlook Calendar"},
+        # Zoom joins the calendar twins on purpose: a Zoom meeting IS a calendar
+        # event that carries a join link, so normalizing it to CALENDAR_EVENT is
+        # what lets the existing meeting detector - and the whole Intelligence
+        # Core behind it - work with no Zoom-aware code anywhere downstream.
+        SignalType.CALENDAR_EVENT: {"Google Calendar", "Outlook Calendar", "Zoom"},
         # Slack and Teams are the two chat providers, and they deliberately emit
         # the SAME conversation signals so the shared conversation detectors fire
         # for both without knowing which one produced them.

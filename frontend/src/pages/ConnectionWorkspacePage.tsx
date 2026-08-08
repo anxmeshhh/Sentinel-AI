@@ -400,7 +400,9 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
                       ? "/microsoft/mail"
                       : c.connected && svc.key === "outlook_calendar"
                         ? "/microsoft/calendar"
-                        : undefined
+                        : c.connected && svc.key === "todo"
+                          ? "/microsoft/todo"
+                          : undefined
                   }
                 />
               );

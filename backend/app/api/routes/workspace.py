@@ -309,3 +309,72 @@ def outlook_calendar(
             conflicts.append({"a": a["title"], "b": b["title"], "when": a["start"]})
 
     return {"events": events, "conflicts": conflicts, "account": conns[0].org}
+
+
+# --- Microsoft To Do read surface -----------------------------------------
+
+@router.get("/microsoft/todo")
+def microsoft_todo(
+    q: str | None = None,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Tasks read LIVE from Graph, unlike mail and calendar which are served
+    from ingested signals.
+
+    The difference is deliberate. A task list is small, and a workspace where
+    the task you just added does not appear until the next poll is broken. The
+    ingested TASK signals still exist and still feed the Intelligence Core on
+    their own schedule - this endpoint is the working view, not a second
+    source of truth.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.integrations.graph_client import GraphClient
+    from app.integrations.microsoft_auth import get_valid_access_token
+
+    conns = _connections(session, workspace_id, user.id, (Provider.MICROSOFT_TODO,))
+    if not conns:
+        raise HTTPException(status_code=404, detail="Microsoft To Do is not connected")
+
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    try:
+        with GraphClient(get_valid_access_token(session, conns[0])) as client:
+            lists = client.task_lists()
+            tasks: list[dict] = []
+            for lst in lists:
+                for raw in client._paginate(f"/me/todo/lists/{lst['id']}/tasks", {"$top": "50"}, 200):
+                    tasks.append(client._task_out(raw, lst["id"], lst["name"]))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail="Couldn't reach Microsoft To Do just now") from exc
+
+    out = []
+    for t in tasks:
+        if q and q.lower() not in t["title"].lower():
+            continue
+        due = t["due_at"]
+        # The bucket a task belongs to, computed once here so the page and the
+        # detectors agree on what "overdue" and "today" mean.
+        if t["completed"]:
+            bucket = "completed"
+        elif due is None:
+            bucket = "someday"
+        elif due.date() < today:
+            bucket = "overdue"
+        elif due.date() == today:
+            bucket = "today"
+        else:
+            bucket = "upcoming"
+        out.append({
+            "id": t["id"], "list_id": t["list_id"], "list": t["list"],
+            "title": t["title"], "notes": t["body"],
+            "completed": t["completed"], "importance": t["importance"],
+            "due_at": due.isoformat() if due else None,
+            "bucket": bucket,
+        })
+
+    out.sort(key=lambda t: (t["due_at"] or "9999", t["title"].lower()))
+    counts = {b: sum(1 for t in out if t["bucket"] == b) for b in ("overdue", "today", "upcoming", "someday", "completed")}
+    return {"tasks": out, "lists": lists, "counts": counts, "account": conns[0].org}

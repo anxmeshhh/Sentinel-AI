@@ -973,3 +973,23 @@ export interface OutlookCalendar {
   conflicts: { a: string; b: string; when: string }[];
   account: string | null;
 }
+
+export interface TodoTask {
+  id: string;
+  list_id: string;
+  list: string;
+  title: string;
+  notes: string;
+  completed: boolean;
+  importance: string;
+  due_at: string | null;
+  /** Computed server-side so the page and the detectors agree on "overdue". */
+  bucket: "overdue" | "today" | "upcoming" | "someday" | "completed";
+}
+
+export interface TodoBoard {
+  tasks: TodoTask[];
+  lists: { id: string; name: string; default: boolean }[];
+  counts: Record<string, number>;
+  account: string | null;
+}

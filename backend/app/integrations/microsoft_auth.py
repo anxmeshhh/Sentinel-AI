@@ -25,12 +25,12 @@ logger = structlog.get_logger("sentinel.microsoft_auth")
 # a single-tenant app would substitute its tenant id here.
 TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 REFRESH_BUFFER = timedelta(minutes=5)
-# Graph data scopes for Sprint 1 - kept in lockstep with core/oauth.py's
-# microsoft_data client (a refresh only extends the SAME scopes; a mismatch
-# here would silently narrow access on the next token refresh). No openid/
-# email: this app requests no ID token at all, see core/oauth.py for why.
+# The scopes this app asks for at CONSENT time, mirroring core/oauth.py's
+# microsoft_data client. Deliberately NOT sent on refresh (see below) - it is
+# documentation of what a fresh connection requests, not a refresh parameter.
+# No openid/email: this app requests no ID token at all, see core/oauth.py.
 # User.Read is what lets Graph's /me resolve the account identity.
-SCOPES = "offline_access User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Team.ReadBasic.All Channel.ReadBasic.All Files.Read Notes.Read Tasks.Read"
+SCOPES = "offline_access User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Team.ReadBasic.All Channel.ReadBasic.All Files.Read Notes.Read Tasks.ReadWrite"
 
 
 class MicrosoftAuthError(Exception):
@@ -54,7 +54,16 @@ def get_valid_access_token(session: Session, connection: Connection) -> str:
             "client_secret": settings.microsoft_client_secret,
             "refresh_token": blob["refresh_token"],
             "grant_type": "refresh_token",
-            "scope": SCOPES,
+            # NO "scope" here, deliberately. A refresh_token grant can only ever
+            # return scopes that were actually consented to; asking for MORE
+            # than that makes Entra reject the whole refresh with a 400, which
+            # Sentinel then reads as a dead grant and stamps revoked_at.
+            #
+            # That is not hypothetical - it happened the moment Tasks.ReadWrite
+            # was added: every existing connection's refresh started failing,
+            # because SCOPES had grown past what the stored token covered.
+            # Omitting it returns exactly the granted set, so adding a scope now
+            # affects only the NEXT consent instead of breaking live connections.
         },
         timeout=20.0,
     )

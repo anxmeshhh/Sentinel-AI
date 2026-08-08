@@ -1164,6 +1164,325 @@ _OUTLOOK_CALENDAR_ACTIONS = (
 )
 
 
+
+
+# --- Microsoft To Do writes -------------------------------------------------
+#
+# The gentlest writes in the registry: a task list is private state, so nothing
+# here notifies anyone. That is exactly why the risks are LOW and why every one
+# of them has a real inverse - completing reopens, editing restores, creating
+# deletes, and even a delete can be put back from the snapshot taken first.
+#
+# They are still external=True, so every one is previewed and confirmed: it is
+# the user's real Microsoft account being changed, not Sentinel's copy.
+
+_TASK_IMPORTANCE = ("low", "normal", "high")
+
+
+class CreateTaskParams(BaseModel):
+    list_id: str = Field(min_length=1, max_length=500)
+    title: str = Field(min_length=1, max_length=300)
+    due_at: datetime | None = None
+    importance: str = Field(default="normal")
+    notes: str = Field(default="", max_length=4000)
+
+    @field_validator("importance")
+    @classmethod
+    def _known_importance(cls, value: str) -> str:
+        cleaned = (value or "normal").lower()
+        if cleaned not in _TASK_IMPORTANCE:
+            raise ValueError(f"importance must be one of {_TASK_IMPORTANCE}")
+        return cleaned
+
+
+class UpdateTaskParams(BaseModel):
+    list_id: str = Field(min_length=1, max_length=500)
+    task_id: str = Field(min_length=1, max_length=500)
+    title: str | None = Field(default=None, max_length=300)
+    # None is a real value here - it means "clear the due date" - so the
+    # executor distinguishes "absent" from "explicitly cleared".
+    due_at: datetime | None = None
+    clear_due: bool = False
+    importance: str | None = None
+
+    @field_validator("importance")
+    @classmethod
+    def _known_importance(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.lower()
+        if cleaned not in _TASK_IMPORTANCE:
+            raise ValueError(f"importance must be one of {_TASK_IMPORTANCE}")
+        return cleaned
+
+
+class CompleteTaskParams(BaseModel):
+    list_id: str = Field(min_length=1, max_length=500)
+    task_id: str = Field(min_length=1, max_length=500)
+    completed: bool = True
+    title: str = Field(default="", max_length=300)
+
+
+class DeleteTaskParams(BaseModel):
+    list_id: str = Field(min_length=1, max_length=500)
+    task_id: str = Field(min_length=1, max_length=500)
+    title: str = Field(default="", max_length=300)
+
+
+def _todo_connection(session: Session, action) -> Connection | None:
+    kind, _, owner_id = action.scope_key.partition(":")
+    if kind == "personal":
+        return session.execute(
+            select(Connection).where(
+                Connection.workspace_id == action.workspace_id,
+                Connection.user_id == uuid.UUID(owner_id),
+                Connection.provider == Provider.MICROSOFT_TODO,
+                Connection.revoked_at.is_(None),
+            )
+        ).scalars().first()
+
+    from app.services.channel_authorization import authorized_connections
+
+    for auth in authorized_connections(session, uuid.UUID(owner_id)).values():
+        if auth.connection.provider == Provider.MICROSOFT_TODO and auth.connection.revoked_at is None:
+            return auth.connection
+    return None
+
+
+def _todo_client(session: Session, action):
+    from app.integrations.graph_client import GraphClient
+    from app.integrations.microsoft_auth import get_valid_access_token
+
+    connection = _todo_connection(session, action)
+    if connection is None:
+        raise ActionUnavailable("Microsoft To Do is not connected for this context")
+    return GraphClient(get_valid_access_token(session, connection))
+
+
+def _preview_create_task(params: CreateTaskParams) -> dict:
+    when = f" · due {params.due_at:%a %d %b}" if params.due_at else ""
+    flag = " · high importance" if params.importance == "high" else ""
+    return {"summary": f"Add task “{params.title}”{when}{flag}", "reversible": True}
+
+
+def _execute_create_task(session: Session, action) -> dict:
+    params = CreateTaskParams(**action.params)
+    with _todo_client(session, action) as client:
+        task = client.create_task(
+            params.list_id, title=params.title, due=params.due_at,
+            importance=params.importance, body=params.notes or None,
+        )
+    return {"list_id": params.list_id, "task_id": task["id"], "title": task["title"]}
+
+
+def _verify_task(session: Session, action, result: dict) -> tuple[bool, str]:
+    try:
+        with _todo_client(session, action) as client:
+            task = client.get_task(result["list_id"], result["task_id"])
+    except Exception:  # noqa: BLE001
+        return False, "Applied, but Sentinel could not read it back to confirm"
+    return True, f"To Do reports “{task['title']}” as {'completed' if task['completed'] else 'open'}"
+
+
+def _compensate_create_task(session: Session, action) -> str:
+    result = action.result or {}
+    with _todo_client(session, action) as client:
+        client.delete_task(result["list_id"], result["task_id"])
+    return "Task removed from To Do"
+
+
+def _preview_update_task(params: UpdateTaskParams) -> dict:
+    changes = []
+    if params.title is not None:
+        changes.append(f"title → “{params.title}”")
+    if params.clear_due:
+        changes.append("due date → cleared")
+    elif params.due_at is not None:
+        changes.append(f"due → {params.due_at:%a %d %b}")
+    if params.importance is not None:
+        changes.append(f"importance → {params.importance}")
+    return {"summary": "Update task: " + ("; ".join(changes) or "no changes"), "changes": changes, "reversible": True}
+
+
+def _execute_update_task(session: Session, action) -> dict:
+    """Captures the previous values first - that snapshot is what makes the undo
+    real rather than a promise."""
+    params = UpdateTaskParams(**action.params)
+    due_arg = None if params.clear_due else (params.due_at if params.due_at is not None else ...)
+    with _todo_client(session, action) as client:
+        before = client.get_task(params.list_id, params.task_id)
+        after = client.update_task(
+            params.list_id, params.task_id, title=params.title,
+            due=due_arg, importance=params.importance,
+        )
+    return {
+        "list_id": params.list_id,
+        "task_id": after["id"],
+        "title": after["title"],
+        "previous": {
+            "title": before["title"],
+            "due_at": before["due_at"].isoformat() if before["due_at"] else None,
+            "importance": before["importance"],
+        },
+    }
+
+
+def _compensate_update_task(session: Session, action) -> str:
+    from datetime import datetime as _dt
+
+    result = action.result or {}
+    previous = result.get("previous") or {}
+    if not previous:
+        raise ActionRejected("The previous values were not recorded, so this cannot be put back")
+    with _todo_client(session, action) as client:
+        client.update_task(
+            result["list_id"], result["task_id"],
+            title=previous.get("title"),
+            due=_dt.fromisoformat(previous["due_at"]) if previous.get("due_at") else None,
+            importance=previous.get("importance"),
+        )
+    return "Task restored to its previous title, due date and importance"
+
+
+def _preview_complete_task(params: CompleteTaskParams) -> dict:
+    verb = "Complete" if params.completed else "Reopen"
+    return {"summary": f"{verb} “{params.title or params.task_id[:20]}”", "reversible": True}
+
+
+def _execute_complete_task(session: Session, action) -> dict:
+    params = CompleteTaskParams(**action.params)
+    with _todo_client(session, action) as client:
+        task = client.update_task(params.list_id, params.task_id, completed=params.completed)
+    return {"list_id": params.list_id, "task_id": task["id"], "completed": params.completed, "title": task["title"]}
+
+
+def _verify_complete_task(session: Session, action, result: dict) -> tuple[bool, str]:
+    try:
+        with _todo_client(session, action) as client:
+            task = client.get_task(result["list_id"], result["task_id"])
+    except Exception:  # noqa: BLE001
+        return False, "Applied, but Sentinel could not read it back to confirm"
+    return task["completed"] == result["completed"], f"To Do reports completed={task['completed']}"
+
+
+def _compensate_complete_task(session: Session, action) -> str:
+    params = CompleteTaskParams(**action.params)
+    with _todo_client(session, action) as client:
+        client.update_task(params.list_id, params.task_id, completed=not params.completed)
+    return f"Task set back to {'open' if params.completed else 'completed'}"
+
+
+def _preview_delete_task(params: DeleteTaskParams) -> dict:
+    return {
+        "summary": f"Delete “{params.title or params.task_id[:20]}”",
+        "warning": "The task is removed from To Do. Undo recreates it from the recorded values as a new task.",
+        "reversible": True,
+    }
+
+
+def _execute_delete_task(session: Session, action) -> dict:
+    """Reads the task BEFORE deleting it, so the undo has something to restore
+    from. Without that snapshot the delete would be unrecoverable."""
+    params = DeleteTaskParams(**action.params)
+    with _todo_client(session, action) as client:
+        before = client.get_task(params.list_id, params.task_id)
+        client.delete_task(params.list_id, params.task_id)
+    return {
+        "list_id": params.list_id,
+        "task_id": params.task_id,
+        "deleted": True,
+        "previous": {
+            "title": before["title"],
+            "due_at": before["due_at"].isoformat() if before["due_at"] else None,
+            "importance": before["importance"],
+            "body": before["body"],
+        },
+    }
+
+
+def _verify_delete_task(session: Session, action, result: dict) -> tuple[bool, str]:
+    """Confirmed by absence: reading it back should fail."""
+    try:
+        with _todo_client(session, action) as client:
+            client.get_task(result["list_id"], result["task_id"])
+    except Exception:  # noqa: BLE001 - a 404 here is the success case
+        return True, "The task is no longer in To Do"
+    return False, "Deleted, but the task can still be read back"
+
+
+def _compensate_delete_task(session: Session, action) -> str:
+    from datetime import datetime as _dt
+
+    result = action.result or {}
+    previous = result.get("previous") or {}
+    if not previous:
+        raise ActionRejected("The task's contents were not recorded, so it cannot be restored")
+    with _todo_client(session, action) as client:
+        client.create_task(
+            result["list_id"], title=previous["title"],
+            due=_dt.fromisoformat(previous["due_at"]) if previous.get("due_at") else None,
+            importance=previous.get("importance") or "normal",
+            body=previous.get("body") or None,
+        )
+    # Deliberately precise: this is a restoration of the CONTENT, not a revival
+    # of the original row - the identifier is new.
+    return "Task recreated from the recorded values (a new task, since the original was deleted)"
+
+
+_TODO_ACTIONS = (
+    ActionSpec(
+        key="todo.create_task",
+        label="Add a task",
+        risk=ActionRisk.LOW,
+        params_model=CreateTaskParams,
+        external=True,
+        preview=_preview_create_task,
+        execute=_execute_create_task,
+        verify=_verify_task,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_create_task,
+    ),
+    ActionSpec(
+        key="todo.update_task",
+        label="Edit a task",
+        risk=ActionRisk.LOW,
+        params_model=UpdateTaskParams,
+        external=True,
+        preview=_preview_update_task,
+        execute=_execute_update_task,
+        verify=_verify_task,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_update_task,
+    ),
+    ActionSpec(
+        key="todo.complete_task",
+        label="Complete or reopen a task",
+        risk=ActionRisk.LOW,
+        params_model=CompleteTaskParams,
+        external=True,
+        preview=_preview_complete_task,
+        execute=_execute_complete_task,
+        verify=_verify_complete_task,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_complete_task,
+    ),
+    ActionSpec(
+        key="todo.delete_task",
+        label="Delete a task",
+        # Higher than the others: deletion loses state the others only change,
+        # and the restore is a new task rather than the original.
+        risk=ActionRisk.MEDIUM,
+        params_model=DeleteTaskParams,
+        external=True,
+        preview=_preview_delete_task,
+        execute=_execute_delete_task,
+        verify=_verify_delete_task,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_delete_task,
+    ),
+)
+
+
 # --- the allow-list --------------------------------------------------------
 
 REGISTRY: dict[str, ActionSpec] = {
@@ -1276,6 +1595,7 @@ REGISTRY: dict[str, ActionSpec] = {
         # approved or executed, whatever any caller or model asks for.
         *_OUTLOOK_ACTIONS,
         *_OUTLOOK_CALENDAR_ACTIONS,
+        *_TODO_ACTIONS,
     )
 }
 

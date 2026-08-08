@@ -298,6 +298,67 @@ class GraphClient:
         created = self._request("POST", f"/me/messages/{message_id}/createReply", {"comment": comment}).json()
         return {"draft_id": created.get("id"), "replied_to": message_id, "url": created.get("webLink")}
 
+
+    # --- To Do writes ----------------------------------------------------
+    def _task_out(self, t: dict, list_id: str, list_name: str = "") -> dict:
+        due = t.get("dueDateTime") or {}
+        return {
+            "id": t.get("id"),
+            "list_id": list_id,
+            "list": list_name,
+            "title": t.get("title") or "(untitled task)",
+            "status": t.get("status") or "notStarted",
+            "importance": (t.get("importance") or "normal").lower(),
+            "completed": (t.get("status") == "completed") or bool(t.get("completedDateTime")),
+            "due_at": _parse(due.get("dateTime")) if due else None,
+            "body": ((t.get("body") or {}).get("content") or "").strip(),
+        }
+
+    def _due_payload(self, due):
+        if due is None:
+            return None
+        return {"dateTime": due.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.0000000"), "timeZone": "UTC"}
+
+    def task_lists(self) -> list[dict]:
+        return [
+            {"id": l["id"], "name": l.get("displayName") or "Tasks", "default": bool(l.get("wellknownListName") == "defaultList")}
+            for l in self._paginate("/me/todo/lists", {"$top": "25"}, 25)
+        ]
+
+    def get_task(self, list_id: str, task_id: str) -> dict:
+        # No $select: Graph rejects $select=title on todoTask (verified live).
+        resp = self._get_with_retry(f"/me/todo/lists/{list_id}/tasks/{task_id}")
+        return self._task_out(resp.json(), list_id)
+
+    def create_task(self, list_id: str, *, title: str, due=None, importance: str = "normal", body: str | None = None) -> dict:
+        payload: dict = {"title": title, "importance": importance}
+        if due is not None:
+            payload["dueDateTime"] = self._due_payload(due)
+        if body:
+            payload["body"] = {"contentType": "text", "content": body}
+        created = self._request("POST", f"/me/todo/lists/{list_id}/tasks", payload).json()
+        return self._task_out(created, list_id)
+
+    def update_task(self, list_id: str, task_id: str, *, title=None, due=..., importance=None, completed=None) -> dict:
+        """`due` uses a sentinel so None can mean "clear the due date", which is
+        a real edit and not the same as "leave it alone"."""
+        payload: dict = {}
+        if title is not None:
+            payload["title"] = title
+        if importance is not None:
+            payload["importance"] = importance
+        if due is not ...:
+            payload["dueDateTime"] = self._due_payload(due)
+        if completed is not None:
+            payload["status"] = "completed" if completed else "notStarted"
+        if not payload:
+            return self.get_task(list_id, task_id)
+        updated = self._request("PATCH", f"/me/todo/lists/{list_id}/tasks/{task_id}", payload).json()
+        return self._task_out(updated, list_id)
+
+    def delete_task(self, list_id: str, task_id: str) -> None:
+        self._request("DELETE", f"/me/todo/lists/{list_id}/tasks/{task_id}")
+
     # --- Calendar writes -------------------------------------------------
     def _event_body(self, *, title, start, end, attendee_emails, online: bool = False, body: str | None = None) -> dict:
         payload: dict = {

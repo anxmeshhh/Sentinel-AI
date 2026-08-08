@@ -25,6 +25,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { MailPage } from "./pages/MailPage";
 import { MeetPage } from "./pages/MeetPage";
 import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
+import { MicrosoftTodoPage } from "./pages/MicrosoftTodoPage";
 import { OutlookCalendarPage } from "./pages/OutlookCalendarPage";
 import { OutlookMailPage } from "./pages/OutlookMailPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
@@ -151,6 +152,7 @@ export function App() {
       <Route path="/mail" element={<RequireAuth><MailPage /></RequireAuth>} />
       <Route path="/microsoft/mail" element={<RequireAuth><OutlookMailPage /></RequireAuth>} />
       <Route path="/microsoft/calendar" element={<RequireAuth><OutlookCalendarPage /></RequireAuth>} />
+      <Route path="/microsoft/todo" element={<RequireAuth><MicrosoftTodoPage /></RequireAuth>} />
       <Route path="/calendar" element={<RequireAuth><CalendarPage /></RequireAuth>} />
       <Route path="/drive" element={<RequireAuth><DrivePage /></RequireAuth>} />
       <Route path="/meet" element={<RequireAuth><MeetPage /></RequireAuth>} />

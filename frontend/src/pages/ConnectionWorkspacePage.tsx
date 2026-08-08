@@ -402,7 +402,11 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
                         ? "/microsoft/calendar"
                         : c.connected && svc.key === "todo"
                           ? "/microsoft/todo"
-                          : undefined
+                          : c.connected && svc.key === "onedrive"
+                            ? "/microsoft/onedrive"
+                            : c.connected && svc.key === "onenote"
+                              ? "/microsoft/onenote"
+                              : undefined
                   }
                 />
               );

@@ -299,6 +299,134 @@ class GraphClient:
         return {"draft_id": created.get("id"), "replied_to": message_id, "url": created.get("webLink")}
 
 
+
+    # --- OneDrive browse + writes ----------------------------------------
+    def _item_out(self, i: dict) -> dict:
+        return {
+            "id": i.get("id"),
+            "name": i.get("name") or "(unnamed)",
+            "is_folder": "folder" in i,
+            "child_count": ((i.get("folder") or {}).get("childCount") if "folder" in i else None),
+            "size": i.get("size"),
+            "mime_type": ((i.get("file") or {}).get("mimeType")),
+            "modified_at": _parse(i.get("lastModifiedDateTime")),
+            "modified_by": (((i.get("lastModifiedBy") or {}).get("user") or {}).get("displayName") or ""),
+            "shared": bool(i.get("shared")),
+            "parent_id": ((i.get("parentReference") or {}).get("id")),
+            "url": i.get("webUrl"),
+        }
+
+    def list_children(self, folder_id: str | None = None, cap: int = 200) -> list[dict]:
+        """One folder's contents. None means the drive root."""
+        path = "/me/drive/root/children" if not folder_id else f"/me/drive/items/{folder_id}/children"
+        rows = self._paginate(path, {"$top": "50"}, cap)
+        items = [self._item_out(i) for i in rows]
+        # Folders first, then files, each alphabetically - how a file browser reads.
+        items.sort(key=lambda i: (not i["is_folder"], i["name"].lower()))
+        return items
+
+    def get_item(self, item_id: str) -> dict:
+        return self._item_out(self._get_with_retry(f"/me/drive/items/{item_id}").json())
+
+    def search_drive(self, query: str, cap: int = 100) -> list[dict]:
+        safe = query.replace("'", "''")
+        rows = self._paginate(f"/me/drive/root/search(q='{safe}')", {"$top": "50"}, cap)
+        return [self._item_out(i) for i in rows]
+
+    def create_folder(self, name: str, parent_id: str | None = None) -> dict:
+        path = "/me/drive/root/children" if not parent_id else f"/me/drive/items/{parent_id}/children"
+        payload = {"name": name, "folder": {}, "@microsoft.graph.conflictBehavior": "fail"}
+        return self._item_out(self._request("POST", path, payload).json())
+
+    def upload_text_file(self, name: str, content: str, parent_id: str | None = None) -> dict:
+        """Small text uploads only - the content travels as an action parameter,
+        so this is for notes and documents a person typed, not binaries."""
+        base = "/me/drive/root" if not parent_id else f"/me/drive/items/{parent_id}"
+        resp = self._client.put(
+            f"{base}:/{name}:/content",
+            content=content.encode("utf-8"),
+            headers={"Content-Type": "text/plain"},
+        )
+        resp.raise_for_status()
+        return self._item_out(resp.json())
+
+    def rename_item(self, item_id: str, new_name: str) -> dict:
+        return self._item_out(self._request("PATCH", f"/me/drive/items/{item_id}", {"name": new_name}).json())
+
+    def move_item(self, item_id: str, new_parent_id: str) -> dict:
+        payload = {"parentReference": {"id": new_parent_id}}
+        return self._item_out(self._request("PATCH", f"/me/drive/items/{item_id}", payload).json())
+
+    def delete_item(self, item_id: str) -> None:
+        """Graph moves the item to the OneDrive recycle bin rather than
+        destroying it - recoverable in OneDrive, but not through this API."""
+        self._request("DELETE", f"/me/drive/items/{item_id}")
+
+    # --- OneNote browse + writes -----------------------------------------
+    def notebooks(self) -> list[dict]:
+        return [
+            {"id": n["id"], "name": n.get("displayName") or "(unnamed notebook)", "url": (n.get("links") or {}).get("oneNoteWebUrl", {}).get("href")}
+            for n in self._paginate("/me/onenote/notebooks", {"$top": "50"}, 50)
+        ]
+
+    def sections(self, notebook_id: str) -> list[dict]:
+        return [
+            {"id": s["id"], "name": s.get("displayName") or "(unnamed section)", "notebook_id": notebook_id}
+            for s in self._paginate(f"/me/onenote/notebooks/{notebook_id}/sections", {"$top": "50"}, 50)
+        ]
+
+    def pages(self, section_id: str, cap: int = 100) -> list[dict]:
+        params = {"$select": "id,title,createdDateTime,lastModifiedDateTime,links", "$orderby": "lastModifiedDateTime desc", "$top": "50"}
+        return [
+            {
+                "id": p["id"],
+                "title": p.get("title") or "(untitled page)",
+                "modified_at": _parse(p.get("lastModifiedDateTime")),
+                "url": ((p.get("links") or {}).get("oneNoteWebUrl") or {}).get("href"),
+            }
+            for p in self._paginate(f"/me/onenote/sections/{section_id}/pages", params, cap)
+        ]
+
+    def page_content(self, page_id: str) -> str:
+        """The page's HTML. Fetched live and never stored, except transiently as
+        an undo snapshot when a write is about to change it."""
+        resp = self._get_with_retry(f"/me/onenote/pages/{page_id}/content")
+        return resp.text
+
+    def create_page(self, section_id: str, title: str, body: str) -> dict:
+        """OneNote takes a full HTML document, not JSON."""
+        html = (
+            "<!DOCTYPE html><html><head>"
+            f"<title>{title}</title></head><body>"
+            f"<p>{body}</p>"
+            "</body></html>"
+        )
+        resp = self._client.post(
+            f"/me/onenote/sections/{section_id}/pages",
+            content=html.encode("utf-8"),
+            headers={"Content-Type": "text/html"},
+        )
+        resp.raise_for_status()
+        created = resp.json()
+        return {
+            "id": created.get("id"),
+            "title": created.get("title") or title,
+            "url": ((created.get("links") or {}).get("oneNoteWebUrl") or {}).get("href"),
+        }
+
+    def patch_page(self, page_id: str, commands: list[dict]) -> None:
+        """OneNote edits are a list of commands (append/replace on a target),
+        not a document PUT."""
+        resp = self._client.patch(
+            f"/me/onenote/pages/{page_id}/content",
+            json=commands,
+            headers={"Content-Type": "application/json"},
+        )
+        resp.raise_for_status()
+
+    def delete_page(self, page_id: str) -> None:
+        self._request("DELETE", f"/me/onenote/pages/{page_id}")
+
     # --- To Do writes ----------------------------------------------------
     def _task_out(self, t: dict, list_id: str, list_name: str = "") -> dict:
         due = t.get("dueDateTime") or {}

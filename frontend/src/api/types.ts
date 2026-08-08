@@ -993,3 +993,38 @@ export interface TodoBoard {
   counts: Record<string, number>;
   account: string | null;
 }
+
+export interface DriveItem {
+  id: string;
+  name: string;
+  is_folder: boolean;
+  child_count: number | null;
+  size: number | null;
+  mime_type: string | null;
+  modified_at: string | null;
+  modified_by: string;
+  shared: boolean;
+  parent_id: string | null;
+  url: string | null;
+}
+
+export interface DriveBrowse {
+  items: DriveItem[];
+  folder: DriveItem | null;
+  searching: boolean;
+  account: string | null;
+}
+
+export interface NotePage {
+  id: string;
+  title: string;
+  modified_at: string | null;
+  url: string | null;
+}
+
+export interface NoteBrowse {
+  notebooks: { id: string; name: string; url: string | null }[];
+  sections: { id: string; name: string; notebook_id: string }[];
+  pages: NotePage[];
+  account: string | null;
+}

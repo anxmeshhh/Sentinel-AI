@@ -1483,6 +1483,425 @@ _TODO_ACTIONS = (
 )
 
 
+
+
+# --- OneDrive and OneNote writes -------------------------------------------
+#
+# Private-state writes, like To Do: nothing here notifies anyone, so the risks
+# are low. What differs is how honestly each one can be taken back:
+#
+#   create folder / upload / create page   COMPENSATABLE - delete what was made
+#   rename / move                          COMPENSATABLE - the old name/parent is recorded
+#   append to a page                       COMPENSATABLE - the previous HTML is captured first
+#   delete a drive item                    IRREVERSIBLE here - Graph moves it to the
+#                                          OneDrive recycle bin, which this API cannot
+#                                          restore from, so no undo button is offered
+
+# A OneNote page's previous HTML is kept only to make undo real. Beyond this it
+# is not worth storing on an action row, and an oversized page simply loses the
+# undo rather than silently truncating the restore.
+MAX_UNDO_SNAPSHOT_CHARS = 200_000
+# Uploads travel as an action parameter, so they are small text documents by
+# construction - not a general file-transfer path.
+MAX_UPLOAD_CHARS = 100_000
+
+_SAFE_NAME_RE = re.compile(r'^[^<>:"/\\|?*\x00-\x1f]+$')
+
+
+class CreateFolderParams(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    parent_id: str | None = Field(default=None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def _safe(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not _SAFE_NAME_RE.match(cleaned):
+            raise ValueError("A folder name cannot contain < > : \" / \\ | ? *")
+        return cleaned
+
+
+class UploadTextParams(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    content: str = Field(min_length=1, max_length=MAX_UPLOAD_CHARS)
+    parent_id: str | None = Field(default=None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def _safe(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not _SAFE_NAME_RE.match(cleaned):
+            raise ValueError("A file name cannot contain < > : \" / \\ | ? *")
+        return cleaned
+
+
+class RenameItemParams(BaseModel):
+    item_id: str = Field(min_length=1, max_length=500)
+    new_name: str = Field(min_length=1, max_length=255)
+
+    @field_validator("new_name")
+    @classmethod
+    def _safe(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not _SAFE_NAME_RE.match(cleaned):
+            raise ValueError("A name cannot contain < > : \" / \\ | ? *")
+        return cleaned
+
+
+class MoveItemParams(BaseModel):
+    item_id: str = Field(min_length=1, max_length=500)
+    new_parent_id: str = Field(min_length=1, max_length=500)
+    name: str = Field(default="", max_length=255)
+
+
+class DeleteItemParams(BaseModel):
+    item_id: str = Field(min_length=1, max_length=500)
+    name: str = Field(default="", max_length=255)
+    is_folder: bool = False
+
+
+class CreateNotePageParams(BaseModel):
+    section_id: str = Field(min_length=1, max_length=500)
+    title: str = Field(min_length=1, max_length=300)
+    body: str = Field(default="", max_length=50_000)
+
+
+class AppendNotePageParams(BaseModel):
+    page_id: str = Field(min_length=1, max_length=500)
+    content: str = Field(min_length=1, max_length=50_000)
+    title: str = Field(default="", max_length=300)
+
+
+def _ms_connection(session: Session, action, provider: Provider) -> Connection | None:
+    kind, _, owner_id = action.scope_key.partition(":")
+    if kind == "personal":
+        return session.execute(
+            select(Connection).where(
+                Connection.workspace_id == action.workspace_id,
+                Connection.user_id == uuid.UUID(owner_id),
+                Connection.provider == provider,
+                Connection.revoked_at.is_(None),
+            )
+        ).scalars().first()
+
+    from app.services.channel_authorization import authorized_connections
+
+    for auth in authorized_connections(session, uuid.UUID(owner_id)).values():
+        if auth.connection.provider == provider and auth.connection.revoked_at is None:
+            return auth.connection
+    return None
+
+
+def _drive_client(session: Session, action):
+    from app.integrations.graph_client import GraphClient
+    from app.integrations.microsoft_auth import get_valid_access_token
+
+    connection = _ms_connection(session, action, Provider.MICROSOFT_ONEDRIVE)
+    if connection is None:
+        raise ActionUnavailable("OneDrive is not connected for this context")
+    return GraphClient(get_valid_access_token(session, connection))
+
+
+def _note_client(session: Session, action):
+    from app.integrations.graph_client import GraphClient
+    from app.integrations.microsoft_auth import get_valid_access_token
+
+    connection = _ms_connection(session, action, Provider.MICROSOFT_ONENOTE)
+    if connection is None:
+        raise ActionUnavailable("OneNote is not connected for this context")
+    return GraphClient(get_valid_access_token(session, connection))
+
+
+# --- OneDrive ---------------------------------------------------------------
+
+def _preview_create_folder(params: CreateFolderParams) -> dict:
+    where = "in the selected folder" if params.parent_id else "at the top of your drive"
+    return {"summary": f"Create folder “{params.name}” {where}", "reversible": True}
+
+
+def _execute_create_folder(session: Session, action) -> dict:
+    params = CreateFolderParams(**action.params)
+    with _drive_client(session, action) as client:
+        item = client.create_folder(params.name, params.parent_id)
+    return {"item_id": item["id"], "name": item["name"], "url": item["url"]}
+
+
+def _verify_drive_item(session: Session, action, result: dict) -> tuple[bool, str]:
+    try:
+        with _drive_client(session, action) as client:
+            item = client.get_item(result["item_id"])
+    except Exception:  # noqa: BLE001
+        return False, "Applied, but Sentinel could not read it back to confirm"
+    return True, f"OneDrive reports “{item['name']}”"
+
+
+def _compensate_delete_drive_item(session: Session, action) -> str:
+    """Shared undo for anything this created: remove what was made."""
+    result = action.result or {}
+    item_id = result.get("item_id")
+    if not item_id:
+        raise ActionRejected("No item id was recorded, so it cannot be removed")
+    with _drive_client(session, action) as client:
+        client.delete_item(item_id)
+    return "Removed from OneDrive (it is in the recycle bin)"
+
+
+def _preview_upload_text(params: UploadTextParams) -> dict:
+    return {
+        "summary": f"Create “{params.name}” in OneDrive ({len(params.content)} characters)",
+        "reversible": True,
+    }
+
+
+def _execute_upload_text(session: Session, action) -> dict:
+    params = UploadTextParams(**action.params)
+    with _drive_client(session, action) as client:
+        item = client.upload_text_file(params.name, params.content, params.parent_id)
+    return {"item_id": item["id"], "name": item["name"], "url": item["url"]}
+
+
+def _preview_rename_item(params: RenameItemParams) -> dict:
+    return {"summary": f"Rename to “{params.new_name}”", "reversible": True}
+
+
+def _execute_rename_item(session: Session, action) -> dict:
+    params = RenameItemParams(**action.params)
+    with _drive_client(session, action) as client:
+        before = client.get_item(params.item_id)
+        after = client.rename_item(params.item_id, params.new_name)
+    return {"item_id": after["id"], "name": after["name"], "previous_name": before["name"]}
+
+
+def _compensate_rename_item(session: Session, action) -> str:
+    result = action.result or {}
+    previous = result.get("previous_name")
+    if not previous:
+        raise ActionRejected("The previous name was not recorded, so it cannot be put back")
+    with _drive_client(session, action) as client:
+        client.rename_item(result["item_id"], previous)
+    return f"Renamed back to “{previous}”"
+
+
+def _preview_move_item(params: MoveItemParams) -> dict:
+    return {"summary": f"Move “{params.name or params.item_id[:16]}” to another folder", "reversible": True}
+
+
+def _execute_move_item(session: Session, action) -> dict:
+    params = MoveItemParams(**action.params)
+    with _drive_client(session, action) as client:
+        before = client.get_item(params.item_id)
+        after = client.move_item(params.item_id, params.new_parent_id)
+    return {"item_id": after["id"], "name": after["name"], "previous_parent_id": before["parent_id"]}
+
+
+def _compensate_move_item(session: Session, action) -> str:
+    result = action.result or {}
+    previous_parent = result.get("previous_parent_id")
+    if not previous_parent:
+        raise ActionRejected("The previous folder was not recorded, so it cannot be put back")
+    with _drive_client(session, action) as client:
+        client.move_item(result["item_id"], previous_parent)
+    return "Moved back to its previous folder"
+
+
+def _preview_delete_item(params: DeleteItemParams) -> dict:
+    kind = "folder and everything in it" if params.is_folder else "file"
+    return {
+        "summary": f"Delete {kind}: “{params.name or params.item_id[:16]}”",
+        "irreversible": True,
+        "warning": (
+            f"This moves the {kind} to the OneDrive recycle bin. Sentinel cannot "
+            "restore it - you would need to recover it in OneDrive itself."
+        ),
+    }
+
+
+def _execute_delete_item(session: Session, action) -> dict:
+    params = DeleteItemParams(**action.params)
+    with _drive_client(session, action) as client:
+        client.delete_item(params.item_id)
+    return {"item_id": params.item_id, "name": params.name, "deleted": True}
+
+
+def _verify_delete_item(session: Session, action, result: dict) -> tuple[bool, str]:
+    try:
+        with _drive_client(session, action) as client:
+            client.get_item(result["item_id"])
+    except Exception:  # noqa: BLE001 - not found is the success case
+        return True, "The item is no longer in OneDrive (it is in the recycle bin)"
+    return False, "Deleted, but the item can still be read back"
+
+
+# --- OneNote ----------------------------------------------------------------
+
+def _preview_create_page(params: CreateNotePageParams) -> dict:
+    return {"summary": f"Create note “{params.title}”", "chars": len(params.body), "reversible": True}
+
+
+def _execute_create_page(session: Session, action) -> dict:
+    params = CreateNotePageParams(**action.params)
+    with _note_client(session, action) as client:
+        page = client.create_page(params.section_id, params.title, params.body)
+    return {"page_id": page["id"], "title": page["title"], "url": page["url"]}
+
+
+def _verify_note_page(session: Session, action, result: dict) -> tuple[bool, str]:
+    try:
+        with _note_client(session, action) as client:
+            client.page_content(result["page_id"])
+    except Exception:  # noqa: BLE001
+        return False, "Applied, but Sentinel could not read the page back to confirm"
+    return True, f"OneNote has the page “{result.get('title') or ''}”".strip()
+
+
+def _compensate_create_page(session: Session, action) -> str:
+    result = action.result or {}
+    page_id = result.get("page_id")
+    if not page_id:
+        raise ActionRejected("No page id was recorded, so it cannot be removed")
+    with _note_client(session, action) as client:
+        client.delete_page(page_id)
+    return "Page deleted from OneNote"
+
+
+def _preview_append_page(params: AppendNotePageParams) -> dict:
+    return {
+        "summary": f"Add to “{params.title or params.page_id[:16]}” ({len(params.content)} characters)",
+        "reversible": True,
+    }
+
+
+def _execute_append_page(session: Session, action) -> dict:
+    """Captures the page's current HTML before appending, which is the only way
+    an append can honestly offer an undo."""
+    params = AppendNotePageParams(**action.params)
+    with _note_client(session, action) as client:
+        try:
+            before = client.page_content(params.page_id)
+        except Exception:  # noqa: BLE001 - no snapshot means no undo, said plainly
+            before = None
+        client.patch_page(
+            params.page_id,
+            [{"target": "body", "action": "append", "content": f"<p>{params.content}</p>"}],
+        )
+    snapshot = before if (before and len(before) <= MAX_UNDO_SNAPSHOT_CHARS) else None
+    return {
+        "page_id": params.page_id,
+        "title": params.title,
+        "previous_html": snapshot,
+        # Stated on the record rather than inferred later, so the audit trail
+        # shows whether an undo was ever possible for this run.
+        "undo_available": snapshot is not None,
+    }
+
+
+def _compensate_append_page(session: Session, action) -> str:
+    result = action.result or {}
+    previous = result.get("previous_html")
+    if not previous:
+        raise ActionRejected(
+            "The page's previous contents were not captured (too large, or unreadable), "
+            "so this cannot be put back"
+        )
+    with _note_client(session, action) as client:
+        client.patch_page(result["page_id"], [{"target": "body", "action": "replace", "content": previous}])
+    return "Page restored to its contents before the addition"
+
+
+_DRIVE_NOTE_ACTIONS = (
+    ActionSpec(
+        key="onedrive.create_folder",
+        label="Create a folder",
+        risk=ActionRisk.LOW,
+        params_model=CreateFolderParams,
+        external=True,
+        preview=_preview_create_folder,
+        execute=_execute_create_folder,
+        verify=_verify_drive_item,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_delete_drive_item,
+    ),
+    ActionSpec(
+        key="onedrive.upload_text",
+        label="Create a text file",
+        risk=ActionRisk.LOW,
+        params_model=UploadTextParams,
+        external=True,
+        preview=_preview_upload_text,
+        execute=_execute_upload_text,
+        verify=_verify_drive_item,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_delete_drive_item,
+    ),
+    ActionSpec(
+        key="onedrive.rename_item",
+        label="Rename a file or folder",
+        risk=ActionRisk.LOW,
+        params_model=RenameItemParams,
+        external=True,
+        preview=_preview_rename_item,
+        execute=_execute_rename_item,
+        verify=_verify_drive_item,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_rename_item,
+    ),
+    ActionSpec(
+        key="onedrive.move_item",
+        label="Move a file or folder",
+        risk=ActionRisk.LOW,
+        params_model=MoveItemParams,
+        external=True,
+        preview=_preview_move_item,
+        execute=_execute_move_item,
+        verify=_verify_drive_item,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_move_item,
+    ),
+    ActionSpec(
+        key="onedrive.delete_item",
+        label="Delete a file or folder",
+        # Deleting a folder takes its contents with it, which is why this is the
+        # one drive action priced above LOW.
+        risk=ActionRisk.MEDIUM,
+        params_model=DeleteItemParams,
+        external=True,
+        preview=_preview_delete_item,
+        execute=_execute_delete_item,
+        verify=_verify_delete_item,
+        # No compensate: Graph moves the item to the OneDrive recycle bin and
+        # offers this API no way to restore it, so no undo button is offered.
+        reversibility=Reversibility.IRREVERSIBLE,
+        autonomy_eligible=False,
+    ),
+    ActionSpec(
+        key="onenote.create_page",
+        label="Create a note",
+        risk=ActionRisk.LOW,
+        params_model=CreateNotePageParams,
+        external=True,
+        preview=_preview_create_page,
+        execute=_execute_create_page,
+        verify=_verify_note_page,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_create_page,
+    ),
+    ActionSpec(
+        key="onenote.append_page",
+        label="Add to a note",
+        risk=ActionRisk.LOW,
+        params_model=AppendNotePageParams,
+        external=True,
+        preview=_preview_append_page,
+        execute=_execute_append_page,
+        verify=_verify_note_page,
+        # Compensatable only because the previous HTML is captured first; the
+        # compensation refuses outright when that snapshot is missing.
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_append_page,
+    ),
+)
+
+
 # --- the allow-list --------------------------------------------------------
 
 REGISTRY: dict[str, ActionSpec] = {
@@ -1596,6 +2015,7 @@ REGISTRY: dict[str, ActionSpec] = {
         *_OUTLOOK_ACTIONS,
         *_OUTLOOK_CALENDAR_ACTIONS,
         *_TODO_ACTIONS,
+        *_DRIVE_NOTE_ACTIONS,
     )
 }
 

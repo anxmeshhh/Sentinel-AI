@@ -47,7 +47,7 @@ SERVICE_PROVIDERS: dict[str, tuple[Provider, ...]] = {
     "microsoft_mail": (Provider.MICROSOFT_OUTLOOK_MAIL,),
     "microsoft_calendar": (Provider.MICROSOFT_OUTLOOK_CALENDAR,),
     "microsoft_todo": (Provider.MICROSOFT_TODO,),
-    "microsoft_onedrive": (Provider.MICROSOFT_ONEDRIVE,),
+    "microsoft_onedrive": (Provider.MICROSOFT_ONEDRIVE,),  # rail + browse
     "microsoft_onenote": (Provider.MICROSOFT_ONENOTE,),
     "microsoft_teams": (Provider.MICROSOFT_TEAMS,),
     "gmail": (Provider.GMAIL,),
@@ -378,3 +378,110 @@ def microsoft_todo(
     out.sort(key=lambda t: (t["due_at"] or "9999", t["title"].lower()))
     counts = {b: sum(1 for t in out if t["bucket"] == b) for b in ("overdue", "today", "upcoming", "someday", "completed")}
     return {"tasks": out, "lists": lists, "counts": counts, "account": conns[0].org}
+
+
+# --- OneDrive read surface -------------------------------------------------
+
+def _graph_for(session: Session, workspace_id, user_id, provider: Provider, label: str):
+    from app.integrations.graph_client import GraphClient
+    from app.integrations.microsoft_auth import get_valid_access_token
+
+    conns = _connections(session, workspace_id, user_id, (provider,))
+    if not conns:
+        raise HTTPException(status_code=404, detail=f"{label} is not connected")
+    return GraphClient(get_valid_access_token(session, conns[0])), conns[0]
+
+
+@router.get("/microsoft/onedrive")
+def onedrive_browse(
+    folder_id: str | None = None,
+    q: str | None = None,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Browse a folder, or search the whole drive. Read live from Graph: a file
+    browser whose contents lag behind what you just created is not a browser."""
+    client, conn = _graph_for(session, workspace_id, user.id, Provider.MICROSOFT_ONEDRIVE, "OneDrive")
+    try:
+        with client:
+            items = client.search_drive(q) if q else client.list_children(folder_id)
+            current = client.get_item(folder_id) if folder_id else None
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail="Couldn't reach OneDrive just now") from exc
+
+    def out(i):
+        return {
+            "id": i["id"], "name": i["name"], "is_folder": i["is_folder"],
+            "child_count": i["child_count"], "size": i["size"], "mime_type": i["mime_type"],
+            "modified_at": i["modified_at"].isoformat() if i["modified_at"] else None,
+            "modified_by": i["modified_by"], "shared": i["shared"],
+            "parent_id": i["parent_id"], "url": i["url"],
+        }
+
+    return {
+        "items": [out(i) for i in items],
+        "folder": out(current) if current else None,
+        "searching": bool(q),
+        "account": conn.org,
+    }
+
+
+# --- OneNote read surface --------------------------------------------------
+
+@router.get("/microsoft/onenote")
+def onenote_browse(
+    notebook_id: str | None = None,
+    section_id: str | None = None,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Notebooks -> sections -> pages, resolved one level at a time so a large
+    notebook is never fetched wholesale."""
+    client, conn = _graph_for(session, workspace_id, user.id, Provider.MICROSOFT_ONENOTE, "OneNote")
+    try:
+        with client:
+            notebooks = client.notebooks()
+            sections = client.sections(notebook_id) if notebook_id else []
+            pages = client.pages(section_id) if section_id else []
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail="Couldn't reach OneNote just now") from exc
+
+    return {
+        "notebooks": notebooks,
+        "sections": sections,
+        "pages": [
+            {"id": p["id"], "title": p["title"],
+             "modified_at": p["modified_at"].isoformat() if p["modified_at"] else None,
+             "url": p["url"]}
+            for p in pages
+        ],
+        "account": conn.org,
+    }
+
+
+@router.get("/microsoft/onenote/pages/{page_id}")
+def onenote_page(
+    page_id: str,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """A page's text, fetched live and never stored - the same rule as a mail
+    body. Sentinel keeps metadata; content stays with the system of record."""
+    from app.services.conversation_signals import strip_html
+
+    client, _ = _graph_for(session, workspace_id, user.id, Provider.MICROSOFT_ONENOTE, "OneNote")
+    try:
+        with client:
+            html = client.page_content(page_id)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail="Couldn't open that page just now") from exc
+    return {"page_id": page_id, "text": strip_html(html)}

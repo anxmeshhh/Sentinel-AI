@@ -1746,12 +1746,26 @@ def _execute_create_page(session: Session, action) -> dict:
 
 
 def _verify_note_page(session: Session, action, result: dict) -> tuple[bool, str]:
-    try:
-        with _note_client(session, action) as client:
-            client.page_content(result["page_id"])
-    except Exception:  # noqa: BLE001
-        return False, "Applied, but Sentinel could not read the page back to confirm"
-    return True, f"OneNote has the page “{result.get('title') or ''}”".strip()
+    """OneNote is eventually consistent: a page created a moment ago is
+    sometimes not readable on the first try, which was reporting genuinely
+    successful creates as `unknown` (observed live, then measured - the delay is
+    variable, usually zero). So this retries briefly instead of failing fast,
+    and reads METADATA rather than full content, which is cheaper.
+
+    It still reports honestly if the page never appears - an unverified write is
+    never dressed up as a success."""
+    import time as _time
+
+    page_id = result["page_id"]
+    for attempt in range(3):
+        try:
+            with _note_client(session, action) as client:
+                page = client.get_page(page_id)
+            return True, f"OneNote has the page “{page.get('title') or result.get('title') or ''}”".strip()
+        except Exception:  # noqa: BLE001 - not visible yet, or genuinely absent
+            if attempt < 2:
+                _time.sleep(1.5)
+    return False, "Applied, but Sentinel could not read the page back to confirm"
 
 
 def _compensate_create_page(session: Session, action) -> str:
@@ -1806,6 +1820,91 @@ def _compensate_append_page(session: Session, action) -> str:
     with _note_client(session, action) as client:
         client.patch_page(result["page_id"], [{"target": "body", "action": "replace", "content": previous}])
     return "Page restored to its contents before the addition"
+
+
+
+class CreateNotebookParams(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+
+
+class CreateSectionParams(BaseModel):
+    notebook_id: str = Field(min_length=1, max_length=500)
+    name: str = Field(min_length=1, max_length=128)
+
+
+def _preview_create_notebook(params: CreateNotebookParams) -> dict:
+    return {"summary": f"Create notebook “{params.name}”", "reversible": False,
+            "warning": "OneNote does not let Sentinel delete a notebook, so this cannot be undone here."}
+
+
+def _execute_create_notebook(session: Session, action) -> dict:
+    params = CreateNotebookParams(**action.params)
+    with _note_client(session, action) as client:
+        nb = client.create_notebook(params.name)
+    return {"notebook_id": nb["id"], "name": nb["name"], "url": nb["url"]}
+
+
+def _verify_create_notebook(session: Session, action, result: dict) -> tuple[bool, str]:
+    try:
+        with _note_client(session, action) as client:
+            names = {n["id"]: n["name"] for n in client.notebooks()}
+    except Exception:  # noqa: BLE001
+        return False, "Created, but Sentinel could not list notebooks to confirm"
+    if result["notebook_id"] in names:
+        return True, f"OneNote lists the notebook “{names[result['notebook_id']]}”"
+    return False, "Created, but the notebook was not found when listing"
+
+
+def _preview_create_section(params: CreateSectionParams) -> dict:
+    return {"summary": f"Create section “{params.name}”", "reversible": False,
+            "warning": "OneNote does not let Sentinel delete a section, so this cannot be undone here."}
+
+
+def _execute_create_section(session: Session, action) -> dict:
+    params = CreateSectionParams(**action.params)
+    with _note_client(session, action) as client:
+        sec = client.create_section(params.notebook_id, params.name)
+    return {"section_id": sec["id"], "name": sec["name"], "notebook_id": params.notebook_id}
+
+
+def _verify_create_section(session: Session, action, result: dict) -> tuple[bool, str]:
+    try:
+        with _note_client(session, action) as client:
+            ids = {s["id"] for s in client.sections(result["notebook_id"])}
+    except Exception:  # noqa: BLE001
+        return False, "Created, but Sentinel could not list sections to confirm"
+    return (result["section_id"] in ids), (
+        f"OneNote lists the section “{result['name']}”" if result["section_id"] in ids
+        else "Created, but the section was not found when listing"
+    )
+
+
+_ONENOTE_STRUCTURE_ACTIONS = (
+    ActionSpec(
+        key="onenote.create_notebook",
+        label="Create a notebook",
+        risk=ActionRisk.LOW,
+        params_model=CreateNotebookParams,
+        external=True,
+        preview=_preview_create_notebook,
+        execute=_execute_create_notebook,
+        verify=_verify_create_notebook,
+        # Graph offers no delete for consumer notebooks, so there is genuinely
+        # no inverse - and therefore no undo button, per this module's rule.
+        reversibility=Reversibility.IRREVERSIBLE,
+    ),
+    ActionSpec(
+        key="onenote.create_section",
+        label="Create a section",
+        risk=ActionRisk.LOW,
+        params_model=CreateSectionParams,
+        external=True,
+        preview=_preview_create_section,
+        execute=_execute_create_section,
+        verify=_verify_create_section,
+        reversibility=Reversibility.IRREVERSIBLE,
+    ),
+)
 
 
 _DRIVE_NOTE_ACTIONS = (
@@ -2016,6 +2115,7 @@ REGISTRY: dict[str, ActionSpec] = {
         *_OUTLOOK_CALENDAR_ACTIONS,
         *_TODO_ACTIONS,
         *_DRIVE_NOTE_ACTIONS,
+        *_ONENOTE_STRUCTURE_ACTIONS,
     )
 }
 

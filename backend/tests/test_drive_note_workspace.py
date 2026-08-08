@@ -113,3 +113,42 @@ def test_read_routes_never_reach_a_graph_write():
     for forbidden in ("create_folder", "upload_text_file", "rename_item", "move_item",
                       "delete_item", "create_page", "patch_page", "delete_page"):
         assert forbidden not in source, f"{forbidden} must only be reachable from the Action Registry"
+
+
+# --- the OneNote dead end, and the eventual-consistency bug ------------------
+
+def test_notebook_and_section_can_be_created():
+    """The bug this fixes: an account with no notebooks had no way forward.
+    "New note" is correctly disabled without a section, but nothing could ever
+    create one, so the workspace was a dead end."""
+    for key in ("onenote.create_notebook", "onenote.create_section"):
+        spec = REGISTRY[key]
+        assert spec.available is True
+        assert spec.external is True and spec.needs_approval is True
+        assert spec.verify is not None
+
+
+def test_notebook_and_section_creation_offer_no_undo_and_say_why():
+    """Graph has no delete for consumer notebooks or sections, so there is no
+    inverse - and per this module's rule, no undo button is offered."""
+    for key in ("onenote.create_notebook", "onenote.create_section"):
+        spec = REGISTRY[key]
+        assert spec.compensate is None
+        assert spec.reversibility.value == "irreversible"
+        preview = spec.preview(validate_params(
+            spec, {"name": "Ops", "notebook_id": "n1"} if "section" in key else {"name": "Ops"}
+        ))
+        assert "cannot be undone" in preview["warning"]
+
+
+def test_page_verification_tolerates_onenote_being_eventually_consistent():
+    """A genuinely successful create was being reported as `unknown` because
+    OneNote sometimes cannot read a page back the instant it is made. The verify
+    retries instead of failing fast - but still reports honestly if the page
+    never appears."""
+    import inspect
+
+    src = inspect.getsource(REGISTRY["onenote.create_page"].verify)
+    assert "for attempt in range(3)" in src          # retries
+    assert "get_page" in src                          # cheaper metadata read
+    assert "could not read the page back" in src      # and still fails honestly

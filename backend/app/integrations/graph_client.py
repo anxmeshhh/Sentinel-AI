@@ -393,6 +393,25 @@ class GraphClient:
         resp = self._get_with_retry(f"/me/onenote/pages/{page_id}/content")
         return resp.text
 
+    def get_page(self, page_id: str) -> dict:
+        """Page METADATA - cheaper than fetching content, and used for
+        verification because a freshly created page becomes readable here at
+        least as soon as its content does."""
+        p = self._get_with_retry(f"/me/onenote/pages/{page_id}").json()
+        return {"id": p.get("id"), "title": p.get("title") or "", 
+                "url": ((p.get("links") or {}).get("oneNoteWebUrl") or {}).get("href")}
+
+    def create_notebook(self, name: str) -> dict:
+        created = self._request("POST", "/me/onenote/notebooks", {"displayName": name}).json()
+        return {"id": created.get("id"), "name": created.get("displayName") or name,
+                "url": ((created.get("links") or {}).get("oneNoteWebUrl") or {}).get("href")}
+
+    def create_section(self, notebook_id: str, name: str) -> dict:
+        created = self._request("POST", f"/me/onenote/notebooks/{notebook_id}/sections",
+                                {"displayName": name}).json()
+        return {"id": created.get("id"), "name": created.get("displayName") or name,
+                "notebook_id": notebook_id}
+
     def create_page(self, section_id: str, title: str, body: str) -> dict:
         """OneNote takes a full HTML document, not JSON."""
         html = (

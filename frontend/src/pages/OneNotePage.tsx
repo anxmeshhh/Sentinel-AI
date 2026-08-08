@@ -94,8 +94,14 @@ export function OneNotePage() {
       ) : loading && !browse ? (
         <LoadingBlock />
       ) : (browse?.notebooks.length ?? 0) === 0 ? (
-        <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-caption text-ink-faint">
-          No notebooks in this account yet.
+        <div className="card">
+          <div className="text-small font-semibold text-ink">No notebooks yet</div>
+          <p className="mt-1 text-caption text-ink-faint">
+            OneNote needs a notebook and a section before you can write a note. Create one here.
+          </p>
+          <div className="mt-3">
+            <NotebookComposer onDone={afterWrite} />
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
@@ -106,13 +112,23 @@ export function OneNotePage() {
               value={notebookId}
               onChange={(id) => { setNotebookId(id); setSectionId(null); setSelected(null); }}
             />
-            {browse!.sections.length > 0 && (
+            {notebookId && browse!.sections.length > 0 && (
               <Picker
                 label="Section"
                 options={browse!.sections.map((s) => ({ id: s.id, name: s.name }))}
                 value={sectionId}
                 onChange={(id) => { setSectionId(id); setSelected(null); }}
               />
+            )}
+            {notebookId && browse!.sections.length === 0 && (
+              <div className="mb-2 rounded-md border border-dashed border-border px-3 py-3">
+                <div className="text-caption text-ink-faint">
+                  This notebook has no sections. Notes live in sections, so add one first.
+                </div>
+                <div className="mt-2">
+                  <SectionComposer notebookId={notebookId} onDone={afterWrite} />
+                </div>
+              </div>
             )}
 
             {sectionId && (
@@ -223,6 +239,52 @@ function Picker({
         ))}
       </select>
     </label>
+  );
+}
+
+function NotebookComposer({ onDone }: { onDone: () => void }) {
+  const [name, setName] = useState("");
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Notebook name"
+        className="min-w-[11rem] flex-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-caption text-ink placeholder:text-ink-faint"
+      />
+      <ActionButton
+        actionType="onenote.create_notebook"
+        params={{ name }}
+        label="Create notebook"
+        confirmLabel="Create"
+        variant="primary"
+        disabled={name.trim().length === 0}
+        onDone={onDone}
+      />
+    </div>
+  );
+}
+
+function SectionComposer({ notebookId, onDone }: { notebookId: string; onDone: () => void }) {
+  const [name, setName] = useState("");
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Section name"
+        className="min-w-[10rem] flex-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-caption text-ink placeholder:text-ink-faint"
+      />
+      <ActionButton
+        actionType="onenote.create_section"
+        params={{ notebook_id: notebookId, name }}
+        label="Create section"
+        confirmLabel="Create"
+        variant="primary"
+        disabled={name.trim().length === 0}
+        onDone={onDone}
+      />
+    </div>
   );
 }
 

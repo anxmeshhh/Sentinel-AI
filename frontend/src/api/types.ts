@@ -878,3 +878,75 @@ export interface MicrosoftCapabilities {
   tenant_name: string | null;
   services: MicrosoftService[];
 }
+
+/** One finding on a service's intelligence rail. */
+export interface ServiceFinding {
+  id: string;
+  title: string;
+  why: string;
+  tier: string;
+  kind: string;
+  provider: string | null;
+  url: string | null;
+}
+
+export interface ServiceSituation {
+  id: string;
+  title: string;
+  severity: string;
+  members: number;
+  cross_provider: boolean;
+  explanation: string | null;
+  recommendations: { action: string; grounded_in?: string }[];
+}
+
+/** The provider-agnostic payload behind every workspace page's rail. */
+export interface ServiceIntelligence {
+  service: string;
+  connected: boolean;
+  health: string | null;
+  last_synced_at: string | null;
+  account: string | null;
+  findings: ServiceFinding[];
+  situations: ServiceSituation[];
+  critical_count: number;
+}
+
+/** Mirrors backend ActionOut - the Action Registry's record of one write. */
+export interface ActionResult {
+  id: string;
+  action_type: string;
+  risk: string;
+  status: string;
+  preview: Record<string, unknown>;
+  result: Record<string, unknown>;
+  error: string | null;
+  verification: string | null;
+  undone_at: string | null;
+}
+
+export interface OutlookMailItem {
+  id: string;
+  message_id: string;
+  subject: string;
+  from: string;
+  to: string | null;
+  occurred_at: string | null;
+  unread: boolean;
+  important: boolean;
+  flagged: boolean;
+  bulk: boolean;
+  thread_id: string | null;
+  url: string | null;
+}
+
+export interface OutlookMailBody {
+  message_id: string;
+  subject: string;
+  from: string | null;
+  to: string | null;
+  body_text: string;
+  is_read: boolean;
+  flagged: boolean;
+  url: string | null;
+}

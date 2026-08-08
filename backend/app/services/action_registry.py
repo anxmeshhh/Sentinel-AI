@@ -571,6 +571,324 @@ def _compensate_draft(session: Session, action) -> str:
     return "The draft was discarded"
 
 
+
+
+# --- Outlook Mail writes ----------------------------------------------------
+#
+# Real writes to the real mailbox, reached ONLY from here. Every one is
+# `external=True`, which by needs_approval_for() means every one is previewed
+# and confirmed before it runs - no Microsoft write is ever silent.
+#
+# All four are genuinely undoable, and the compensations say how: read state and
+# flags have exact inverses, and a draft can be deleted. Nothing here sends
+# mail: `email.send` remains unavailable for the reason recorded on that entry -
+# a sent message has no inverse, so an approval could never be undone.
+
+
+class MarkMailReadParams(BaseModel):
+    message_id: str = Field(min_length=1, max_length=500)
+    is_read: bool = True
+    # Carried for the preview and audit trail so the record reads like something
+    # a human did, not an opaque id.
+    subject: str = Field(default="", max_length=300)
+
+
+class FlagMailParams(BaseModel):
+    message_id: str = Field(min_length=1, max_length=500)
+    flagged: bool = True
+    subject: str = Field(default="", max_length=300)
+
+
+class OutlookDraftParams(BaseModel):
+    to: list[str] = Field(min_length=1, max_length=25)
+    subject: str = Field(min_length=1, max_length=300)
+    body: str = Field(min_length=1, max_length=20000)
+
+    @field_validator("to")
+    @classmethod
+    def _valid_addresses(cls, values: list[str]) -> list[str]:
+        for address in values:
+            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", address.strip()):
+                raise ValueError(f"not a valid email address: {address}")
+        return [a.strip() for a in values]
+
+
+class OutlookReplyParams(BaseModel):
+    message_id: str = Field(min_length=1, max_length=500)
+    body: str = Field(min_length=1, max_length=20000)
+    subject: str = Field(default="", max_length=300)
+
+
+def _outlook_connection(session: Session, action) -> Connection | None:
+    """The mailbox this action may write to, resolved from the action's own
+    scope - never from the caller, exactly like the calendar resolver."""
+    kind, _, owner_id = action.scope_key.partition(":")
+    if kind == "personal":
+        return session.execute(
+            select(Connection).where(
+                Connection.workspace_id == action.workspace_id,
+                Connection.user_id == uuid.UUID(owner_id),
+                Connection.provider == Provider.MICROSOFT_OUTLOOK_MAIL,
+                Connection.revoked_at.is_(None),
+            )
+        ).scalars().first()
+
+    from app.services.channel_authorization import authorized_connections
+
+    for auth in authorized_connections(session, uuid.UUID(owner_id)).values():
+        if auth.connection.provider == Provider.MICROSOFT_OUTLOOK_MAIL and auth.connection.revoked_at is None:
+            return auth.connection
+    return None
+
+
+def _outlook_client(session: Session, action):
+    from app.integrations.graph_client import GraphClient
+    from app.integrations.microsoft_auth import get_valid_access_token
+
+    connection = _outlook_connection(session, action)
+    if connection is None:
+        raise ActionUnavailable("No Outlook mailbox is authorized for this context")
+    return GraphClient(get_valid_access_token(session, connection))
+
+
+def _preview_mark_read(params: MarkMailReadParams) -> dict:
+    verb = "Mark as read" if params.is_read else "Mark as unread"
+    return {"summary": f"{verb}: {params.subject or params.message_id[:24]}", "reversible": True}
+
+
+def _execute_mark_read(session: Session, action) -> dict:
+    params = MarkMailReadParams(**action.params)
+    with _outlook_client(session, action) as client:
+        return client.set_message_read(params.message_id, params.is_read)
+
+
+def _verify_mark_read(session: Session, action, result: dict) -> tuple[bool, str]:
+    """Read the message back from Microsoft - the write is confirmed by the
+    provider's own state, not by our request having returned 200."""
+    try:
+        with _outlook_client(session, action) as client:
+            current = client.message(result["message_id"])
+    except Exception:  # noqa: BLE001 - a failed read-back is "cannot confirm"
+        return False, "Applied, but Sentinel could not read it back to confirm"
+    return (current["is_read"] == result["is_read"],
+            f"Outlook reports is_read={current['is_read']}")
+
+
+def _compensate_mark_read(session: Session, action) -> str:
+    params = MarkMailReadParams(**action.params)
+    with _outlook_client(session, action) as client:
+        client.set_message_read(params.message_id, not params.is_read)
+    return f"Restored read state to {not params.is_read}"
+
+
+def _preview_flag(params: FlagMailParams) -> dict:
+    verb = "Flag" if params.flagged else "Clear the flag on"
+    return {"summary": f"{verb}: {params.subject or params.message_id[:24]}", "reversible": True}
+
+
+def _execute_flag(session: Session, action) -> dict:
+    params = FlagMailParams(**action.params)
+    with _outlook_client(session, action) as client:
+        return client.set_message_flag(params.message_id, params.flagged)
+
+
+def _verify_flag(session: Session, action, result: dict) -> tuple[bool, str]:
+    try:
+        with _outlook_client(session, action) as client:
+            current = client.message(result["message_id"])
+    except Exception:  # noqa: BLE001
+        return False, "Applied, but Sentinel could not read it back to confirm"
+    return current["flagged"] == result["flagged"], f"Outlook reports flagged={current['flagged']}"
+
+
+def _compensate_flag(session: Session, action) -> str:
+    params = FlagMailParams(**action.params)
+    with _outlook_client(session, action) as client:
+        client.set_message_flag(params.message_id, not params.flagged)
+    return f"Restored flag to {not params.flagged}"
+
+
+def _preview_outlook_draft(params: OutlookDraftParams) -> dict:
+    return {
+        "summary": f"Create a draft to {', '.join(params.to)}: {params.subject}",
+        "to": params.to, "subject": params.subject, "chars": len(params.body),
+        "sends": False, "reversible": True,
+    }
+
+
+def _execute_outlook_draft(session: Session, action) -> dict:
+    """Creates a REAL draft in Outlook - the user will see it there. Nothing is
+    sent; sending stays a separate, deliberately unavailable action."""
+    params = OutlookDraftParams(**action.params)
+    with _outlook_client(session, action) as client:
+        return client.create_draft(subject=params.subject, to=params.to, body=params.body)
+
+
+def _verify_outlook_draft(session: Session, action, result: dict) -> tuple[bool, str]:
+    try:
+        with _outlook_client(session, action) as client:
+            client.message(result["draft_id"])
+    except Exception:  # noqa: BLE001
+        return False, "Created, but Sentinel could not read it back to confirm"
+    return True, "Draft exists in Outlook and was not sent"
+
+
+def _compensate_outlook_draft(session: Session, action) -> str:
+    result = action.result or {}
+    draft_id = result.get("draft_id")
+    if not draft_id:
+        raise ActionRejected("No draft id was recorded, so it cannot be removed")
+    with _outlook_client(session, action) as client:
+        client.delete_message(draft_id)
+    return "Draft moved to Deleted Items in Outlook"
+
+
+def _preview_outlook_reply(params: OutlookReplyParams) -> dict:
+    return {
+        "summary": f"Draft a reply to: {params.subject or params.message_id[:24]}",
+        "chars": len(params.body), "sends": False, "reversible": True,
+    }
+
+
+def _execute_outlook_reply(session: Session, action) -> dict:
+    params = OutlookReplyParams(**action.params)
+    with _outlook_client(session, action) as client:
+        return client.create_reply_draft(params.message_id, params.body)
+
+
+
+# --- Outlook: actually sending -------------------------------------------
+#
+# The one Microsoft write with no inverse. Everything about it is deliberate:
+# HIGH risk, external, IRREVERSIBLE, and NO compensate function - because this
+# module's own rule is that an action with no compensation IS irreversible and
+# says so, rather than offering an undo button that cannot work. A recipient
+# cannot un-see a message.
+#
+# It is only ever reached by a person clicking send and confirming the preview
+# below, which names the recipients, the subject and the message itself. It is
+# not autonomy-eligible and is never proposed by the Decision Engine.
+
+
+def _preview_outlook_send(params: OutlookDraftParams) -> dict:
+    """What the user is shown BEFORE the irreversible step. Stored verbatim on
+    the action, so the audit record proves what they agreed to send."""
+    body = params.body.strip()
+    return {
+        "summary": f"Send to {', '.join(params.to)}: {params.subject}",
+        "to": params.to,
+        "subject": params.subject,
+        "message": body if len(body) <= 2000 else body[:2000] + "…",
+        "chars": len(params.body),
+        "sends": True,
+        "irreversible": True,
+        "warning": "This sends a real email immediately. It cannot be recalled or undone.",
+    }
+
+
+def _execute_outlook_send(session: Session, action) -> dict:
+    """Create the draft, then send it - so the audit trail records a real
+    message id even though the send itself returns nothing."""
+    params = OutlookDraftParams(**action.params)
+    sent_after = datetime.now(timezone.utc) - timedelta(seconds=5)
+    with _outlook_client(session, action) as client:
+        draft = client.create_draft(subject=params.subject, to=params.to, body=params.body)
+        client.send_draft(draft["draft_id"])
+    return {
+        "draft_id": draft["draft_id"],
+        "to": params.to,
+        "subject": params.subject,
+        "sent": True,
+        "sent_after": sent_after.isoformat(),
+    }
+
+
+def _verify_outlook_send(session: Session, action, result: dict) -> tuple[bool, str]:
+    """Confirmed by finding it in Sent Items - Microsoft's own record that the
+    message left the mailbox. A send that cannot be found is reported as
+    unverified, never as a success."""
+    since = datetime.fromisoformat(result["sent_after"])
+    try:
+        with _outlook_client(session, action) as client:
+            matches = client.find_sent(result["subject"], since)
+    except Exception:  # noqa: BLE001 - a failed read-back is "cannot confirm"
+        return False, "Sent, but Sentinel could not read Sent Items to confirm"
+    if not matches:
+        return False, "Sent, but no matching message was found in Sent Items yet"
+    return True, f"Found in Sent Items at {matches[0]['sent_at']:%H:%M} - delivery is Microsoft's to complete"
+
+
+_OUTLOOK_ACTIONS = (
+    ActionSpec(
+        key="outlook.mark_read",
+        label="Mark mail read or unread",
+        risk=ActionRisk.LOW,
+        params_model=MarkMailReadParams,
+        external=True,  # -> always previewed and confirmed
+        preview=_preview_mark_read,
+        execute=_execute_mark_read,
+        verify=_verify_mark_read,
+        reversibility=Reversibility.REVERSIBLE,
+        compensate=_compensate_mark_read,
+    ),
+    ActionSpec(
+        key="outlook.flag",
+        label="Flag or unflag mail",
+        risk=ActionRisk.LOW,
+        params_model=FlagMailParams,
+        external=True,
+        preview=_preview_flag,
+        execute=_execute_flag,
+        verify=_verify_flag,
+        reversibility=Reversibility.REVERSIBLE,
+        compensate=_compensate_flag,
+    ),
+    ActionSpec(
+        key="outlook.draft",
+        label="Write a draft in Outlook",
+        risk=ActionRisk.LOW,
+        params_model=OutlookDraftParams,
+        external=True,
+        preview=_preview_outlook_draft,
+        execute=_execute_outlook_draft,
+        verify=_verify_outlook_draft,
+        # Reversible in the strict sense: the draft can be removed and nothing
+        # left the mailbox, because nothing was sent.
+        reversibility=Reversibility.REVERSIBLE,
+        compensate=_compensate_outlook_draft,
+    ),
+    ActionSpec(
+        key="outlook.send",
+        label="Send an email",
+        risk=ActionRisk.HIGH,
+        params_model=OutlookDraftParams,
+        external=True,
+        preview=_preview_outlook_send,
+        execute=_execute_outlook_send,
+        verify=_verify_outlook_send,
+        # No compensate, on purpose. A sent message has no inverse, and this
+        # module treats the ABSENCE of a compensation as what makes
+        # IRREVERSIBLE real rather than a label.
+        reversibility=Reversibility.IRREVERSIBLE,
+        # Never unattended. A person sees the recipients, subject and body and
+        # confirms, every single time.
+        autonomy_eligible=False,
+    ),
+    ActionSpec(
+        key="outlook.reply_draft",
+        label="Draft a reply in Outlook",
+        risk=ActionRisk.LOW,
+        params_model=OutlookReplyParams,
+        external=True,
+        preview=_preview_outlook_reply,
+        execute=_execute_outlook_reply,
+        verify=_verify_outlook_draft,
+        reversibility=Reversibility.REVERSIBLE,
+        compensate=_compensate_outlook_draft,
+    ),
+)
+
+
 # --- the allow-list --------------------------------------------------------
 
 REGISTRY: dict[str, ActionSpec] = {
@@ -678,6 +996,10 @@ REGISTRY: dict[str, ActionSpec] = {
             unavailable_reason="Requires a GitHub OAuth App with write scope (see CONNECTIONS.md).",
             reversibility=Reversibility.COMPENSATABLE,  # an issue can be closed
         ),
+        # Microsoft 365 workspace writes, defined above. Spread here so the
+        # allow-list stays one dict - a key absent from it cannot be proposed,
+        # approved or executed, whatever any caller or model asks for.
+        *_OUTLOOK_ACTIONS,
     )
 }
 

@@ -239,6 +239,92 @@ class GraphClient:
             })
         return out, True
 
+    # --- WRITES ----------------------------------------------------------
+    #
+    # Every method here changes something in the real Microsoft service. None
+    # of them is called from a route directly: they are only ever reached from
+    # an ActionSpec's execute/compensate in services/action_registry.py, which
+    # is the one place writes are allow-listed, validated, risk-classified,
+    # confirmed and audited. That is what keeps "the frontend never writes to
+    # Graph" true structurally rather than by convention.
+    def _request(self, method: str, path: str, json: dict | None = None) -> httpx.Response:
+        resp = self._client.request(method, path, json=json)
+        resp.raise_for_status()
+        return resp
+
+    def message(self, message_id: str) -> dict:
+        """One message, including its body - fetched live for the reader and
+        never stored (the same posture as the Gmail client)."""
+        resp = self._get_with_retry(
+            f"/me/messages/{message_id}",
+            {"$select": "id,subject,from,toRecipients,body,receivedDateTime,isRead,flag,webLink"},
+        )
+        m = resp.json()
+        return {
+            "id": m.get("id"),
+            "subject": m.get("subject") or "(no subject)",
+            "from": _addr(m.get("from")),
+            "to": ", ".join(a for a in (_addr(r) for r in m.get("toRecipients", [])) if a) or None,
+            "body_html": (m.get("body") or {}).get("content") or "",
+            "body_type": (m.get("body") or {}).get("contentType") or "html",
+            "received_at": _parse(m.get("receivedDateTime")),
+            "is_read": bool(m.get("isRead")),
+            "flagged": ((m.get("flag") or {}).get("flagStatus") or "").lower() == "flagged",
+            "url": m.get("webLink"),
+        }
+
+    def set_message_read(self, message_id: str, is_read: bool) -> dict:
+        self._request("PATCH", f"/me/messages/{message_id}", {"isRead": is_read})
+        return {"message_id": message_id, "is_read": is_read}
+
+    def set_message_flag(self, message_id: str, flagged: bool) -> dict:
+        status = "flagged" if flagged else "notFlagged"
+        self._request("PATCH", f"/me/messages/{message_id}", {"flag": {"flagStatus": status}})
+        return {"message_id": message_id, "flagged": flagged}
+
+    def create_draft(self, *, subject: str, to: list[str], body: str) -> dict:
+        """A real draft in the user's Outlook - visible in Outlook itself, and
+        deletable, which is what makes this reversible."""
+        payload = {
+            "subject": subject,
+            "body": {"contentType": "Text", "content": body},
+            "toRecipients": [{"emailAddress": {"address": a}} for a in to],
+        }
+        created = self._request("POST", "/me/messages", payload).json()
+        return {"draft_id": created.get("id"), "subject": subject, "to": to, "url": created.get("webLink")}
+
+    def create_reply_draft(self, message_id: str, comment: str) -> dict:
+        """A reply draft on the real thread, so it keeps its conversation."""
+        created = self._request("POST", f"/me/messages/{message_id}/createReply", {"comment": comment}).json()
+        return {"draft_id": created.get("id"), "replied_to": message_id, "url": created.get("webLink")}
+
+    def send_draft(self, message_id: str) -> None:
+        """Send an existing draft. Two steps (create draft, then send it) rather
+        than Graph's one-shot /me/sendMail, because the draft gives the audit
+        trail a real message id BEFORE anything leaves the mailbox - and if the
+        send fails, what exists is a draft, not a mystery."""
+        self._request("POST", f"/me/messages/{message_id}/send")
+
+    def find_sent(self, subject: str, since: datetime, cap: int = 10) -> list[dict]:
+        """Look for a just-sent message in Sent Items - the only honest way to
+        verify a send, since Graph's send returns 202 with no body and the
+        message id changes when it moves out of Drafts."""
+        resp = self._get_with_retry(
+            "/me/mailFolders/sentitems/messages",
+            {"$select": "id,subject,sentDateTime,toRecipients", "$orderby": "sentDateTime desc", "$top": str(cap)},
+        )
+        out = []
+        for m in resp.json().get("value", []):
+            sent_at = _parse(m.get("sentDateTime"))
+            if (m.get("subject") or "") == subject and sent_at is not None and sent_at >= since:
+                out.append({"id": m.get("id"), "subject": m.get("subject"), "sent_at": sent_at})
+        return out
+
+    def delete_message(self, message_id: str) -> None:
+        """Used to undo a draft. Graph moves it to Deleted Items rather than
+        destroying it, which is the gentler behaviour for a compensation."""
+        self._request("DELETE", f"/me/messages/{message_id}")
+
     # --- OneDrive -> DRIVE_FILE signals ----------------------------------
     def recent_files(self, since: datetime, cap: int = 150) -> list[dict]:
         """Files CHANGED since the checkpoint - metadata only, never content.

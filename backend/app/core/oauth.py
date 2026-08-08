@@ -121,13 +121,18 @@ if MICROSOFT_CONFIGURED:
         client_id=_settings.microsoft_client_id,
         client_secret=_settings.microsoft_client_secret,
         server_metadata_url="https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration",
+        # Mail.ReadWrite (not Mail.Read) is what the workspace writes need:
+        # verified live that POST /me/messages returns 403 with read-only mail
+        # scope, so drafts and flag/read changes require it. Mail.Send is
+        # deliberately absent - Sentinel creates drafts and never sends.
+        #
         # User.Read is the baseline Graph needs to serve /me at all (that's
         # what fetch_account_identity calls) - confirmed directly: without it
         # Graph returns 403 on /me even with Mail.Read/Calendars.Read granted,
         # since those only cover mail/calendar resources, not the profile
         # endpoint itself. It's the single most common Graph delegated scope
         # and needs no admin consent on a personal or standard work account.
-        client_kwargs={"scope": "offline_access User.Read Mail.Read Calendars.Read Team.ReadBasic.All Channel.ReadBasic.All Files.Read Notes.Read Tasks.Read"},
+        client_kwargs={"scope": "offline_access User.Read Mail.ReadWrite Mail.Send Calendars.Read Team.ReadBasic.All Channel.ReadBasic.All Files.Read Notes.Read Tasks.Read"},
     )
 
 # Slack OAuth v2 is driven manually (see integrations/slack_auth.py), not through

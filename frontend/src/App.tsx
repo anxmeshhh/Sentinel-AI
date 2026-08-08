@@ -25,6 +25,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { MailPage } from "./pages/MailPage";
 import { MeetPage } from "./pages/MeetPage";
 import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
+import { OutlookMailPage } from "./pages/OutlookMailPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignupPage } from "./pages/SignupPage";
@@ -147,6 +148,7 @@ export function App() {
       <Route path="/admin" element={<RequireAuth><AdminPage /></RequireAuth>} />
       <Route path="/assistant" element={<RequireAuth><AssistantPage /></RequireAuth>} />
       <Route path="/mail" element={<RequireAuth><MailPage /></RequireAuth>} />
+      <Route path="/microsoft/mail" element={<RequireAuth><OutlookMailPage /></RequireAuth>} />
       <Route path="/calendar" element={<RequireAuth><CalendarPage /></RequireAuth>} />
       <Route path="/drive" element={<RequireAuth><DrivePage /></RequireAuth>} />
       <Route path="/meet" element={<RequireAuth><MeetPage /></RequireAuth>} />

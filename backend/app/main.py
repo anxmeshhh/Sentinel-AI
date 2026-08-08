@@ -39,6 +39,7 @@ from app.api.routes import (
     runs,
     teams,
     workspaces,
+    workspace,
 )
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
@@ -128,6 +129,7 @@ app.include_router(drive.router)
 app.include_router(meet.router)
 app.include_router(memory.router)
 app.include_router(decisions.router)
+app.include_router(workspace.router)
 
 
 @app.get("/health")

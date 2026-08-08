@@ -395,6 +395,7 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
                   statusTone={c.tone}
                   desc={c.desc}
                   connected={c.connected}
+                  to={svc.key === "outlook_mail" && c.connected ? "/microsoft/mail" : undefined}
                 />
               );
             })}

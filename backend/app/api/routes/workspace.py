@@ -233,3 +233,79 @@ def outlook_mail_body(
         "flagged": message["flagged"],
         "url": message["url"],
     }
+
+
+# --- Outlook Calendar read surface ----------------------------------------
+
+@router.get("/microsoft/calendar")
+def outlook_calendar(
+    days: int = 30,
+    q: str | None = None,
+    session: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """The agenda as Sentinel has it, plus the overlaps computed here rather
+    than in the browser - the same deterministic rule the advisor uses, so the
+    page and the assistant can never disagree about what conflicts."""
+    from datetime import datetime, timedelta, timezone
+
+    conns = _connections(session, workspace_id, user.id, (Provider.MICROSOFT_OUTLOOK_CALENDAR,))
+    if not conns:
+        raise HTTPException(status_code=404, detail="Outlook Calendar is not connected")
+
+    now = datetime.now(timezone.utc)
+    horizon = now + timedelta(days=max(1, min(days, 90)))
+    rows = session.execute(
+        select(Signal)
+        .where(
+            Signal.connection_id.in_([c.id for c in conns]),
+            Signal.type == SignalType.CALENDAR_EVENT,
+            Signal.occurred_at >= now - timedelta(days=1),
+            Signal.occurred_at <= horizon,
+        )
+        .order_by(Signal.occurred_at.asc())
+    ).scalars().all()
+
+    def _parse(raw):
+        if not raw:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    events = []
+    for s in rows:
+        p = s.payload or {}
+        start = _parse(p.get("start")) or s.occurred_at
+        if q and q.lower() not in (p.get("title") or "").lower():
+            continue
+        events.append({
+            "id": str(s.id),
+            "event_id": s.external_id,
+            "title": p.get("title") or "(no title)",
+            "start": start.isoformat() if start else None,
+            "end": (_parse(p.get("end")) or start).isoformat() if start else None,
+            "attendee_count": int(p.get("attendee_count") or 0),
+            "attendee_emails": p.get("attendee_emails") or [],
+            "organizer": p.get("organizer"),
+            "has_meeting_link": bool(p.get("has_meeting_link")),
+            "meet_url": p.get("meet_url"),
+            "status": p.get("status") or "confirmed",
+            "url": p.get("url"),
+            "day": start.date().isoformat() if start else None,
+        })
+
+    # Overlaps, computed once here. Reported per pair, newest-first ordering
+    # preserved from the query.
+    conflicts = []
+    dated = [e for e in events if e["start"] and e["end"]]
+    for i, a in enumerate(dated):
+        for b in dated[i + 1:]:
+            if b["start"] >= a["end"]:
+                break
+            conflicts.append({"a": a["title"], "b": b["title"], "when": a["start"]})
+
+    return {"events": events, "conflicts": conflicts, "account": conns[0].org}

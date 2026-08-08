@@ -395,7 +395,13 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
                   statusTone={c.tone}
                   desc={c.desc}
                   connected={c.connected}
-                  to={svc.key === "outlook_mail" && c.connected ? "/microsoft/mail" : undefined}
+                  to={
+                    c.connected && svc.key === "outlook_mail"
+                      ? "/microsoft/mail"
+                      : c.connected && svc.key === "outlook_calendar"
+                        ? "/microsoft/calendar"
+                        : undefined
+                  }
                 />
               );
             })}

@@ -889,6 +889,281 @@ _OUTLOOK_ACTIONS = (
 )
 
 
+
+
+# --- Outlook Calendar writes -----------------------------------------------
+#
+# Reuses CreateCalendarEventParams and _risk_for_calendar from the Google
+# calendar action: the rule that attendees escalate a private write into an
+# outbound message to other people is the same rule whoever hosts the calendar.
+#
+# The three writes differ in exactly one honest way - what can be taken back:
+#   create  COMPENSATABLE   the event can be deleted
+#   update  COMPENSATABLE   the previous values are recorded, so they can be put back
+#   cancel  IRREVERSIBLE    attendees were notified, and that cannot be unsent
+
+
+class UpdateCalendarEventParams(BaseModel):
+    event_id: str = Field(min_length=1, max_length=500)
+    title: str | None = Field(default=None, max_length=300)
+    start: datetime | None = None
+    end: datetime | None = None
+    attendee_emails: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("attendee_emails")
+    @classmethod
+    def _validate_attendees(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned: list[str] = []
+        for raw in value:
+            address = (raw or "").strip().lower()
+            if not _EMAIL_RE.match(address):
+                raise ValueError(f"Not a valid email address: {raw!r}")
+            if address not in cleaned:
+                cleaned.append(address)
+        return cleaned
+
+
+class CancelCalendarEventParams(BaseModel):
+    event_id: str = Field(min_length=1, max_length=500)
+    title: str = Field(default="", max_length=300)
+    comment: str = Field(default="", max_length=1000)
+    # Carried so the preview can name who will be told, and the audit record
+    # shows it. Never used to decide anything - Microsoft notifies, not us.
+    attendee_count: int = 0
+
+
+def _outlook_calendar_connection(session: Session, action) -> Connection | None:
+    kind, _, owner_id = action.scope_key.partition(":")
+    if kind == "personal":
+        return session.execute(
+            select(Connection).where(
+                Connection.workspace_id == action.workspace_id,
+                Connection.user_id == uuid.UUID(owner_id),
+                Connection.provider == Provider.MICROSOFT_OUTLOOK_CALENDAR,
+                Connection.revoked_at.is_(None),
+            )
+        ).scalars().first()
+
+    from app.services.channel_authorization import authorized_connections
+
+    for auth in authorized_connections(session, uuid.UUID(owner_id)).values():
+        if auth.connection.provider == Provider.MICROSOFT_OUTLOOK_CALENDAR and auth.connection.revoked_at is None:
+            return auth.connection
+    return None
+
+
+def _outlook_calendar_client(session: Session, action):
+    from app.integrations.graph_client import GraphClient
+    from app.integrations.microsoft_auth import get_valid_access_token
+
+    connection = _outlook_calendar_connection(session, action)
+    if connection is None:
+        raise ActionUnavailable("No Outlook Calendar is authorized for this context")
+    return GraphClient(get_valid_access_token(session, connection))
+
+
+def _risk_for_update(params: UpdateCalendarEventParams) -> ActionRisk:
+    """Changing a meeting that has attendees sends every one of them an update.
+    Same reasoning as creating with attendees."""
+    return ActionRisk.HIGH if params.attendee_emails else ActionRisk.MEDIUM
+
+
+def _preview_outlook_event(params: CreateCalendarEventParams) -> dict:
+    return {
+        "summary": f"Create “{params.title}” on {params.start:%a %d %b at %H:%M}",
+        "title": params.title,
+        "when": f"{params.start:%a %d %b %H:%M} – {params.end:%H:%M}",
+        "attendees": params.attendee_emails,
+        "notifies": bool(params.attendee_emails),
+        "warning": (
+            f"{len(params.attendee_emails)} attendee(s) will be sent an invitation."
+            if params.attendee_emails else None
+        ),
+    }
+
+
+def _execute_outlook_create_event(session: Session, action) -> dict:
+    params = CreateCalendarEventParams(**action.params)
+    if params.end <= params.start:
+        raise ActionRejected("The event would end before it starts")
+    with _outlook_calendar_client(session, action) as client:
+        event = client.create_event(
+            title=params.title, start=params.start, end=params.end,
+            attendee_emails=params.attendee_emails or None,
+            # An event with attendees gets a Teams link where the tenant
+            # supports it; a solo event does not need one.
+            online=bool(params.attendee_emails),
+        )
+    return {"event_id": event["id"], "title": event["title"], "url": event["url"], "join_url": event["join_url"]}
+
+
+def _verify_outlook_event(session: Session, action, result: dict) -> tuple[bool, str]:
+    try:
+        with _outlook_calendar_client(session, action) as client:
+            event = client.get_event(result["event_id"])
+    except Exception:  # noqa: BLE001
+        return False, "Applied, but Sentinel could not read it back to confirm"
+    if event.get("cancelled"):
+        return False, "The event exists but is cancelled"
+    return True, f"Outlook has “{event['title']}” at {event['start']:%a %d %b %H:%M}"
+
+
+def _compensate_outlook_create_event(session: Session, action) -> str:
+    result = action.result or {}
+    event_id = result.get("event_id")
+    if not event_id:
+        raise ActionRejected("No event id was recorded, so it cannot be removed")
+    with _outlook_calendar_client(session, action) as client:
+        client.delete_event(event_id)
+    return "Event deleted from Outlook"
+
+
+def _preview_outlook_update(params: UpdateCalendarEventParams) -> dict:
+    changes = []
+    if params.title is not None:
+        changes.append(f"title → “{params.title}”")
+    if params.start is not None:
+        changes.append(f"start → {params.start:%a %d %b %H:%M}")
+    if params.end is not None:
+        changes.append(f"end → {params.end:%H:%M}")
+    if params.attendee_emails is not None:
+        changes.append(f"attendees → {', '.join(params.attendee_emails) or 'none'}")
+    return {
+        "summary": "Update the event: " + ("; ".join(changes) or "no changes"),
+        "changes": changes,
+        "notifies": bool(params.attendee_emails),
+        "warning": "Attendees will be notified of the change." if params.attendee_emails else None,
+    }
+
+
+def _execute_outlook_update_event(session: Session, action) -> dict:
+    """Records the PREVIOUS values before changing anything - that snapshot is
+    what makes the undo real rather than aspirational."""
+    params = UpdateCalendarEventParams(**action.params)
+    if params.start and params.end and params.end <= params.start:
+        raise ActionRejected("The event would end before it starts")
+
+    with _outlook_calendar_client(session, action) as client:
+        before = client.get_event(params.event_id)
+        after = client.update_event(
+            params.event_id, title=params.title, start=params.start,
+            end=params.end, attendee_emails=params.attendee_emails,
+        )
+    return {
+        "event_id": after["id"],
+        "title": after["title"],
+        "url": after["url"],
+        "previous": {
+            "title": before["title"],
+            "start": before["start"].isoformat() if before["start"] else None,
+            "end": before["end"].isoformat() if before["end"] else None,
+            "attendee_emails": before["attendee_emails"],
+        },
+    }
+
+
+def _compensate_outlook_update_event(session: Session, action) -> str:
+    from datetime import datetime as _dt
+
+    previous = (action.result or {}).get("previous") or {}
+    event_id = (action.result or {}).get("event_id")
+    if not event_id or not previous:
+        raise ActionRejected("The previous values were not recorded, so this cannot be put back")
+    with _outlook_calendar_client(session, action) as client:
+        client.update_event(
+            event_id,
+            title=previous.get("title"),
+            start=_dt.fromisoformat(previous["start"]) if previous.get("start") else None,
+            end=_dt.fromisoformat(previous["end"]) if previous.get("end") else None,
+            attendee_emails=previous.get("attendee_emails"),
+        )
+    return "Event restored to its previous title, time and attendees"
+
+
+def _preview_outlook_cancel(params: CancelCalendarEventParams) -> dict:
+    return {
+        "summary": f"Cancel “{params.title or params.event_id[:20]}”",
+        "title": params.title,
+        "attendee_count": params.attendee_count,
+        "irreversible": True,
+        "warning": (
+            f"This cancels the meeting and notifies {params.attendee_count} attendee(s). "
+            "The cancellation cannot be recalled."
+            if params.attendee_count
+            else "This cancels the meeting. It cannot be undone."
+        ),
+    }
+
+
+def _execute_outlook_cancel_event(session: Session, action) -> dict:
+    params = CancelCalendarEventParams(**action.params)
+    with _outlook_calendar_client(session, action) as client:
+        client.cancel_event(params.event_id, params.comment)
+    return {"event_id": params.event_id, "title": params.title, "cancelled": True}
+
+
+def _verify_outlook_cancel(session: Session, action, result: dict) -> tuple[bool, str]:
+    """Confirmed by Microsoft's own state: the event should now read cancelled,
+    or be gone entirely."""
+    try:
+        with _outlook_calendar_client(session, action) as client:
+            event = client.get_event(result["event_id"])
+    except Exception:  # noqa: BLE001 - a 404 here means it is genuinely gone
+        return True, "The event is no longer on the calendar"
+    if event.get("cancelled"):
+        return True, "Outlook reports the event as cancelled"
+    return False, "Cancelled, but the event still reads as active"
+
+
+_OUTLOOK_CALENDAR_ACTIONS = (
+    ActionSpec(
+        key="outlook.create_event",
+        label="Create a calendar event",
+        risk=ActionRisk.MEDIUM,
+        params_model=CreateCalendarEventParams,
+        external=True,
+        preview=_preview_outlook_event,
+        execute=_execute_outlook_create_event,
+        verify=_verify_outlook_event,
+        # Attendees turn a private write into invitations - the same escalation
+        # the Google calendar action uses, reused rather than restated.
+        risk_for=_risk_for_calendar,
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_outlook_create_event,
+    ),
+    ActionSpec(
+        key="outlook.update_event",
+        label="Edit a calendar event",
+        risk=ActionRisk.MEDIUM,
+        params_model=UpdateCalendarEventParams,
+        external=True,
+        preview=_preview_outlook_update,
+        execute=_execute_outlook_update_event,
+        verify=_verify_outlook_event,
+        risk_for=_risk_for_update,
+        # Genuinely undoable because the previous values are captured first.
+        reversibility=Reversibility.COMPENSATABLE,
+        compensate=_compensate_outlook_update_event,
+    ),
+    ActionSpec(
+        key="outlook.cancel_event",
+        label="Cancel a calendar event",
+        risk=ActionRisk.HIGH,
+        params_model=CancelCalendarEventParams,
+        external=True,
+        preview=_preview_outlook_cancel,
+        execute=_execute_outlook_cancel_event,
+        verify=_verify_outlook_cancel,
+        # No compensate: cancelling notifies every attendee, and that message
+        # cannot be unsent. Recreating the event would not undo what they saw.
+        reversibility=Reversibility.IRREVERSIBLE,
+        autonomy_eligible=False,
+    ),
+)
+
+
 # --- the allow-list --------------------------------------------------------
 
 REGISTRY: dict[str, ActionSpec] = {
@@ -1000,6 +1275,7 @@ REGISTRY: dict[str, ActionSpec] = {
         # allow-list stays one dict - a key absent from it cannot be proposed,
         # approved or executed, whatever any caller or model asks for.
         *_OUTLOOK_ACTIONS,
+        *_OUTLOOK_CALENDAR_ACTIONS,
     )
 }
 

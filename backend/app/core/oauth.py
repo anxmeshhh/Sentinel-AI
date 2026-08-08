@@ -125,6 +125,9 @@ if MICROSOFT_CONFIGURED:
         # verified live that POST /me/messages returns 403 with read-only mail
         # scope, so drafts and flag/read changes require it. Mail.Send is
         # deliberately absent - Sentinel creates drafts and never sends.
+        # Calendars.ReadWrite for the same reason: verified live that POST
+        # /me/events 403s with read-only calendar scope, so creating, editing
+        # and cancelling events all require it.
         #
         # User.Read is the baseline Graph needs to serve /me at all (that's
         # what fetch_account_identity calls) - confirmed directly: without it
@@ -132,7 +135,7 @@ if MICROSOFT_CONFIGURED:
         # since those only cover mail/calendar resources, not the profile
         # endpoint itself. It's the single most common Graph delegated scope
         # and needs no admin consent on a personal or standard work account.
-        client_kwargs={"scope": "offline_access User.Read Mail.ReadWrite Mail.Send Calendars.Read Team.ReadBasic.All Channel.ReadBasic.All Files.Read Notes.Read Tasks.Read"},
+        client_kwargs={"scope": "offline_access User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Team.ReadBasic.All Channel.ReadBasic.All Files.Read Notes.Read Tasks.Read"},
     )
 
 # Slack OAuth v2 is driven manually (see integrations/slack_auth.py), not through

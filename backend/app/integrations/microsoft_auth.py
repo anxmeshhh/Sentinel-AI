@@ -30,7 +30,7 @@ REFRESH_BUFFER = timedelta(minutes=5)
 # here would silently narrow access on the next token refresh). No openid/
 # email: this app requests no ID token at all, see core/oauth.py for why.
 # User.Read is what lets Graph's /me resolve the account identity.
-SCOPES = "offline_access User.Read Mail.ReadWrite Mail.Send Calendars.Read Team.ReadBasic.All Channel.ReadBasic.All Files.Read Notes.Read Tasks.Read"
+SCOPES = "offline_access User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Team.ReadBasic.All Channel.ReadBasic.All Files.Read Notes.Read Tasks.Read"
 
 
 class MicrosoftAuthError(Exception):

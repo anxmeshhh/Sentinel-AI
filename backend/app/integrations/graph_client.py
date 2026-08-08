@@ -298,6 +298,79 @@ class GraphClient:
         created = self._request("POST", f"/me/messages/{message_id}/createReply", {"comment": comment}).json()
         return {"draft_id": created.get("id"), "replied_to": message_id, "url": created.get("webLink")}
 
+    # --- Calendar writes -------------------------------------------------
+    def _event_body(self, *, title, start, end, attendee_emails, online: bool = False, body: str | None = None) -> dict:
+        payload: dict = {
+            "subject": title,
+            "start": {"dateTime": start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "UTC"},
+            "end": {"dateTime": end.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "UTC"},
+        }
+        if attendee_emails:
+            payload["attendees"] = [
+                {"emailAddress": {"address": a}, "type": "required"} for a in attendee_emails
+            ]
+        if online:
+            # Teams link on a work/school account; harmless (ignored) elsewhere.
+            payload["isOnlineMeeting"] = True
+            payload["onlineMeetingProvider"] = "teamsForBusiness"
+        if body is not None:
+            payload["body"] = {"contentType": "Text", "content": body}
+        return payload
+
+    def _event_out(self, e: dict) -> dict:
+        start = _parse((e.get("start") or {}).get("dateTime"))
+        return {
+            "id": e.get("id"),
+            "title": e.get("subject") or "(no title)",
+            "start": start,
+            "end": _parse((e.get("end") or {}).get("dateTime")),
+            "attendee_emails": [
+                (a.get("emailAddress") or {}).get("address")
+                for a in e.get("attendees", [])
+                if (a.get("emailAddress") or {}).get("address")
+            ],
+            "organizer": ((e.get("organizer") or {}).get("emailAddress") or {}).get("address"),
+            "online": bool(e.get("isOnlineMeeting")),
+            "join_url": (e.get("onlineMeeting") or {}).get("joinUrl"),
+            "cancelled": bool(e.get("isCancelled")),
+            "url": e.get("webUrl"),
+        }
+
+    def get_event(self, event_id: str) -> dict:
+        resp = self._get_with_retry(f"/me/events/{event_id}", {"$select": _EVENT_SELECT})
+        return self._event_out(resp.json())
+
+    def create_event(self, *, title, start, end, attendee_emails=None, online=False, body=None) -> dict:
+        payload = self._event_body(
+            title=title, start=start, end=end,
+            attendee_emails=attendee_emails or [], online=online, body=body,
+        )
+        return self._event_out(self._request("POST", "/me/events", payload).json())
+
+    def update_event(self, event_id: str, *, title=None, start=None, end=None, attendee_emails=None) -> dict:
+        """PATCH only what changed. Attendees are replaced wholesale when given,
+        which is Graph's own semantics - so the caller passes the full list."""
+        payload: dict = {}
+        if title is not None:
+            payload["subject"] = title
+        if start is not None:
+            payload["start"] = {"dateTime": start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "UTC"}
+        if end is not None:
+            payload["end"] = {"dateTime": end.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "UTC"}
+        if attendee_emails is not None:
+            payload["attendees"] = [{"emailAddress": {"address": a}, "type": "required"} for a in attendee_emails]
+        if not payload:
+            return self.get_event(event_id)
+        return self._event_out(self._request("PATCH", f"/me/events/{event_id}", payload).json())
+
+    def cancel_event(self, event_id: str, comment: str = "") -> None:
+        """As organizer: cancels AND notifies every attendee. That notification
+        is why this is treated as irreversible - it cannot be unsent."""
+        self._request("POST", f"/me/events/{event_id}/cancel", {"comment": comment} if comment else {})
+
+    def delete_event(self, event_id: str) -> None:
+        self._request("DELETE", f"/me/events/{event_id}")
+
     def send_draft(self, message_id: str) -> None:
         """Send an existing draft. Two steps (create draft, then send it) rather
         than Graph's one-shot /me/sendMail, because the draft gives the audit

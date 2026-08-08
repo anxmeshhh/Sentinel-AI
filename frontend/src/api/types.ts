@@ -950,3 +950,26 @@ export interface OutlookMailBody {
   flagged: boolean;
   url: string | null;
 }
+
+export interface OutlookEvent {
+  id: string;
+  event_id: string;
+  title: string;
+  start: string | null;
+  end: string | null;
+  attendee_count: number;
+  attendee_emails: string[];
+  organizer: string | null;
+  has_meeting_link: boolean;
+  meet_url: string | null;
+  status: string;
+  url: string | null;
+  day: string | null;
+}
+
+export interface OutlookCalendar {
+  events: OutlookEvent[];
+  /** Overlaps computed server-side, so the page and the assistant agree. */
+  conflicts: { a: string; b: string; when: string }[];
+  account: string | null;
+}

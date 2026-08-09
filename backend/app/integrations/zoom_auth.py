@@ -81,6 +81,23 @@ SCOPES = " ".join((
 ))
 
 
+# Setting this up, in the order the failures actually appear:
+#
+#   1. Zoom rejects http://localhost redirect URLs with 4700, even when the app
+#      registers exactly that URL and is installed. An HTTPS tunnel is required
+#      in local development - see scripts/zoom-tunnel.sh.
+#   2. An unpublished app must be installed on the account once, via the
+#      console's "Local Test -> Add App Now". Until then OAuth bounces to the
+#      Marketplace with a bare "Something went wrong".
+#   3. ANY change to the app config (redirect URL, scopes) invalidates that
+#      install, and step 2 has to be repeated. This is the one that looks like a
+#      regression when it is really Zoom's install lifecycle.
+#   4. A free/Basic account cannot grant the cloud_recording scopes, and Zoom
+#      refuses to install an app whose REQUIRED scopes the plan cannot satisfy -
+#      failing with the same bare error as step 2. Leave them off a free
+#      account's app entirely.
+
+
 class ZoomAuthError(Exception):
     pass
 

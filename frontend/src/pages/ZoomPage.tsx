@@ -158,6 +158,7 @@ export function ZoomPage() {
  *  the same short-lived connect ticket every other provider here uses. */
 function ZoomConnect() {
   const [connecting, setConnecting] = useState(false);
+  const error = new URLSearchParams(window.location.search).get("zoom_error");
 
   async function connect() {
     setConnecting(true);
@@ -173,8 +174,11 @@ function ZoomConnect() {
     <div className="rounded-md border border-dashed border-border px-6 py-16 text-center">
       <div className="text-body text-ink">Zoom isn't connected yet</div>
       <p className="mx-auto mt-1 max-w-md text-caption leading-relaxed text-ink-faint">
-        Connect your Zoom account to see your meetings, schedule and edit them from here, and read recordings where
-        your plan allows.
+        {error === "installed_now_connect"
+          ? "The app was installed on your Zoom account, but that install came from Zoom rather than from here, so Sentinel couldn't tell it was you. Click Connect to finish."
+          : error === "declined"
+            ? "Zoom didn't complete the authorization. You can try again."
+            : "Connect your Zoom account to see your meetings, schedule and edit them from here, and read recordings where your plan allows."}
       </p>
       <button onClick={connect} disabled={connecting} className="btn-primary mt-4">
         {connecting ? "Opening Zoom…" : "Connect Zoom"}

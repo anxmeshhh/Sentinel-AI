@@ -41,8 +41,11 @@ AUTHORIZE_URL = "https://zoom.us/oauth/authorize"
 TOKEN_URL = "https://zoom.us/oauth/token"
 REFRESH_BUFFER = timedelta(minutes=5)
 
-# What a fresh connection asks for, in Zoom's GRANULAR scope format (the classic
-# `meeting:read` style was superseded; a granular app rejects the old names).
+# What the Zoom APP should be configured with, in Zoom's GRANULAR scope format
+# (the classic `meeting:read` style was superseded; a granular app rejects the
+# old names). This is DOCUMENTATION of what to tick in the Zoom console - it is
+# deliberately never sent in the authorize request; see authorize_url below for
+# why doing so breaks consent outright.
 #
 # Least privilege, and every entry is here because something concrete needs it:
 #   user:read:user                    /users/me, for the account identity + plan
@@ -52,12 +55,19 @@ REFRESH_BUFFER = timedelta(minutes=5)
 #   meeting:update:meeting            update
 #   meeting:delete:meeting            delete
 #   meeting:read:list_past_participants  who actually attended (plan-gated)
-#   cloud_recording:read:list_user_recordings  recordings list (plan-gated)
+#
+# PLAN-GATED - add these two ONLY on a paid Zoom account, and mark them
+# `optional` if your console offers the toggle:
+#   cloud_recording:read:list_user_recordings  recordings list
 #   cloud_recording:read:list_recording_files  a meeting's files, incl. transcript
 #
-# The last three are requested but may not be GRANTED (an account without the
-# plan cannot consent to what it does not have). Nothing here assumes they
-# worked - services/zoom_capabilities.py asks Zoom what actually functions.
+# Verified the hard way: a Basic (free) account cannot grant them, and Zoom
+# refuses to INSTALL an app whose required scopes the account does not support -
+# it fails with a bare "Something went wrong" that names nothing. Leaving them
+# off a free account's app is the difference between the integration working and
+# not installing at all. Nothing in Sentinel assumes they were granted;
+# services/zoom_capabilities.py asks Zoom what actually functions and reports
+# recordings as a plan limitation rather than an error.
 SCOPES = " ".join((
     "user:read:user",
     "meeting:read:list_meetings",
@@ -83,7 +93,23 @@ def _basic_header() -> dict[str, str]:
 
 def authorize_url(redirect_uri: str, state: str) -> str:
     """Where the browser is sent to consent. `state` carries the connect ticket
-    so the callback can prove which user and workspace this belongs to."""
+    so the callback can prove which user and workspace this belongs to.
+
+    Deliberately sends NO `scope` parameter. Zoom grants exactly the scopes
+    configured on the app itself, and naming MORE than that in the authorize URL
+    makes Zoom reject the whole request - the consent screen never renders and
+    the browser is never redirected back, so the failure looks like nothing
+    happened at all.
+
+    That matters here because the scope list is not the same for every account:
+    the cloud_recording scopes only exist on paid plans, so a free account
+    literally cannot have configured them. Letting the app config be the source
+    of truth means one code path serves both, and the capability probe
+    (services/zoom_capabilities.py) reports afterwards what was actually granted.
+
+    This is the same lesson as the Microsoft refresh bug: never ask an OAuth
+    provider for more than what has actually been consented to.
+    """
     from urllib.parse import urlencode
 
     settings = get_settings()
@@ -92,9 +118,6 @@ def authorize_url(redirect_uri: str, state: str) -> str:
         "client_id": settings.zoom_client_id,
         "redirect_uri": redirect_uri,
         "state": state,
-        # Zoom applies the app's configured scopes; sending them explicitly
-        # keeps the request self-describing and matches what the app declares.
-        "scope": SCOPES,
     })
     return f"{AUTHORIZE_URL}?{query}"
 

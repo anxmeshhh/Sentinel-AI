@@ -14,7 +14,13 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from app.integrations.zoom_client import ZoomClient, ZoomError, ZoomPlanError, _vtt_to_text
+from app.integrations.zoom_client import (
+    ZoomClient,
+    ZoomError,
+    ZoomPlanError,
+    ZoomScopeError,
+    _vtt_to_text,
+)
 from app.models.attention_item import AttentionItem, AttentionState, AttentionType
 from app.models.base import Base
 from app.models.connection import Connection, Provider
@@ -262,6 +268,63 @@ def test_a_failed_probe_reports_unknown_rather_than_guessing(monkeypatch):
     assert account.plan is PlanType.UNKNOWN
     assert account.recordings is CapabilityState.UNKNOWN
     assert account.participants is CapabilityState.UNKNOWN
+
+
+def test_a_missing_scope_is_reported_as_such_not_as_unknown(monkeypatch):
+    """Found by live testing. Zoom answers 4711 "does not contain scopes", which
+    is a DEFINITE answer; the probe used to report "could not tell" and throw
+    that information away."""
+    import app.services.zoom_capabilities as caps
+
+    monkeypatch.setattr(caps, "ZoomClient", lambda token: _client(
+        _capability_handler(
+            plan_type=1, recordings_status=400,
+            recordings_body={"code": 4711, "message": "Invalid access token, does not contain scopes:[cloud_recording:read:list_user_recordings]."},
+        )
+    ))
+    account = describe_account("token", account_key="k4")
+    assert account.recordings is CapabilityState.REQUIRES_SCOPE
+    detail = account.as_dict()["capabilities"]["recordings"]["detail"]
+    # The remedy must be named, and it differs from the plan remedy.
+    assert "reconnect" in detail
+
+
+def test_a_missing_scope_is_distinct_from_a_plan_limit():
+    """Telling someone to buy a plan when they only needed to reconnect - or the
+    reverse - is worse than saying nothing, so the two stay separate types."""
+    def scope_handler(request):
+        return httpx.Response(400, json={"code": 4711, "message": "does not contain scopes:[x]"})
+
+    with _client(scope_handler) as client:
+        with pytest.raises(ZoomScopeError):
+            client.recordings()
+    # ZoomScopeError is still a ZoomError, so existing handlers keep working.
+    assert issubclass(ZoomScopeError, ZoomError)
+    assert not issubclass(ZoomScopeError, ZoomPlanError)
+
+
+def test_the_account_email_fills_in_a_missing_host(monkeypatch):
+    """Live-observed: Zoom omits host_email from the list response for a freshly
+    created meeting, leaving an opaque host_id that renders as noise. These are
+    that account's own meetings, so its owner IS the host - not a guess."""
+    def handler(request):
+        rows = [_meeting(host_email=None, host_id="E36sTSzyTtK3waNIECaf2Q")] if "upcoming" in str(request.url) else []
+        return httpx.Response(200, json={"meetings": rows})
+
+    with _client(handler) as client:
+        out = client.fetch_meetings(NOW - timedelta(days=1), account_email="me@example.com")
+    assert out[0]["actor"] == "me@example.com"
+    assert out[0]["payload"]["organizer"] == "me@example.com"
+
+
+def test_a_real_host_email_still_wins_over_the_fallback():
+    def handler(request):
+        rows = [_meeting(host_email="someone.else@example.com")] if "upcoming" in str(request.url) else []
+        return httpx.Response(200, json={"meetings": rows})
+
+    with _client(handler) as client:
+        out = client.fetch_meetings(NOW - timedelta(days=1), account_email="me@example.com")
+    assert out[0]["payload"]["organizer"] == "someone.else@example.com"
 
 
 def test_plan_gated_responses_raise_ZoomPlanError_not_a_generic_error():

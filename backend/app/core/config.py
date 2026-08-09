@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     # person authorizes their own Zoom account, so the token is theirs.
     zoom_client_id: str | None = None
     zoom_client_secret: str | None = None
+    # Zoom rejects http://localhost redirect URLs with error 4700 even when the
+    # app has one registered - verified directly against a correctly configured
+    # app. So Zoom's callback (and ONLY Zoom's) can be pointed at an HTTPS
+    # tunnel in local development. Falls back to backend_base_url, which is what
+    # a real deployment on HTTPS uses, so this is dev-only scaffolding rather
+    # than a permanent second base URL.
+    zoom_redirect_base_url: str | None = None
     # Legacy single shared PAT. Kept only so an existing .env doesn't fail to
     # load; nothing reads it any more.
     github_default_token: str | None = None

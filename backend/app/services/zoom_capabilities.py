@@ -28,7 +28,7 @@ from dataclasses import dataclass
 
 import structlog
 
-from app.integrations.zoom_client import ZoomClient, ZoomError, ZoomPlanError
+from app.integrations.zoom_client import ZoomClient, ZoomError, ZoomPlanError, ZoomScopeError
 
 logger = structlog.get_logger("sentinel.zoom_capabilities")
 
@@ -49,11 +49,16 @@ _PLAN_BY_CODE = {1: PlanType.BASIC, 2: PlanType.LICENSED, 3: PlanType.ON_PREM}
 
 
 class CapabilityState(str, enum.Enum):
-    """Three states, not two. `AVAILABLE`/`UNAVAILABLE` alone would force an
-    honest "we could not tell" into one of the two confident answers."""
+    """Four states. `AVAILABLE`/`UNAVAILABLE` alone would force an honest "we
+    could not tell" into one of two confident answers - and REQUIRES_SCOPE is
+    separate from REQUIRES_PLAN because the remedies differ completely: one is
+    fixed by reconnecting with the scope added, the other cannot be fixed
+    without changing plan. Telling someone to buy a plan when they only needed
+    to reconnect is a worse failure than saying nothing."""
 
     AVAILABLE = "available"
     REQUIRES_PLAN = "requires_plan"  # the account's plan does not include it
+    REQUIRES_SCOPE = "requires_scope"  # the app was never granted the permission
     UNKNOWN = "unknown"  # could not determine; say so rather than guess
 
 
@@ -102,12 +107,17 @@ _RECORDING_DETAIL = {
         "Cloud recording is part of Zoom's paid plans. This account records locally only, "
         "and local recordings never reach Zoom's API - so Sentinel cannot see them."
     ),
+    CapabilityState.REQUIRES_SCOPE: (
+        "The Zoom app wasn't granted the cloud recording permission. On a paid plan you can add "
+        "the cloud_recording scopes and reconnect; on a free plan Zoom does not offer them at all."
+    ),
     CapabilityState.UNKNOWN: "Sentinel could not check whether recordings are available on this account.",
 }
 
 _PARTICIPANT_DETAIL = {
     CapabilityState.AVAILABLE: "Sentinel can show who actually joined each past meeting.",
     CapabilityState.REQUIRES_PLAN: "Zoom restricts attendance reporting to paid plans.",
+    CapabilityState.REQUIRES_SCOPE: "The Zoom app wasn't granted the attendance reporting permission.",
     CapabilityState.UNKNOWN: "Sentinel could not check whether attendance reporting is available.",
 }
 
@@ -165,9 +175,13 @@ def _probe_recordings(client: ZoomClient) -> CapabilityState:
         client.recordings()
     except ZoomPlanError:
         return CapabilityState.REQUIRES_PLAN
+    except ZoomScopeError:
+        # Zoom named the missing scope outright (4711). That is a definite
+        # answer, so reporting UNKNOWN here would be throwing away information
+        # the provider handed us - which is exactly what this probe did before
+        # live testing caught it.
+        return CapabilityState.REQUIRES_SCOPE
     except ZoomError as exc:
-        # A 403 here is Zoom refusing the scope rather than the plan; either way
-        # Sentinel cannot read recordings, but it should not claim to know why.
         logger.info("zoom_recording_probe_failed", error=str(exc)[:200])
         return CapabilityState.UNKNOWN
     return CapabilityState.AVAILABLE

@@ -278,6 +278,20 @@ async def microsoft_connect_callback(request: Request, session: Session = Depend
 # server session. Zoom's consent screen can bounce through zoom.us domains, and
 # `state` is the mechanism designed to survive that - it is also what protects
 # the callback from CSRF, since a forged callback cannot mint a signed ticket.
+def _zoom_redirect_uri() -> str:
+    """Zoom's callback URL, honoured identically at authorize and exchange time.
+
+    Split from backend_base_url because Zoom rejects http://localhost with error
+    4700 even when the app has exactly that URL registered - confirmed against a
+    correctly configured app whose manifest showed the matching redirect. Local
+    development therefore points Zoom (and only Zoom) at an HTTPS tunnel; every
+    other provider's callback still runs on localhost, unaffected.
+    """
+    settings = get_settings()
+    base = settings.zoom_redirect_base_url or settings.backend_base_url
+    return f"{base.rstrip('/')}/integrations/zoom/callback"
+
+
 @router.post("/zoom/connect-ticket", response_model=ConnectTicketOut)
 def create_zoom_connect_ticket(
     user: User = Depends(get_current_user),
@@ -302,8 +316,7 @@ async def zoom_connect(request: Request, ticket: str):
     # stays in the session, where losing it degrades to the default rather than
     # breaking the connection.
     request.session["zoom_connect_return_to"] = _safe_return_path(request.query_params.get("return_to"))
-    redirect_uri = f"{get_settings().backend_base_url}/integrations/zoom/callback"
-    return RedirectResponse(zoom_auth.authorize_url(redirect_uri, state=ticket))
+    return RedirectResponse(zoom_auth.authorize_url(_zoom_redirect_uri(), state=ticket))
 
 
 @router.get("/zoom/callback")
@@ -313,18 +326,28 @@ async def zoom_connect_callback(request: Request, code: str = "", state: str = "
 
     frontend = get_settings().frontend_base_url
     return_to = _safe_return_path(request.session.pop("zoom_connect_return_to", None))
+    if code and not state:
+        # Zoom's OWN install flow ("Local Test -> Add App Now", or a Marketplace
+        # listing) lands here: a valid code, but none of Sentinel's state, so
+        # there is no way to know which user or workspace it belongs to. Binding
+        # it to the browser session instead would be a real vulnerability - any
+        # code delivered to this endpoint would attach a Zoom account to whoever
+        # happened to be signed in. Refused, with the next step named, because
+        # the install itself did succeed and one more click finishes the job.
+        return RedirectResponse(f"{frontend}/zoom?zoom_error=installed_now_connect")
     if not code or not state:
         # The user pressed Decline, or Zoom returned an error instead of a code.
-        return RedirectResponse(f"{frontend}/?zoom_error=declined")
+        return RedirectResponse(f"{frontend}/zoom?zoom_error=declined")
 
     try:
         user_id, workspace_id = decode_connect_ticket(state, expected_purpose=ZOOM_CONNECT_PURPOSE)
     except InvalidTokenError:
         return RedirectResponse(f"{frontend}/?zoom_error=session_expired")
 
-    redirect_uri = f"{get_settings().backend_base_url}/integrations/zoom/callback"
     try:
-        token = zoom_auth.exchange_code(code, redirect_uri)
+        # Must be byte-identical to the one sent at authorize time - Zoom
+        # re-validates it during the exchange, so both call the same helper.
+        token = zoom_auth.exchange_code(code, _zoom_redirect_uri())
     except zoom_auth.ZoomAuthError as exc:
         logger.warning("zoom_connect_failed", error=str(exc)[:200])
         return RedirectResponse(f"{frontend}/?zoom_error=exchange_failed")

@@ -605,7 +605,7 @@ def zoom_participants(
     user: User = Depends(get_current_user),
 ) -> dict:
     """Who actually attended."""
-    from app.integrations.zoom_client import ZoomPlanError
+    from app.integrations.zoom_client import ZoomPlanError, ZoomScopeError
 
     client, _ = _zoom_client_for(session, workspace_id, user.id)
     try:
@@ -615,6 +615,12 @@ def zoom_participants(
         return {
             "available": False,
             "reason": "Zoom restricts attendance reporting to paid plans.",
+            "participants": [],
+        }
+    except ZoomScopeError:
+        return {
+            "available": False,
+            "reason": "The Zoom app wasn't granted the attendance reporting permission.",
             "participants": [],
         }
     except Exception:  # noqa: BLE001 - a meeting that never ran has no report
@@ -646,7 +652,7 @@ def zoom_recordings(
     user: User = Depends(get_current_user),
 ) -> dict:
     """Cloud recordings, read live."""
-    from app.integrations.zoom_client import ZoomPlanError
+    from app.integrations.zoom_client import ZoomPlanError, ZoomScopeError
 
     client, _ = _zoom_client_for(session, workspace_id, user.id)
     try:
@@ -658,6 +664,15 @@ def zoom_recordings(
             "reason": (
                 "Cloud recording is part of Zoom's paid plans. This account can record locally, "
                 "but local recordings never reach Zoom's API - so Sentinel cannot see them."
+            ),
+            "recordings": [],
+        }
+    except ZoomScopeError:
+        return {
+            "available": False,
+            "reason": (
+                "The Zoom app wasn't granted the cloud recording permission, so Sentinel cannot "
+                "read recordings for this account."
             ),
             "recordings": [],
         }
@@ -683,7 +698,7 @@ def zoom_transcript(
     caller: taking a caller-supplied download URL would turn this endpoint into
     an open proxy for any address, authenticated with the user's Zoom token.
     """
-    from app.integrations.zoom_client import ZoomPlanError
+    from app.integrations.zoom_client import ZoomPlanError, ZoomScopeError
 
     client, _ = _zoom_client_for(session, workspace_id, user.id)
     try:
@@ -697,6 +712,8 @@ def zoom_transcript(
             text = client.transcript_text(transcript["download_url"])
     except ZoomPlanError:
         return {"available": False, "reason": "Transcripts need a Zoom plan that includes cloud recording.", "text": ""}
+    except ZoomScopeError:
+        return {"available": False, "reason": "The Zoom app wasn't granted the cloud recording permission.", "text": ""}
     except HTTPException:
         raise
     except Exception:  # noqa: BLE001

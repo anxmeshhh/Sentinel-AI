@@ -51,6 +51,20 @@ class ZoomPlanError(ZoomError):
     """
 
 
+class ZoomScopeError(ZoomError):
+    """The token was never granted the scope this call needs (Zoom code 4711).
+
+    Also a fact rather than a failure, but a DIFFERENT fact from ZoomPlanError,
+    and worth separating: a missing scope can be fixed by re-consenting with it
+    added, whereas a plan limit cannot. Conflating them would tell a user to go
+    buy a plan when all they needed was to reconnect - or the reverse.
+
+    Found by live testing: removing the cloud_recording scopes made Zoom answer
+    4711 "does not contain scopes", which the plan heuristic did not match, so
+    the probe reported "could not tell" about something Zoom had stated exactly.
+    """
+
+
 def _parse(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -83,11 +97,14 @@ class ZoomClient:
     def _request(self, method: str, path: str, **kwargs) -> dict:
         response = self._client.request(method, path, **kwargs)
         if response.status_code in (400, 403):
-            # Zoom reports a missing plan entitlement as 400 (code 200 "No
-            # permission" / 4711) or 403, with a message that names it. Read the
-            # body rather than guessing from the status alone, since both codes
-            # are also used for ordinary bad requests.
+            # Zoom reports both "your plan lacks this" and "your token lacks the
+            # scope" as a 400 or 403 with a descriptive body. Read the body
+            # rather than guessing from the status, since both codes are also
+            # used for ordinary bad requests - and separate the two causes,
+            # because the remedies are completely different.
             body = (response.text or "").lower()
+            if "does not contain scopes" in body or '"code":4711' in body.replace(" ", ""):
+                raise ZoomScopeError(response.text[:300])
             if any(hint in body for hint in ("plan", "subscription", "not available", "no permission", "upgrade")):
                 raise ZoomPlanError(response.text[:300])
         if response.status_code == 404:
@@ -132,7 +149,7 @@ class ZoomClient:
 
     # --- meetings: read ----------------------------------------------------
 
-    def fetch_meetings(self, since: datetime) -> list[dict]:
+    def fetch_meetings(self, since: datetime, *, account_email: str = "") -> list[dict]:
         """Upcoming and recently-past meetings, normalized to the CALENDAR_EVENT
         payload every other calendar provider produces.
 
@@ -156,7 +173,7 @@ class ZoomClient:
 
         out: list[dict] = []
         for raw in seen.values():
-            normalized = self._normalize_meeting(raw)
+            normalized = self._normalize_meeting(raw, account_email=account_email)
             if normalized is None:
                 continue
             # Past meetings older than the sync window are not re-ingested; the
@@ -166,7 +183,7 @@ class ZoomClient:
             out.append(normalized)
         return out
 
-    def _normalize_meeting(self, m: dict) -> dict | None:
+    def _normalize_meeting(self, m: dict, *, account_email: str = "") -> dict | None:
         """One Zoom meeting -> the provider-neutral calendar payload.
 
         Returns None for a recurring meeting with no fixed time (Zoom omits
@@ -179,9 +196,15 @@ class ZoomClient:
         duration = m.get("duration")
         end = start + timedelta(minutes=duration if isinstance(duration, int) and duration > 0 else 60)
         join_url = m.get("join_url") or ""
+        # Zoom often omits host_email from the list response (confirmed live on a
+        # freshly created meeting), leaving only an opaque host_id. Falling back
+        # to the connected account's own address is not a guess: these are the
+        # meetings of THAT account, so its owner is the host. Without this the
+        # organizer renders as an unreadable id, or as nothing at all.
+        host = m.get("host_email") or account_email or m.get("host_id") or "unknown"
         return {
             "external_id": str(m["id"]),
-            "actor": m.get("host_email") or m.get("host_id") or "unknown",
+            "actor": host,
             "occurred_at": start,
             "payload": {
                 "title": m.get("topic") or "(no title)",
@@ -193,7 +216,7 @@ class ZoomClient:
                 # `or 0` treats it as "unknown" rather than "nobody".
                 "attendee_count": None,
                 "attendee_emails": [],
-                "organizer": m.get("host_email") or "",
+                "organizer": host,
                 # Every Zoom meeting has a join link by definition - that is what
                 # a Zoom meeting IS. Mapped onto the same provider-neutral key
                 # Google's Meet link and Outlook's Teams link already use.

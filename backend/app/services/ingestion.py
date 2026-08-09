@@ -588,7 +588,10 @@ def _ingest_zoom(session: Session, connection: Connection, since: datetime, sign
     now = datetime.now(timezone.utc)
 
     with ZoomClient(access_token) as client:
-        for meeting in client.fetch_meetings(since):
+        # connection.org is the connected Zoom account's email - the host of
+        # every meeting this connection can see, and the readable fallback when
+        # Zoom's list response omits host_email.
+        for meeting in client.fetch_meetings(since, account_email=connection.org or ""):
             if meeting["occurred_at"] >= now:
                 upcoming += 1
             signal_repo.upsert(

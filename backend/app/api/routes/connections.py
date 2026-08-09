@@ -48,8 +48,11 @@ def delete_connection(
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
 ) -> None:
-    connection = ConnectionRepository(session, workspace_id).get(connection_id)
+    repo = ConnectionRepository(session, workspace_id)
+    connection = repo.get(connection_id)
     if connection is None:
         raise HTTPException(status_code=404, detail="Connection not found")
-    session.delete(connection)
-    session.commit()
+    # Not session.delete(): six tables reference connections and only signals
+    # had a cascade, so a bare delete raised IntegrityError and the user saw a
+    # 500 on "Disconnect". The repository owns the whole dependency graph.
+    repo.disconnect(connection)

@@ -547,7 +547,10 @@ spot). `git grep "sa.Enum"` across future migrations is worth a glance whenever 
 
 ### Known gaps (deliberately deferred, not oversights)
 
-- **Zoom** — still fully deferred, not started.
+- **Zoom** — still fully deferred, not started. *(Since resolved: Zoom shipped as a first-class
+  provider and was live-verified against a real account. Meetings normalize to `CALENDAR_EVENT`, so
+  no Zoom-specific detector or pipeline exists. Setup, scopes, plan limits and Zoom's install
+  lifecycle are documented in `CONNECTIONS.md` §6.)*
 - **No UI surfaces the ingested Gmail/Calendar signals yet** — Settings shows connection status, but
   the Personal Workspace's Tasks/Calendar/Insights pages (stubbed since Phase 1.5) still don't
   render this data. The Engineering/Executive agents also don't reason over these new signal types

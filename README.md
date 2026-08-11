@@ -20,7 +20,27 @@ wrong, it doesn't wait to be asked.
 
 ## Status
 
-**Planning complete, implementation not yet started.** See the roadmap below for what's next.
+**Building.** The pipeline runs end to end on real accounts:
+
+```
+Connectors → Signals → Findings → Entities → Situations
+          → Context → Reasoning → Memory → Decisions → Action Registry
+```
+
+- **12 connected services** across five provider families — Google (Gmail,
+  Calendar, Drive), GitHub, Slack, Microsoft 365 (Outlook Mail, Outlook
+  Calendar, Teams, OneDrive, OneNote, To Do) and Zoom. Each was live-verified
+  against a real account before being called done.
+- **Deterministic detection, LLM narration.** Findings come from rules; the LLM
+  only ever sees `SituationContext.to_facts()` and never invents a finding.
+- **Every write goes through the Action Registry** — allow-listed, previewed,
+  confirmed, executed, verified against the provider, audited, and undone where
+  a real inverse exists.
+- **808 backend tests.**
+
+Honest gaps: correlation has not yet fired on real data (no two findings have
+shared an entity), so Reasoning/Memory/Decisions run only in tests; Notion and
+Jira are not started.
 
 ## Documentation
 
@@ -28,6 +48,7 @@ wrong, it doesn't wait to be asked.
 |-----|----------|
 | [`PRD.md`](./PRD.md) | Problem statement, vision, target users, MVP scope, functional/non-functional requirements, success metrics, risks |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | System design, tech stack rationale, data model, agent contract, LangGraph orchestration, deployment topology |
+| [`CONNECTIONS.md`](./CONNECTIONS.md) | Per-provider setup: OAuth apps, scopes, redirect URLs, plan limits, and the traps each provider has |
 | [`ROADMAP.md`](./ROADMAP.md) | Phased build plan from MVP to the full 10-agent platform |
 
 ## The 10 Agents (Vision)

@@ -18,21 +18,24 @@ re-designed per provider:
 |---|---|---|---|---|---|---|
 | Google (Gmail, Calendar, Drive) | OAuth ✅ | ✅ | ✅ | ✅ | ✅ | **COMPLETE** ✅ |
 | GitHub | OAuth ✅ | ✅ | ✅ | ✅ | ✅ | **COMPLETE** ✅ |
-| Slack | — | — | — | — | — | **BLOCKED** 🔴 |
-| Notion | — | — | — | — | — | **BLOCKED** 🔴 |
-| Microsoft 365 | — | — | — | — | — | **BLOCKED** 🔴 |
-| Jira | — | — | — | — | — | **BLOCKED** 🔴 |
-| Zoom | — | — | — | — | — | **BLOCKED** 🔴 |
+| Slack | OAuth ✅ | ✅ | ✅ | ✅ | ✅ | **COMPLETE** ✅ |
+| Microsoft 365 (7 services) | OAuth ✅ | ✅ | ✅ | ✅ | ✅ | **COMPLETE** ✅ |
+| Zoom | OAuth ✅ | ✅ | ✅ | ✅ | ✅ | **COMPLETE** ✅ |
+| Notion | — | — | — | — | — | **NOT STARTED** |
+| Jira | — | — | — | — | — | **NOT STARTED** |
 
-Everything below `GitHub` is blocked on **one thing only**: an OAuth
-application that has to be registered by a human with an account on that
-platform. No amount of code removes that step, and a provider is not built
-until it has fetched real data from a real account — a client written against
-the docs and never run is a guess with good syntax.
+A provider is not built until it has fetched real data from a real account — a
+client written against the docs and never run is a guess with good syntax. Every
+row marked COMPLETE above has been exercised against a live account, including
+its write actions where it has them.
 
-Google and GitHub credentials are configured. `microsoft_client_id` exists in
-`Settings` but is empty, and is for *login* rather than for Outlook/OneDrive
-data.
+The two remaining rows are blocked on the same single thing the others were: an
+OAuth application that a human with an account on that platform has to register.
+No amount of code removes that step.
+
+**Known plan limits on the live accounts** (reported as capabilities, never as
+errors): Microsoft Teams/SharePoint/Planner need a licensed work tenant; Zoom
+cloud recordings and attendance reports need a paid Zoom plan.
 
 ---
 
@@ -120,17 +123,80 @@ JIRA_CLIENT_ID=...
 JIRA_CLIENT_SECRET=...
 ```
 
-### 6. Zoom
+### 6. Zoom — ✅ DONE (live-verified)
 
-<https://marketplace.zoom.us/develop/create> → **General App**
-
-- Redirect URL: `http://localhost:8000/integrations/zoom/callback`
-- Scopes: `meeting:read`, `recording:read`, `user:read`
+<https://marketplace.zoom.us/user/build> → **General App** → **User-managed**
 
 ```
 ZOOM_CLIENT_ID=...
 ZOOM_CLIENT_SECRET=...
+ZOOM_REDIRECT_BASE_URL=https://<your-tunnel>.ngrok-free.dev   # local dev only
 ```
+
+Zoom took four attempts to connect, and every failure reported something
+unhelpful. The four causes, in the order they bite:
+
+**1. The redirect URL must be HTTPS. `http://localhost` is rejected.**
+Zoom answers `4700 Invalid redirect url` for a localhost callback *even when
+the app registers exactly that URL and is installed on the account* — verified
+directly, not inferred. Every other provider here accepts localhost; Zoom alone
+does not. Hence `ZOOM_REDIRECT_BASE_URL`, which overrides `backend_base_url` for
+Zoom's callback only and leaves every other provider untouched. In production
+leave it empty: a deployed backend on real HTTPS satisfies Zoom natively.
+
+Local dev needs a tunnel (`ngrok http 8000`, or `scripts/zoom-tunnel.sh` for
+cloudflared). A free tunnel's hostname changes on restart, which then requires
+step 3 again.
+
+**2. An unpublished app must be installed once, by hand.**
+**Add your app → Local Test → Add App Now**. Until then OAuth bounces to the
+Marketplace with a bare "Something went wrong". That install lands on Sentinel's
+callback with a `code` but no `state`, which is refused on purpose — binding it
+to the browser session would attach a Zoom account to whoever happened to be
+signed in. The page says so and asks you to press Connect.
+
+**3. ANY config change invalidates that install.** Change the redirect URL or
+the scopes and you must repeat step 2. This is the one that looks like a
+regression in our code when it is Zoom's install lifecycle.
+
+**4. Don't request scopes the account's plan cannot grant.** Zoom refuses to
+install an app whose *required* scopes exceed the plan — with the same bare
+error as step 2. On a free/Basic account, omit the two `cloud_recording` scopes
+entirely.
+
+#### Scopes (granular format — the classic `meeting:read` names are rejected)
+
+| Scope | For | Free plan |
+|---|---|---|
+| `user:read:user` | account identity + plan | ✅ |
+| `meeting:read:list_meetings` | ingestion | ✅ |
+| `meeting:read:meeting` | agenda, join URL, settings | ✅ |
+| `meeting:write:meeting` | create | ✅ |
+| `meeting:update:meeting` | update | ✅ |
+| `meeting:delete:meeting` | delete | ✅ |
+| `meeting:read:list_past_participants` | attendance | ⚠️ paid plan only |
+| `cloud_recording:read:list_user_recordings` | recordings | ❌ paid only |
+| `cloud_recording:read:list_recording_files` | transcripts | ❌ paid only |
+
+The authorize request deliberately sends **no `scope` parameter** — the app's
+own configuration is the source of truth. Naming more than the app has makes
+Zoom reject the whole request, and it is what lets one code path serve free and
+paid accounts alike. `services/zoom_capabilities.py` then asks Zoom what
+actually functions and reports the rest as capabilities, never errors.
+
+#### Distribution — who can connect
+
+| Tier | Who | Zoom approval |
+|---|---|---|
+| **Development** (current) | Only the account that owns the app | none |
+| **Beta URL** | A few named outside accounts | request required |
+| **Published** | Anyone | metadata + security review |
+
+An unpublished app can only be installed by its owning account, so connecting a
+*second* Zoom account fails with no fix available in code. Publishing needs
+hosted Terms, Privacy Policy, documentation and a support URL, plus a security
+review of scope handling — a launch task, not a build task, and one that would
+fail on localhost infrastructure anyway.
 
 ---
 

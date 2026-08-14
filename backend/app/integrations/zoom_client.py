@@ -22,6 +22,7 @@ generic failure, so callers can report a capability honestly instead of an error
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -94,8 +95,32 @@ class ZoomClient:
 
     # --- transport ---------------------------------------------------------
 
+    def _retrying_request(self, method: str, path: str, max_retries: int = 3, **kwargs) -> httpx.Response:
+        """Retry a 429 with backoff, mirroring the Graph client.
+
+        Zoom enforces a PER-SECOND rate limit, which two back-to-back calls trip
+        easily - and a sync legitimately makes several in a row. Observed live:
+        listing upcoming meetings succeeded and the very next call for previous
+        meetings returned 429.
+
+        That was not merely a lost page. `fetch_meetings` swallows a failed list
+        to protect the other one, so the throttle surfaced as "this enumeration
+        was incomplete", which correctly but permanently disabled stale-signal
+        reconciliation. Backing off is what makes the reconciliation reachable
+        at all, rather than dead code that always takes the safe branch.
+        """
+        for attempt in range(max_retries + 1):
+            response = self._client.request(method, path, **kwargs)
+            if response.status_code == 429 and attempt < max_retries:
+                wait = int(response.headers.get("Retry-After", "1") or 1)
+                logger.warning("zoom_throttled", path=path, attempt=attempt, wait=wait)
+                time.sleep(min(max(wait, 1), 10))
+                continue
+            return response
+        return response
+
     def _request(self, method: str, path: str, **kwargs) -> dict:
-        response = self._client.request(method, path, **kwargs)
+        response = self._retrying_request(method, path, **kwargs)
         if response.status_code in (400, 403):
             # Zoom reports both "your plan lacks this" and "your token lacks the
             # scope" as a 400 or 403 with a descriptive body. Read the body
@@ -149,7 +174,7 @@ class ZoomClient:
 
     # --- meetings: read ----------------------------------------------------
 
-    def fetch_meetings(self, since: datetime, *, account_email: str = "") -> list[dict]:
+    def fetch_meetings(self, since: datetime, *, account_email: str = "", stats: dict | None = None) -> list[dict]:
         """Upcoming and recently-past meetings, normalized to the CALENDAR_EVENT
         payload every other calendar provider produces.
 
@@ -157,7 +182,14 @@ class ZoomClient:
         cares about what is about to start, but a meeting that just finished is
         what makes a recording or a follow-up meaningful. Deduped on id, since a
         meeting can legitimately appear in both around its start time.
+
+        `stats["complete"]` reports whether BOTH lists were read successfully.
+        It matters because a failure here is swallowed so one bad list cannot
+        lose the other - which means an empty return is ambiguous between "no
+        meetings" and "both calls failed". Callers that prune stale signals must
+        refuse to act on the ambiguous case; see SignalRepository.reconcile.
         """
+        failures = 0
         seen: dict[str, dict] = {}
         for list_type in ("upcoming_meetings", "previous_meetings"):
             try:
@@ -166,10 +198,14 @@ class ZoomClient:
                 # One list type failing must not lose the other. `scheduled` is
                 # the universally-available fallback shape.
                 logger.info("zoom_meeting_list_unavailable", list_type=list_type)
+                failures += 1
                 continue
             for m in rows:
                 if m.get("id") is not None:
                     seen.setdefault(str(m["id"]), m)
+
+        if stats is not None:
+            stats["complete"] = failures == 0
 
         out: list[dict] = []
         for raw in seen.values():

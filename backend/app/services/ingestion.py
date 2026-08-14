@@ -298,10 +298,22 @@ def _ingest_slack(
 
 
 def _ingest_google_calendar(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None) -> int:
+    """Google Calendar -> CALENDAR_EVENT, and prunes events deleted at Google.
+
+    `fetch_events(since)` asks for timeMin=since with no upper bound, so what
+    comes back is EVERY event from `since` forward - a complete enumeration of
+    that range, not an incremental slice. That is what makes pruning sound here:
+    a stored event in the same range that Google did not return has been
+    deleted. A failure raises out of the client, so this line is only reached
+    after a successful read.
+    """
+    metrics = metrics if metrics is not None else {}
     access_token = get_valid_access_token(session, connection)
     count = 0
+    seen: set[str] = set()
     with GoogleCalendarClient(access_token) as client:
         for event in client.fetch_events(since):
+            seen.add(event["external_id"])
             signal_repo.upsert(
                 connection_id=connection.id,
                 type=SignalType.CALENDAR_EVENT,
@@ -311,6 +323,11 @@ def _ingest_google_calendar(session: Session, connection: Connection, since: dat
                 occurred_at=event["occurred_at"],
             )
             count += 1
+
+    metrics["removed"] = signal_repo.reconcile(
+        connection_id=connection.id, type=SignalType.CALENDAR_EVENT,
+        seen_external_ids=seen, window_start=since,
+    )
     return count
 
 
@@ -352,11 +369,24 @@ def _ingest_outlook_mail(session: Session, connection: Connection, since: dateti
 
 def _ingest_outlook_calendar(session: Session, connection: Connection, since: datetime, signal_repo: SignalRepository, metrics: dict | None = None) -> int:
     """Outlook Calendar -> CALENDAR_EVENT signals, normalized to the Google
-    Calendar payload shape so meeting detection works unchanged."""
+    Calendar payload shape so meeting detection works unchanged.
+
+    Also prunes events deleted in Outlook. `fetch_events` reads a calendarView
+    over [now, now + CALENDAR_HORIZON], which is a complete enumeration of that
+    window - so a stored event inside it that Graph did not return is gone.
+    Events outside the window are untouched, because nothing was asked about
+    them. Graph raises on failure, so a failed read never reaches the prune.
+    """
+    from app.integrations.graph_client import CALENDAR_HORIZON
+
+    metrics = metrics if metrics is not None else {}
     access_token = get_valid_microsoft_token(session, connection)
+    now = datetime.now(timezone.utc)
     count = 0
+    seen: set[str] = set()
     with GraphClient(access_token) as client:
         for event in client.fetch_events(since):
+            seen.add(event["external_id"])
             signal_repo.upsert(
                 connection_id=connection.id,
                 type=SignalType.CALENDAR_EVENT,
@@ -366,6 +396,11 @@ def _ingest_outlook_calendar(session: Session, connection: Connection, since: da
                 occurred_at=event["occurred_at"],
             )
             count += 1
+
+    metrics["removed"] = signal_repo.reconcile(
+        connection_id=connection.id, type=SignalType.CALENDAR_EVENT,
+        seen_external_ids=seen, window_start=now, window_end=now + CALENDAR_HORIZON,
+    )
     return count
 
 
@@ -534,9 +569,11 @@ def _ingest_microsoft_todo(session: Session, connection: Connection, since: date
     access_token = get_valid_microsoft_token(session, connection)
     now = datetime.now(timezone.utc)
     count = overdue = due_today = completed = 0
+    seen: set[str] = set()
 
     with GraphClient(access_token) as client:
         for t in client.tasks():
+            seen.add(t["id"])
             is_done = t["status"] == "completed" or t["completed_at"] is not None
             due = t["due_at"]
             if is_done:
@@ -558,6 +595,12 @@ def _ingest_microsoft_todo(session: Session, connection: Connection, since: date
             )
             count += 1
 
+    # Every task in every list is read on each sync (see above), so this is a
+    # complete enumeration with no time window at all - any stored TASK signal
+    # for this connection that Graph did not return has been deleted in To Do.
+    metrics["removed"] = signal_repo.reconcile(
+        connection_id=connection.id, type=SignalType.TASK, seen_external_ids=seen,
+    )
     metrics["tasks"] = count
     metrics["overdue"] = overdue
     metrics["due_today"] = due_today
@@ -586,14 +629,17 @@ def _ingest_zoom(session: Session, connection: Connection, since: datetime, sign
     access_token = get_valid_zoom_token(session, connection)
     count = upcoming = 0
     now = datetime.now(timezone.utc)
+    seen: set[str] = set()
+    fetch_stats: dict = {}
 
     with ZoomClient(access_token) as client:
         # connection.org is the connected Zoom account's email - the host of
         # every meeting this connection can see, and the readable fallback when
         # Zoom's list response omits host_email.
-        for meeting in client.fetch_meetings(since, account_email=connection.org or ""):
+        for meeting in client.fetch_meetings(since, account_email=connection.org or "", stats=fetch_stats):
             if meeting["occurred_at"] >= now:
                 upcoming += 1
+            seen.add(meeting["external_id"])
             signal_repo.upsert(
                 connection_id=connection.id,
                 type=SignalType.CALENDAR_EVENT,
@@ -603,6 +649,20 @@ def _ingest_zoom(session: Session, connection: Connection, since: datetime, sign
                 occurred_at=meeting["occurred_at"],
             )
             count += 1
+
+    # Prune meetings deleted in Zoom - but ONLY when both meeting lists were
+    # read successfully. fetch_meetings deliberately swallows a failing list so
+    # one bad call cannot lose the other, which makes an empty result ambiguous
+    # between "no meetings" and "everything failed". Pruning on the ambiguous
+    # case would delete a whole calendar's worth of signals because of a
+    # transient API error.
+    if fetch_stats.get("complete"):
+        metrics["removed"] = signal_repo.reconcile(
+            connection_id=connection.id, type=SignalType.CALENDAR_EVENT,
+            seen_external_ids=seen, window_start=since - timedelta(days=1),
+        )
+    else:
+        metrics["reconcile_skipped"] = "incomplete_meeting_list"
 
     metrics["meetings"] = count
     metrics["upcoming"] = upcoming

@@ -55,6 +55,66 @@ class SignalRepository(WorkspaceScopedRepository[Signal]):
             stmt = stmt.on_duplicate_key_update(payload=stmt.inserted.payload, actor=stmt.inserted.actor)
         self.session.execute(stmt)
 
+    def reconcile(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        type: SignalType,
+        seen_external_ids: set[str],
+        window_start: datetime | None = None,
+        window_end: datetime | None = None,
+    ) -> int:
+        """Delete signals the provider no longer has. Returns the count removed.
+
+        Ingestion is an upsert, so until this existed a signal could only ever
+        appear - never disappear. Deleting a meeting at the provider therefore
+        left its signal behind, and the detectors kept producing "starts in 3h"
+        for a meeting that no longer existed. Verified against a live Zoom
+        account: 2 stored meeting signals, 1 real meeting.
+
+        The detectors need no change. `refresh_attention` already auto-completes
+        an item whose detector stops firing, so removing the stale signal is
+        enough for the finding, the situation and everything downstream to
+        resolve on their own.
+
+        ## The window is the whole safety argument
+
+        A signal missing from an INCREMENTAL fetch is not deleted - it is merely
+        outside the window that was asked for. Pruning on that basis would erase
+        real history. So this never infers the window: the caller passes the
+        exact range over which its fetch was a COMPLETE enumeration, and only
+        that range is touched. A handler whose fetch is incremental (mail,
+        commits, chat) must not call this at all.
+
+        `seen_external_ids` being empty is a legitimate answer - the user may
+        genuinely have deleted everything - so it is honoured rather than
+        treated as suspicious. That is precisely why the caller must only reach
+        this line after a fetch it knows SUCCEEDED: a swallowed error that
+        returns an empty list would otherwise read as "the user deleted all of
+        it". Zoom is the live example (see `_ingest_zoom`).
+
+        Scope-aware for free: signals are pruned by connection_id, and a
+        connection belongs to exactly one owner, so one scope can never delete
+        another's rows.
+        """
+        query = self._scoped().where(
+            Signal.connection_id == connection_id,
+            Signal.type == type,
+        )
+        if window_start is not None:
+            query = query.where(Signal.occurred_at >= window_start)
+        if window_end is not None:
+            query = query.where(Signal.occurred_at <= window_end)
+
+        removed = 0
+        for signal in self.session.execute(query).scalars().all():
+            if signal.external_id not in seen_external_ids:
+                self.session.delete(signal)
+                removed += 1
+        if removed:
+            self.session.flush()
+        return removed
+
     def since(self, connection_id: uuid.UUID, since: datetime) -> list[Signal]:
         rows = self._scoped().where(
             Signal.connection_id == connection_id,

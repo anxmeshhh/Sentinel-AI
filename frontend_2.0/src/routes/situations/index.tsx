@@ -1,12 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { serviceByKey, severityColor, severityLabel } from "@/lib/sentinel-data";
 import {
-  serviceByKey,
-  severityColor,
-  severityLabel,
-  situations,
-} from "@/lib/sentinel-data";
-import { Dot, EmptyState, PageHeader } from "@/components/sentinel/primitives";
+  Dot,
+  EmptyState,
+  InlineError,
+  PageHeader,
+  SkeletonRows,
+} from "@/components/sentinel/primitives";
+import { useSituations } from "@/lib/sentinel-live";
 
 export const Route = createFileRoute("/situations/")({
   head: () => ({
@@ -33,8 +35,9 @@ const filters = ["All", "Critical", "Review", "Open", "Resolved"] as const;
 
 function SituationsPage() {
   const [filter, setFilter] = useState<(typeof filters)[number]>("All");
+  const { data, isLoading, isError, refetch } = useSituations();
 
-  const rows = situations.filter((s) => {
+  const rows = (data ?? []).filter((s) => {
     if (filter === "All") return true;
     if (filter === "Critical") return s.severity === "critical";
     if (filter === "Review") return s.severity === "review";
@@ -66,7 +69,14 @@ function SituationsPage() {
         ))}
       </div>
 
-      {rows.length === 0 ? (
+      {isError ? (
+        <InlineError
+          message="Sentinel couldn't load situations."
+          onRetry={() => void refetch()}
+        />
+      ) : isLoading ? (
+        <SkeletonRows rows={4} />
+      ) : rows.length === 0 ? (
         <EmptyState
           title="No situations right now."
           body="A Situation forms when Sentinel finds two or more related things about the same repository, channel, or service."
@@ -92,7 +102,7 @@ function SituationsPage() {
                 <span className="t-micro shrink-0 text-ink-faint">
                   {s.status === "resolved"
                     ? `Resolved ${s.resolvedAgo}`
-                    : `${severityLabel[s.severity]} · ${s.lastActivity} ago`}
+                    : `${severityLabel[s.severity]} · ${s.lastActivity}`}
                 </span>
               </Link>
             </li>

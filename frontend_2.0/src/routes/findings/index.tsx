@@ -1,19 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
-  findings,
   serviceByKey,
   severityColor,
   severityLabel,
   severityRank,
-  services,
 } from "@/lib/sentinel-data";
 import {
   ButtonGhost,
   Dot,
   EmptyState,
+  InlineError,
   PageHeader,
+  SkeletonRows,
 } from "@/components/sentinel/primitives";
+import { useConnections, useFindings } from "@/lib/sentinel-live";
 
 export const Route = createFileRoute("/findings/")({
   head: () => ({
@@ -40,8 +41,11 @@ function FindingsPage() {
   const [status, setStatus] = useState("Open");
   const [provider, setProvider] = useState("All providers");
   const [inSituation, setInSituation] = useState(false);
+  const { data, isLoading, isError, refetch } = useFindings();
+  const { data: connections } = useConnections();
+  const services = connections ?? [];
 
-  const rows = findings
+  const rows = (data ?? [])
     .filter((f) => (severity === "All" ? true : severityLabel[f.severity] === severity))
     .filter((f) => (status === "All" ? true : f.status === status.toLowerCase()))
     .filter((f) =>
@@ -85,10 +89,14 @@ function FindingsPage() {
         </button>
       </div>
 
-      {rows.length === 0 ? (
+      {isError ? (
+        <InlineError message="Sentinel couldn't load findings." onRetry={() => void refetch()} />
+      ) : isLoading ? (
+        <SkeletonRows rows={5} />
+      ) : rows.length === 0 ? (
         <EmptyState
           title="Nothing needs your attention."
-          body={`Sentinel is watching ${services.length} services.`}
+          body={`Sentinel is watching ${services.length} ${services.length === 1 ? "service" : "services"}.`}
         />
       ) : (
         <ul className="divide-y divide-border border-y border-border">

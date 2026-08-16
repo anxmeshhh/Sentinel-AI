@@ -4,14 +4,17 @@ import {
   healthMeta,
   serviceByKey,
   services,
-  workContent,
+
   type ServiceKey,
 } from "@/lib/sentinel-data";
+import { useConnections } from "@/lib/sentinel-live";
+import { useServiceContent } from "@/lib/service-content";
 import {
   ButtonGhost,
   ButtonSecondary,
   Dot,
   EmptyState,
+  SkeletonRows,
   SectionLabel,
 } from "@/components/sentinel/primitives";
 import { IntelligenceRail } from "@/components/sentinel/intelligence-rail";
@@ -41,16 +44,31 @@ export const Route = createFileRoute("/workspace/$service")({
 
 function WorkspacePage() {
   const { service } = Route.useParams();
-  const svc = serviceByKey(service);
+  const meta = serviceByKey(service);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
 
+  const { data: connections } = useConnections();
+  const live = (connections ?? []).find((c) => c.key === service);
+  const content = useServiceContent(service as ServiceKey);
+
+  // Identity and copy come from the static service catalogue; health, account
+  // and sync time come from the live connection. A service Sentinel knows about
+  // but which is not connected still renders - it just says so.
+  const svc = meta
+    ? {
+        ...meta,
+        health: live?.health ?? ("needs_setup" as const),
+        account: live?.account ?? "Not connected",
+        lastSynced: live?.lastSynced ?? "—",
+      }
+    : undefined;
+
   const items = useMemo(() => {
-    if (!svc) return [];
-    const all = workContent[svc.key as ServiceKey] ?? [];
+    const all = content.data ?? [];
     const q = query.trim().toLowerCase();
     return q ? all.filter((i) => (i.title + i.meta + i.body).toLowerCase().includes(q)) : all;
-  }, [svc, query]);
+  }, [content.data, query]);
 
   if (!svc) {
     return (
@@ -84,7 +102,7 @@ function WorkspacePage() {
                 <Dot color={health.color} />
                 <span style={{ color: health.color }}>{health.word}</span>
                 <span>· {svc.account}</span>
-                {svc.health !== "needs_setup" && <span>· synced {svc.syncedMinutesAgo}m ago</span>}
+                {svc.lastSynced !== "—" && <span>· synced {svc.lastSynced}</span>}
               </p>
             </div>
           </div>
@@ -132,9 +150,22 @@ function WorkspacePage() {
               <div className="mt-4 grid gap-0 rounded-[4px] border border-border md:grid-cols-[280px_minmax(0,1fr)]">
                 <div className="border-border md:border-r">
                   <SectionLabel className="px-3 pt-3">{svc.listLabel}</SectionLabel>
-                  {items.length === 0 ? (
+                  {!content.supported ? (
                     <p className="t-caption px-3 py-6 text-ink-faint">
-                      Nothing matched that search.
+                      {content.unsupportedReason ??
+                        "Sentinel doesn't browse this service here yet."}
+                    </p>
+                  ) : content.isLoading ? (
+                    <div className="px-3 py-3">
+                      <SkeletonRows rows={4} />
+                    </div>
+                  ) : content.isError ? (
+                    <p className="t-caption px-3 py-6" style={{ color: "var(--crit)" }}>
+                      Sentinel couldn't read this service just now.
+                    </p>
+                  ) : items.length === 0 ? (
+                    <p className="t-caption px-3 py-6 text-ink-faint">
+                      {query ? "Nothing matched that search." : svc.detailEmpty}
                     </p>
                   ) : (
                     <ul className="mt-2 divide-y divide-border">

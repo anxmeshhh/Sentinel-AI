@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  contexts,
+
   ctxColor,
-  findings,
-  notifications,
-  services,
-  situations,
+  serviceByKey,
 } from "@/lib/sentinel-data";
+import { useAuth, useWorkspace } from "@/lib/auth";
+import { useConnections, useFindings, useMemories, useSituations } from "@/lib/sentinel-live";
 import { ButtonGhost, Dot, SectionLabel } from "./primitives";
 import { CommandPalette } from "./command-palette";
 
@@ -29,17 +28,44 @@ const systemNav = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [contextId, setContextId] = useState("personal");
   const [ctxOpen, setCtxOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
-  const ctx = contexts.find((c) => c.id === contextId)!;
+  const { user, logout } = useAuth();
+  const { workspaces, active, setActiveId } = useWorkspace();
+  const { data: findingRows } = useFindings();
+  const { data: situationRows } = useSituations("open");
+  const { data: connectionRows } = useConnections();
+  const { data: memoryRows } = useMemories();
+
+  const findings = findingRows ?? [];
+  const situations = situationRows ?? [];
+  const services = connectionRows ?? [];
+
   const openCritical = findings.filter(
     (f) => f.status === "open" && f.severity === "critical",
   ).length;
   const openFindings = findings.filter((f) => f.status === "open").length;
-  const unread = notifications.some((n) => n.unread);
+
+  // A workspace's kind decides its context colour and grouping. Personal is
+  // private to one person; everything else is shared, and the dot is the only
+  // persistent reminder of which world the user is looking at.
+  const ctxKindFor = (kind: string): "personal" | "org" => (kind === "personal" ? "personal" : "org");
+  const ctxKind = ctxKindFor(active?.kind ?? "personal");
+
+  // Notifications are derived from real state rather than a separate feed:
+  // a memory formed in the last day, and anything critical.
+  const notifications = [
+    ...(memoryRows ?? [])
+      .filter((m) => !m.forgotten && m.createdHoursAgo < 24)
+      .map((m) => ({ id: m.id, kind: "memory" as const, text: m.summary, to: "/memory" as const })),
+    ...findings
+      .filter((f) => f.status === "open" && f.severity === "critical")
+      .slice(0, 5)
+      .map((f) => ({ id: f.id, kind: "finding" as const, text: f.title, to: "/findings" as const })),
+  ];
+  const unread = notifications.length > 0;
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -64,36 +90,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onClick={() => setCtxOpen((v) => !v)}
             className="focus-ring t-caption flex items-center gap-2 rounded-[3px] border border-border px-2.5 py-1 text-ink-dim hover:border-border-strong hover:text-ink"
           >
-            <Dot color={ctxColor[ctx.kind]} />
-            {ctx.name}
+            <Dot color={ctxColor[ctxKind]} />
+            {active?.name ?? "Loading…"}
             <span className="t-micro text-ink-faint">▾</span>
           </button>
           {ctxOpen && (
             <div className="overlay-shadow anim-in absolute left-0 top-full z-40 mt-2 w-64 rounded-[6px] border border-border bg-surface-2 p-2">
-              {(["personal", "org", "class"] as const).map((kind) => {
-                const group = contexts.filter((c) => c.kind === kind);
+              {(["personal", "org"] as const).map((kind) => {
+                const group = workspaces.filter((w) => ctxKindFor(w.kind) === kind);
                 if (!group.length) return null;
                 return (
                   <div key={kind} className="mb-2 last:mb-0">
                     <SectionLabel className="px-2 py-1">
-                      {kind === "personal"
-                        ? "Personal"
-                        : kind === "org"
-                          ? "Workspaces"
-                          : "Channels"}
+                      {kind === "personal" ? "Personal" : "Workspaces"}
                     </SectionLabel>
-                    {group.map((c) => (
+                    {group.map((w) => (
                       <button
-                        key={c.id}
+                        key={w.id}
                         onClick={() => {
-                          setContextId(c.id);
+                          setActiveId(w.id);
                           setCtxOpen(false);
                         }}
                         className="flex w-full items-center gap-2 rounded-[3px] px-2 py-1.5 text-left hover:bg-surface-3"
                       >
-                        <Dot color={ctxColor[c.kind]} />
-                        <span className="t-caption flex-1 text-ink">{c.name}</span>
-                        <span className="t-micro text-ink-faint">{c.detail}</span>
+                        <Dot color={ctxColor[kind]} />
+                        <span className="t-caption flex-1 text-ink">{w.name}</span>
+                        <span className="t-micro text-ink-faint">
+                          {kind === "personal" ? "Only you" : w.role}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -144,7 +168,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         {n.kind === "memory" ? "🧠 " : ""}
                         {n.text}
                       </span>
-                      <span className="t-micro text-ink-faint">{n.when}</span>
                     </Link>
                   </li>
                 ))}
@@ -194,7 +217,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main
           className="min-w-0 flex-1 px-4 py-6 md:px-6"
           style={
-            ctx.kind === "personal"
+            ctxKind === "personal"
               ? { borderTop: `1px solid color-mix(in oklch, var(--ctx-personal) 40%, transparent)` }
               : undefined
           }

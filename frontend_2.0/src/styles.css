@@ -1,0 +1,228 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+/*
+ * Sentinel design system.
+ * Near-monochrome dark surface ramp; hue reserved for status only.
+ */
+
+@theme inline {
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-rule: var(--rule);
+
+  --color-ink: var(--ink);
+  --color-ink-dim: var(--ink-dim);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-crit: var(--crit);
+  --color-warn: var(--warn);
+  --color-watch: var(--watch);
+  --color-good: var(--good);
+
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-brand: var(--brand);
+
+  --color-ctx-personal: var(--ctx-personal);
+  --color-ctx-org: var(--ctx-org);
+  --color-ctx-class: var(--ctx-class);
+
+  --color-card: var(--surface-2);
+  --color-card-foreground: var(--ink);
+  --color-popover: var(--surface-2);
+  --color-popover-foreground: var(--ink);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-ink);
+  --color-secondary: var(--surface-3);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--surface-2);
+  --color-muted-foreground: var(--ink-faint);
+  --color-accent-foreground: var(--accent-ink);
+  --color-destructive: var(--crit);
+  --color-destructive-foreground: var(--ground);
+  --color-input: var(--border);
+  --color-ring: var(--border-strong);
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  --ease-sentinel: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root {
+  --radius: 4px;
+
+  --ground: oklch(0 0 0);
+  --surface: oklch(0.1448 0 90);
+  --surface-2: oklch(0.1913 0 90);
+  --surface-3: oklch(0.235 0 90);
+  --border: oklch(0.3012 0 90);
+  --border-strong: oklch(0.3904 0 90);
+  --rule: oklch(0.2178 0 90);
+
+  --ink: oklch(0.9702 0 90);
+  --ink-dim: oklch(0.7572 0 90);
+  --ink-faint: oklch(0.6401 0 90);
+
+  --crit: oklch(0.7009 0.1559 26.02);
+  --warn: oklch(0.7966 0.1194 76.63);
+  --watch: oklch(0.7128 0.0982 260.67);
+  --good: oklch(0.7311 0.1233 156);
+
+  --accent: oklch(0.9461 0 90);
+  --accent-ink: oklch(0 0 0);
+  --brand: oklch(0.7314 0.085 72.99);
+
+  --ctx-personal: oklch(0.7779 0.0972 228.49);
+  --ctx-org: oklch(0.6948 0.1259 288.47);
+  --ctx-class: oklch(0.7314 0.085 72.99);
+
+  --background: var(--ground);
+  --foreground: var(--ink);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 15.5px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: var(--surface-3);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--surface-3);
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* Type scale */
+@utility t-micro {
+  font-size: 12.5px;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+}
+@utility t-caption {
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+@utility t-small {
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+@utility t-body {
+  font-size: 15.5px;
+  line-height: 1.6;
+}
+@utility t-lead {
+  font-size: 17px;
+  line-height: 1.55;
+}
+@utility t-sub {
+  font-size: 18px;
+  line-height: 1.5;
+}
+@utility t-title {
+  font-size: clamp(18px, 2.2vw, 20px);
+  line-height: 1.4;
+}
+@utility t-h3 {
+  font-size: clamp(20px, 3.2vw, 24px);
+  line-height: 1.3;
+}
+@utility t-h2 {
+  font-size: clamp(23px, 4.2vw, 29px);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+@utility t-h1 {
+  font-size: clamp(28px, 5.6vw, 36px);
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+@utility label-micro {
+  font-size: 12.5px;
+  line-height: 1.45;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+@utility overlay-shadow {
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.9);
+}
+
+@utility focus-ring {
+  outline: none;
+  &:focus-visible {
+    outline: 1px solid var(--border-strong);
+    outline-offset: 1px;
+  }
+}
+
+@keyframes sentinel-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility anim-in {
+  animation: sentinel-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@utility skeleton {
+  background: var(--surface-2);
+  border-radius: 3px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}

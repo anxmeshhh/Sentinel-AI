@@ -30,3 +30,10 @@ Thumbs.db
 # Logs
 *.log
 backend/logs/
+
+# Lovable frontend (migration in progress)
+frontend_2.0/node_modules/
+frontend_2.0/.output/
+frontend_2.0/.nitro/
+frontend_2.0/dev.log
+frontend_2.0/.git/

@@ -22,6 +22,7 @@ from app.api.routes import (
     proactive,
     memory,
     decisions,
+    situations,
     hierarchy,
     shared_connections,
     connections,
@@ -129,6 +130,7 @@ app.include_router(drive.router)
 app.include_router(meet.router)
 app.include_router(memory.router)
 app.include_router(decisions.router)
+app.include_router(situations.router)
 app.include_router(workspace.router)
 
 

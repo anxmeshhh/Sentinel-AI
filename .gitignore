@@ -31,10 +31,8 @@ Thumbs.db
 *.log
 backend/logs/
 
-# Lovable frontend (migration in progress)
-frontend_2.0/node_modules/
-frontend_2.0/.output/
-frontend_2.0/.nitro/
-frontend_2.0/dev.log
-frontend_2.0/.git/
-frontend_2.0/.wrangler/
+# Build output for the TanStack Start frontend
+frontend/.output/
+frontend/.nitro/
+frontend/.wrangler/
+frontend/dev.log

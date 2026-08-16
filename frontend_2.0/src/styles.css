@@ -226,3 +226,18 @@
   border-radius: 3px;
   animation: skeleton-pulse 1.5s ease-in-out infinite;
 }
+
+/* Form input. Auth is the only place the product asks for typed input at any
+   length, so the control is defined once here rather than per page. */
+@utility input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem 0.7rem;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}

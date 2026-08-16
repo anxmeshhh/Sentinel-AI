@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -12,6 +13,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AppShell } from "../components/sentinel/shell";
+import { AuthProvider, WorkspaceProvider, useAuth, useMounted } from "../lib/auth";
 
 function NotFoundComponent() {
   return (
@@ -120,10 +122,55 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AppShell>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
-      </AppShell>
+      <AuthProvider>
+        <WorkspaceProvider>
+          <AuthGate>
+            <AppShell>
+              {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+              <Outlet />
+            </AppShell>
+          </AuthGate>
+        </WorkspaceProvider>
+      </AuthProvider>
     </QueryClientProvider>
+  );
+}
+
+/**
+ * The session lives in localStorage, which a server render cannot see - so
+ * authenticated content is never rendered until the client has mounted and
+ * resolved it. Painting the app and then flipping to a login screen is worse
+ * than a brief, honest blank.
+ */
+function AuthGate({ children }: { children: ReactNode }) {
+  const mounted = useMounted();
+  const { user, loading } = useAuth();
+  const router = useRouter();
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const isPublic = PUBLIC_ROUTES.some((p) => path.startsWith(p));
+
+  useEffect(() => {
+    if (!mounted || loading) return;
+    if (!user && !isPublic) router.navigate({ to: "/login" });
+  }, [mounted, loading, user, isPublic, router]);
+
+  if (isPublic) return <>{children}</>;
+  if (!mounted || loading) return <BootScreen />;
+  if (!user) return <BootScreen />;
+  return <>{children}</>;
+}
+
+const PUBLIC_ROUTES = ["/login", "/signup", "/auth/callback"];
+
+function BootScreen() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="flex items-center gap-2.5">
+        <span className="relative h-[13px] w-[13px] rounded-full border border-ink" aria-hidden="true">
+          <span className="absolute inset-[4px] rounded-full" style={{ background: "var(--brand)" }} />
+        </span>
+        <span className="t-caption text-ink-faint">Sentinel</span>
+      </div>
+    </div>
   );
 }

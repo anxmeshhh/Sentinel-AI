@@ -7,7 +7,7 @@
  * every subsequent request picks them up without touching a single call site.
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const BASE_URL = import.meta.env["VITE_API_BASE_URL"] ?? "http://localhost:8000";
 
 export class ApiError extends Error {
   status: number;
@@ -102,19 +102,20 @@ async function postStream(
   }
 }
 
+/** `body` is omitted entirely rather than set to undefined: the project runs
+ *  with exactOptionalPropertyTypes, where "present but undefined" and "absent"
+ *  are genuinely different types. */
+function withBody(method: string, body?: unknown): RequestInit {
+  return body === undefined ? { method } : { method, body: JSON.stringify(body) };
+}
+
 export const api = {
   get: <T,>(path: string, opts?: { workspaceId?: string }) =>
     request<T>(path, undefined, opts?.workspaceId),
   post: <T,>(path: string, body?: unknown, opts?: { workspaceId?: string }) =>
-    request<T>(
-      path,
-      { method: "POST", body: body ? JSON.stringify(body) : undefined },
-      opts?.workspaceId,
-    ),
-  patch: <T,>(path: string, body?: unknown) =>
-    request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
-  put: <T,>(path: string, body?: unknown) =>
-    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
+    request<T>(path, withBody("POST", body), opts?.workspaceId),
+  patch: <T,>(path: string, body?: unknown) => request<T>(path, withBody("PATCH", body)),
+  put: <T,>(path: string, body?: unknown) => request<T>(path, withBody("PUT", body)),
   postStream,
   delete: <T = void,>(path: string) => request<T>(path, { method: "DELETE" }),
 };

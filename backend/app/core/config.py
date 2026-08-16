@@ -56,6 +56,17 @@ class Settings(BaseSettings):
     frontend_base_url: str = "http://localhost:5173"
     backend_base_url: str = "http://localhost:8000"
 
+    # Browser origins allowed to call this API, comma-separated. An explicit
+    # allow-list, never "*": with allow_credentials a wildcard would let any
+    # site issue authenticated requests with a user's session.
+    # Defaults cover local dev - 5173 is the original frontend, 5273/5274 the
+    # new one, which run side by side during the migration.
+    cors_origins: str = "http://localhost:5173,http://localhost:5273,http://localhost:5274"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
     # GitHub. The OAuth App is what a real user connects through; each person
     # authorizes their own account, so the token belongs to them rather than
     # to the workspace (the Phase A per-user connection model).

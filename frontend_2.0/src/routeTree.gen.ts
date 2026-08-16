@@ -11,8 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HistoryRouteImport } from './routes/history'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SignupRouteImport } from './routes/signup'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as ConnectionsIndexRouteImport } from './routes/connections/index'
 import { Route as ConnectionsProviderRouteImport } from './routes/connections/$provider'
 import { Route as FindingsIndexRouteImport } from './routes/findings/index'
@@ -31,6 +34,11 @@ const HistoryRoute = HistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MemoryRoute = MemoryRouteImport.update({
   id: '/memory',
   path: '/memory',
@@ -39,6 +47,16 @@ const MemoryRoute = MemoryRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConnectionsIndexRoute = ConnectionsIndexRouteImport.update({
@@ -80,8 +98,11 @@ const WorkspaceServiceRoute = WorkspaceServiceRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/history': typeof HistoryRoute
+  '/login': typeof LoginRoute
   '/memory': typeof MemoryRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/connections/$provider': typeof ConnectionsProviderRoute
   '/findings/$id': typeof FindingsIdRoute
   '/situations/$id': typeof SituationsIdRoute
@@ -93,8 +114,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/history': typeof HistoryRoute
+  '/login': typeof LoginRoute
   '/memory': typeof MemoryRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/connections/$provider': typeof ConnectionsProviderRoute
   '/findings/$id': typeof FindingsIdRoute
   '/situations/$id': typeof SituationsIdRoute
@@ -107,8 +131,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/history': typeof HistoryRoute
+  '/login': typeof LoginRoute
   '/memory': typeof MemoryRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/connections/$provider': typeof ConnectionsProviderRoute
   '/findings/$id': typeof FindingsIdRoute
   '/situations/$id': typeof SituationsIdRoute
@@ -122,8 +149,11 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/history'
+    | '/login'
     | '/memory'
     | '/settings'
+    | '/signup'
+    | '/auth/callback'
     | '/connections/$provider'
     | '/findings/$id'
     | '/situations/$id'
@@ -135,8 +165,11 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/history'
+    | '/login'
     | '/memory'
     | '/settings'
+    | '/signup'
+    | '/auth/callback'
     | '/connections/$provider'
     | '/findings/$id'
     | '/situations/$id'
@@ -148,8 +181,11 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/history'
+    | '/login'
     | '/memory'
     | '/settings'
+    | '/signup'
+    | '/auth/callback'
     | '/connections/$provider'
     | '/findings/$id'
     | '/situations/$id'
@@ -162,8 +198,11 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   HistoryRoute: typeof HistoryRoute
+  LoginRoute: typeof LoginRoute
   MemoryRoute: typeof MemoryRoute
   SettingsRoute: typeof SettingsRoute
+  SignupRoute: typeof SignupRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   ConnectionsProviderRoute: typeof ConnectionsProviderRoute
   FindingsIdRoute: typeof FindingsIdRoute
   SituationsIdRoute: typeof SituationsIdRoute
@@ -189,6 +228,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/memory': {
       id: '/memory'
       path: '/memory'
@@ -201,6 +247,20 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/connections/': {
@@ -258,8 +318,11 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   HistoryRoute: HistoryRoute,
+  LoginRoute: LoginRoute,
   MemoryRoute: MemoryRoute,
   SettingsRoute: SettingsRoute,
+  SignupRoute: SignupRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   ConnectionsProviderRoute: ConnectionsProviderRoute,
   FindingsIdRoute: FindingsIdRoute,
   SituationsIdRoute: SituationsIdRoute,

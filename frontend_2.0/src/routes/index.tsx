@@ -1,25 +1,32 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
+
+import { api } from "@/lib/api";
 import {
-  decisions,
-  findings,
   greeting,
-  memories,
-  recentActivity,
   serviceByKey,
-  services,
   severityColor,
   severityLabel,
   severityRank,
-  situations,
 } from "@/lib/sentinel-data";
 import {
   ButtonGhost,
   ButtonSecondary,
   Dot,
   EmptyState,
+  InlineError,
   Panel,
   SectionLabel,
+  SkeletonRows,
 } from "@/components/sentinel/primitives";
+import { useAuth } from "@/lib/auth";
+import {
+  useConnections,
+  useDecisions,
+  useFindings,
+  useMemories,
+  useSituations,
+} from "@/lib/sentinel-live";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -44,24 +51,70 @@ export const Route = createFileRoute("/")({
 });
 
 function CommandCenter() {
-  const openSituations = situations.filter((s) => s.status === "open");
-  const attention = findings
+  const { user } = useAuth();
+  const situationsQ = useSituations("open");
+  const findingsQ = useFindings();
+  const decisionsQ = useDecisions();
+  const memoriesQ = useMemories();
+  const connectionsQ = useConnections();
+
+  const openSituations = situationsQ.data ?? [];
+  const attention = (findingsQ.data ?? [])
     .filter((f) => f.status === "open")
     .sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
-  const suggested = decisions.slice(0, 3);
-  const liveMemories = memories.filter((m) => !m.forgotten);
+  const suggested = (decisionsQ.data ?? []).slice(0, 3);
+  const liveMemories = (memoriesQ.data ?? []).filter((m) => !m.forgotten);
   const recentMemory = liveMemories.find((m) => m.createdHoursAgo < 24);
+  const services = connectionsQ.data ?? [];
+
+  const [acting, setActing] = useState<string | null>(null);
+
+  /** Decisions are proposals - confirming one is a first-class act, so it goes
+   *  to the server and the list is re-read rather than optimistically hidden. */
+  async function act(id: string, verb: "confirm" | "dismiss") {
+    setActing(id);
+    try {
+      await api.post(`/decisions/${id}/${verb}`);
+      await decisionsQ.refetch();
+    } finally {
+      setActing(null);
+    }
+  }
+
+  const loading = findingsQ.isLoading || situationsQ.isLoading;
+  const lastSynced = services.find((s) => s.lastSynced !== "—")?.lastSynced;
+  const firstName = (user?.name ?? "").split(" ")[0] || "there";
+
+  // Recent activity is the reassurance rail: proof Sentinel is alive. Derived
+  // from real connection syncs rather than a separate feed.
+  const recentActivity = services
+    .filter((s) => s.lastSynced !== "—")
+    .slice(0, 5)
+    .map((s) => ({ what: `${s.name} synced`, when: s.lastSynced }));
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0">
-        <h1 className="t-h1 font-medium text-ink">{greeting()}, Animesh</h1>
+        <h1 className="t-h1 font-medium text-ink">
+          {greeting()}, {firstName}
+        </h1>
         <p className="t-caption mt-1 text-ink-dim">
-          {attention.length > 0
-            ? `${attention.length} things need attention`
-            : "Nothing needs your attention"}{" "}
-          · synced 4m ago
+          {loading
+            ? "Reading your accounts…"
+            : attention.length > 0
+              ? `${attention.length} ${attention.length === 1 ? "thing needs" : "things need"} attention`
+              : "Nothing needs your attention"}
+          {lastSynced ? ` · synced ${lastSynced}` : ""}
         </p>
+
+        {findingsQ.isError && (
+          <div className="mt-4">
+            <InlineError
+              message="Sentinel couldn't reach the server."
+              onRetry={() => void findingsQ.refetch()}
+            />
+          </div>
+        )}
 
         {openSituations.length > 0 && (
           <section className="mt-8">
@@ -102,12 +155,26 @@ function CommandCenter() {
 
         <section className="mt-8">
           <SectionLabel>Needs attention</SectionLabel>
-          {attention.length === 0 ? (
+          {loading ? (
+            <div className="mt-3">
+              <SkeletonRows rows={4} />
+            </div>
+          ) : attention.length === 0 ? (
             <div className="mt-3">
               <EmptyState
-                title="You're clear."
-                body={`Sentinel is watching ${services.length} services and nothing needs your attention right now.`}
-                action={<ButtonSecondary>Review what Sentinel is watching</ButtonSecondary>}
+                title={services.length === 0 ? "Connect your first tool." : "You're clear."}
+                body={
+                  services.length === 0
+                    ? "Sentinel reads what you already use and tells you what actually needs attention."
+                    : `Sentinel is watching ${services.length} ${services.length === 1 ? "service" : "services"} and nothing needs your attention right now.`
+                }
+                action={
+                  <Link to="/connections">
+                    <ButtonSecondary>
+                      {services.length === 0 ? "Connect a tool" : "Review what Sentinel is watching"}
+                    </ButtonSecondary>
+                  </Link>
+                }
               />
             </div>
           ) : (
@@ -167,11 +234,16 @@ function CommandCenter() {
                   <div className="mt-2 flex items-center gap-2">
                     {d.kind === "recommend" ? (
                       <>
-                        <ButtonSecondary>Confirm</ButtonSecondary>
-                        <ButtonGhost>Dismiss</ButtonGhost>
+                        <ButtonSecondary
+                          disabled={acting === d.id}
+                          onClick={() => void act(d.id, "confirm")}
+                        >
+                          {acting === d.id ? "…" : "Confirm"}
+                        </ButtonSecondary>
+                        <ButtonGhost onClick={() => void act(d.id, "dismiss")}>Dismiss</ButtonGhost>
                       </>
                     ) : (
-                      <ButtonGhost>Got it</ButtonGhost>
+                      <ButtonGhost onClick={() => void act(d.id, "dismiss")}>Got it</ButtonGhost>
                     )}
                   </div>
                 </li>

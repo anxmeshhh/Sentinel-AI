@@ -87,11 +87,16 @@ async def catch_unhandled_errors(request, call_next):
 # store, our own auth is otherwise stateless JWT (api/deps.py's get_current_user).
 app.add_middleware(SessionMiddleware, secret_key=get_settings().session_secret_key)
 
-# Dev-only CORS: the Vite dev server runs on a different origin. Tighten this
-# to the deployed frontend's real origin before anything but local dev.
+# The frontend runs on a different origin from the API in every environment, so
+# CORS is configuration rather than a dev-only hack. `cors_origins` is an
+# explicit allow-list - never "*", which would be incompatible with
+# allow_credentials and would let any site call the API with a user's session.
+#
+# The defaults cover local development only: 5173 is the original Vite app and
+# 5273/5274 the new one, which coexist during the frontend migration.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=get_settings().cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

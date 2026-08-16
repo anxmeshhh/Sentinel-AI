@@ -18,10 +18,23 @@ import { useWorkspace } from "./auth";
 import type { ServiceKey, WorkItem } from "./sentinel-data";
 import { ago } from "./sentinel-live";
 
+/** A real Action Registry action, bound to the item it acts on. The params are
+ *  built here because only this file knows what each provider's rows contain. */
+export interface ActionDescriptor {
+  actionType: string;
+  label: string;
+  params: Record<string, unknown>;
+  undoable: boolean;
+}
+
+export interface LiveWorkItem extends Omit<WorkItem, "actions"> {
+  actions: ActionDescriptor[];
+}
+
 interface Surface {
   path: string;
   /** Raw provider rows -> the one shape the workspace page renders. */
-  map: (rows: any) => WorkItem[];
+  map: (rows: any) => LiveWorkItem[];
 }
 
 const when = (iso: string | null | undefined) =>
@@ -60,7 +73,20 @@ const SURFACES: Partial<Record<ServiceKey, Surface>> = {
           { label: "Received", value: when(m.occurred_at) },
           { label: "State", value: m.unread ? "Unread" : "Read" },
         ],
-        actions: ["outlook.mark_read", "outlook.flag", "outlook.reply_draft"],
+        actions: [
+          {
+            actionType: "outlook.mark_read",
+            label: m.unread ? "Mark read" : "Mark unread",
+            params: { message_id: m.message_id, is_read: Boolean(m.unread), subject: m.subject ?? "" },
+            undoable: true,
+          },
+          {
+            actionType: "outlook.flag",
+            label: m.flagged ? "Clear flag" : "Flag",
+            params: { message_id: m.message_id, flagged: !m.flagged, subject: m.subject ?? "" },
+            undoable: true,
+          },
+        ],
       })),
   },
   google_calendar: {
@@ -94,7 +120,18 @@ const SURFACES: Partial<Record<ServiceKey, Surface>> = {
           { label: "Ends", value: when(e.end) },
           { label: "Attendees", value: String(e.attendee_count ?? "—") },
         ],
-        actions: ["outlook.update_event", "outlook.cancel_event"],
+        actions: [
+          {
+            actionType: "outlook.cancel_event",
+            label: "Cancel meeting",
+            params: {
+              event_id: e.event_id ?? e.id,
+              title: e.title ?? "",
+              attendee_count: e.attendee_count ?? 0,
+            },
+            undoable: false,
+          },
+        ],
       })),
   },
   microsoft_todo: {
@@ -112,7 +149,25 @@ const SURFACES: Partial<Record<ServiceKey, Surface>> = {
           { label: "Importance", value: t.importance ?? "normal" },
           { label: "Status", value: t.completed ? "Completed" : "Open" },
         ],
-        actions: ["todo.complete_task", "todo.update_task", "todo.delete_task"],
+        actions: [
+          {
+            actionType: "todo.complete_task",
+            label: t.completed ? "Reopen" : "Complete",
+            params: {
+              list_id: t.list_id,
+              task_id: t.id ?? t.task_id,
+              completed: !t.completed,
+              title: t.title ?? "",
+            },
+            undoable: true,
+          },
+          {
+            actionType: "todo.delete_task",
+            label: "Delete",
+            params: { list_id: t.list_id, task_id: t.id ?? t.task_id, title: t.title ?? "" },
+            undoable: true,
+          },
+        ],
       })),
   },
   microsoft_onedrive: {
@@ -129,7 +184,14 @@ const SURFACES: Partial<Record<ServiceKey, Surface>> = {
           { label: "Modified", value: when(f.modified_at) },
           { label: "Changed by", value: f.modified_by ?? "—" },
         ],
-        actions: ["onedrive.rename_item", "onedrive.delete_item"],
+        actions: [
+          {
+            actionType: "onedrive.delete_item",
+            label: "Delete",
+            params: { item_id: f.id, name: f.name, is_folder: Boolean(f.is_folder) },
+            undoable: false,
+          },
+        ],
       })),
   },
   microsoft_onenote: {
@@ -142,7 +204,7 @@ const SURFACES: Partial<Record<ServiceKey, Surface>> = {
         sub: "",
         body: "",
         fields: [{ label: "Modified", value: when(p.modified_at) }],
-        actions: ["onenote.append_page"],
+        actions: [],
       })),
   },
   zoom: {
@@ -159,7 +221,14 @@ const SURFACES: Partial<Record<ServiceKey, Surface>> = {
           { label: "Host", value: m.host ?? "—" },
           { label: "Join", value: m.join_url ?? "—" },
         ],
-        actions: ["zoom.update_meeting", "zoom.delete_meeting"],
+        actions: [
+          {
+            actionType: "zoom.delete_meeting",
+            label: "Delete meeting",
+            params: { meeting_id: m.meeting_id, topic: m.topic ?? "", notify: true },
+            undoable: false,
+          },
+        ],
       })),
   },
 };
@@ -180,7 +249,7 @@ export function useServiceContent(service: ServiceKey | undefined) {
   const query = useQuery({
     queryKey: ["service-content", active?.id, service],
     enabled: Boolean(surface) && !loading && Boolean(active),
-    queryFn: async (): Promise<WorkItem[]> => {
+    queryFn: async (): Promise<LiveWorkItem[]> => {
       const raw = await api.get<any>(surface!.path);
       return surface!.map(raw);
     },

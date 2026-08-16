@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { ctxColor, memories } from "@/lib/sentinel-data";
+import { ctxColor } from "@/lib/sentinel-data";
 import {
   ButtonGhost,
   ButtonSecondary,
@@ -9,7 +9,11 @@ import {
   PageHeader,
   Pill,
   SectionLabel,
+  InlineError,
+  SkeletonRows,
 } from "@/components/sentinel/primitives";
+import { api } from "@/lib/api";
+import { useMemories } from "@/lib/sentinel-live";
 
 export const Route = createFileRoute("/memory")({
   head: () => ({
@@ -34,11 +38,23 @@ export const Route = createFileRoute("/memory")({
 function MemoryPage() {
   const [showForgotten, setShowForgotten] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
-  const [forgotten, setForgotten] = useState<string[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const { data, isLoading, isError, refetch } = useMemories();
 
-  const rows = memories.filter(
-    (m) => showForgotten || (!m.forgotten && !forgotten.includes(m.id)),
-  );
+  const rows = (data ?? []).filter((m) => showForgotten || !m.forgotten);
+
+  /** Forgetting is a real, recorded act - it goes to the server and the list is
+   *  re-read, rather than being hidden client-side. */
+  async function forget(id: string) {
+    setBusy(id);
+    try {
+      await api.post(`/memory/${id}/forget`);
+      await refetch();
+      setConfirming(null);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <div className="max-w-[80ch]">
@@ -52,7 +68,11 @@ function MemoryPage() {
         }
       />
 
-      {rows.length === 0 ? (
+      {isError ? (
+        <InlineError message="Sentinel couldn't load memories." onRetry={() => void refetch()} />
+      ) : isLoading ? (
+        <SkeletonRows rows={3} />
+      ) : rows.length === 0 ? (
         <EmptyState
           title="Sentinel hasn't noticed a pattern yet."
           body="Memories form when the same situation returns after being resolved."
@@ -60,7 +80,7 @@ function MemoryPage() {
       ) : (
         <ul className="divide-y divide-border border-y border-border">
           {rows.map((m) => {
-            const isForgotten = m.forgotten || forgotten.includes(m.id);
+            const isForgotten = Boolean(m.forgotten);
             return (
               <li key={m.id} className="py-5" style={{ opacity: isForgotten ? 0.6 : 1 }}>
                 <div className="flex items-start justify-between gap-4">
@@ -106,13 +126,8 @@ function MemoryPage() {
                         <span className="t-caption text-ink-dim">
                           Stop using this pattern?
                         </span>
-                        <ButtonSecondary
-                          onClick={() => {
-                            setForgotten((f) => [...f, m.id]);
-                            setConfirming(null);
-                          }}
-                        >
-                          Forget it
+                        <ButtonSecondary disabled={busy === m.id} onClick={() => void forget(m.id)}>
+                          {busy === m.id ? "…" : "Forget it"}
                         </ButtonSecondary>
                         <ButtonGhost onClick={() => setConfirming(null)}>Cancel</ButtonGhost>
                       </span>

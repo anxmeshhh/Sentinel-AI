@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  ctxColor,
-  findings,
-  serviceByKey,
-  severityColor,
-  situations,
-} from "@/lib/sentinel-data";
+import { ctxColor, serviceByKey, severityColor } from "@/lib/sentinel-data";
+import { useFindings, useSituations } from "@/lib/sentinel-live";
 import { Dot, SectionLabel } from "./primitives";
 
 interface Item {
@@ -27,6 +22,13 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const navigate = useNavigate();
+
+  // Ranked Situations first, then Findings: the palette should surface the
+  // most-synthesised thing Sentinel knows before its raw inputs.
+  const { data: situationRows } = useSituations();
+  const { data: findingRows } = useFindings();
+  const situations = situationRows ?? [];
+  const findings = findingRows ?? [];
 
   const items = useMemo<Item[]>(() => {
     const q = query.trim().toLowerCase();
@@ -53,7 +55,7 @@ export function CommandPalette({
       { group: "Actions", label: "Create a task", to: "/workspace/microsoft_todo" },
     ];
     return q ? all.filter((i) => i.label.toLowerCase().includes(q)) : all.slice(0, 10);
-  }, [query]);
+  }, [query, situations, findings]);
 
   useEffect(() => setActive(0), [query]);
 

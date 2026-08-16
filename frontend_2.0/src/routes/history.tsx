@@ -1,12 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { auditRows, recentActivity } from "@/lib/sentinel-data";
 import {
   ButtonGhost,
+  EmptyState,
+  InlineError,
   PageHeader,
   Pill,
   SectionLabel,
+  SkeletonRows,
 } from "@/components/sentinel/primitives";
+import { api } from "@/lib/api";
+import { ago, useAuditActions, useConnections } from "@/lib/sentinel-live";
 
 export const Route = createFileRoute("/history")({
   head: () => ({
@@ -36,7 +40,40 @@ const statusColor = {
 
 function HistoryPage() {
   const [status, setStatus] = useState("All");
-  const rows = auditRows.filter((r) => status === "All" || r.status === status.toLowerCase());
+  const [undoing, setUndoing] = useState<string | null>(null);
+  const { data, isLoading, isError, refetch } = useAuditActions();
+  const { data: connections } = useConnections();
+
+  const rows = (data ?? [])
+    .filter((r) => status === "All" || r.status === status.toLowerCase())
+    .map((r) => ({
+      id: r.id,
+      time: ago(r.executed_at ?? r.created_at),
+      action: r.action_type,
+      // The audit row's own params are the only honest description of what it
+      // acted on - there is no separate "target" the server records.
+      target: describeTarget(r.params),
+      risk: r.risk,
+      status: r.status,
+      verification: r.verification ?? "—",
+      // Undo is offered only where the server actually recorded a result to
+      // reverse and has not already reversed it.
+      undo: r.undone_at ? "used" : r.status === "succeeded" ? "available" : "none",
+    }));
+
+  const recentActivity = (connections ?? [])
+    .filter((c) => c.lastSynced !== "—")
+    .map((c) => ({ what: `${c.name} synced`, when: c.lastSynced }));
+
+  async function undo(id: string) {
+    setUndoing(id);
+    try {
+      await api.post(`/actions/${id}/undo`);
+      await refetch();
+    } finally {
+      setUndoing(null);
+    }
+  }
 
   return (
     <div>
@@ -62,11 +99,21 @@ function HistoryPage() {
         ))}
       </div>
 
+      {isError ? (
+        <InlineError message="Sentinel couldn't load history." onRetry={() => void refetch()} />
+      ) : isLoading ? (
+        <SkeletonRows rows={5} />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title="Nothing yet."
+          body="Every action Sentinel runs on your behalf is recorded here, with what it could verify afterwards."
+        />
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-border">
-              {["Time", "Action", "Target", "Risk", "Status", "Verification", "Who", ""].map(
+              {["Time", "Action", "Target", "Risk", "Status", "Verification", ""].map(
                 (h) => (
                   <th key={h} className="label-micro px-2 py-2 text-left font-normal">
                     {h}
@@ -90,18 +137,24 @@ function HistoryPage() {
                     <span className="t-micro text-ink-faint">Low</span>
                   )}
                 </td>
-                <td className="t-caption px-2 py-3" style={{ color: statusColor[r.status] }}>
+                <td
+                  className="t-caption px-2 py-3"
+                  style={{ color: statusColor[r.status as keyof typeof statusColor] ?? "var(--ink-dim)" }}
+                >
                   {r.status}
                 </td>
                 <td className="t-caption max-w-[28ch] px-2 py-3 text-ink-dim">
                   {r.verification}
                 </td>
-                <td className="t-caption px-2 py-3 text-ink-faint">{r.who}</td>
                 <td className="px-2 py-3 text-right">
                   {r.undo === "available" ? (
-                    <ButtonGhost>Undo</ButtonGhost>
+                    <ButtonGhost disabled={undoing === r.id} onClick={() => void undo(r.id)}>
+                      {undoing === r.id ? "…" : "Undo"}
+                    </ButtonGhost>
                   ) : (
-                    <span className="t-micro text-ink-faint">—</span>
+                    <span className="t-micro text-ink-faint">
+                      {r.undo === "used" ? "undone" : "—"}
+                    </span>
                   )}
                 </td>
               </tr>
@@ -109,6 +162,7 @@ function HistoryPage() {
           </tbody>
         </table>
       </div>
+      )}
 
       <section className="mt-10">
         <SectionLabel>Recent activity</SectionLabel>
@@ -123,4 +177,13 @@ function HistoryPage() {
       </section>
     </div>
   );
+}
+
+/** A readable description of what an action acted on, from its own params. */
+function describeTarget(params: Record<string, unknown>): string {
+  for (const key of ["topic", "title", "subject", "name", "new_name"]) {
+    const v = params?.[key];
+    if (typeof v === "string" && v.trim()) return v;
+  }
+  return "—";
 }

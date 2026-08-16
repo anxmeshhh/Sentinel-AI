@@ -205,15 +205,12 @@ function WorkspacePage() {
                         <div className="my-3 flex flex-wrap gap-2 border-y border-rule py-3">
                           {current.actions.map((a) => (
                             <ActionButton
-                              key={a}
-                              spec={{
-                                label: a,
-                                preview: `${a} — ${current.title}`,
-                                detail: `This runs in ${svc.name} straight away. Nobody is invited or notified.`,
-                                verification: `${svc.name} confirmed the change.`,
-                                undoable: !a.toLowerCase().includes("delete"),
-                                highRisk: a.toLowerCase().includes("delete"),
-                              }}
+                              key={a.actionType}
+                              actionType={a.actionType}
+                              params={a.params}
+                              label={a.label}
+                              undoable={a.undoable}
+                              onDone={() => void content.refetch()}
                             />
                           ))}
                         </div>

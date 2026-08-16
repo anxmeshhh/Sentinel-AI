@@ -37,3 +37,4 @@ frontend_2.0/.output/
 frontend_2.0/.nitro/
 frontend_2.0/dev.log
 frontend_2.0/.git/
+frontend_2.0/.wrangler/

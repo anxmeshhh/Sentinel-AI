@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { ctxColor, type ContextKind } from "@/lib/sentinel-data";
-import { ActionButton } from "./action-button";
 
 interface Msg {
   from: "you" | "sentinel";
@@ -82,20 +81,6 @@ export function Assistant({
                 {m.text}
               </p>
               {m.cite && <p className="t-micro mt-1 text-ink-faint">{m.cite}</p>}
-              {m.action && (
-                <div className="mt-2">
-                  <ActionButton
-                    spec={{
-                      label: "Create task",
-                      preview: 'Create "Draft the deployment review agenda" in Microsoft To Do',
-                      detail: "Creates a real task due today. Nobody is notified.",
-                      verification:
-                        "Microsoft To Do has 'Draft the deployment review agenda' due today.",
-                      undoable: true,
-                    }}
-                  />
-                </div>
-              )}
             </div>
           </div>
         ))}

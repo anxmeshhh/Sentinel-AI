@@ -37,6 +37,15 @@ _INFORM_KINDS = {
 _RECOMMEND_KINDS = {"slack_blocker", "slack_urgent", "slack_mention"}
 
 
+# How serious this is, said the way a person would say it rather than as a
+# severity token echoed back at them.
+_SEVERITY_PHRASE = {
+    "critical": "This needs attention now",
+    "review": "This is worth reviewing",
+    "reminder": "A reminder",
+}
+
+
 def _classify(action_kind: str) -> tuple[DecisionKind, bool]:
     if action_kind in _INFORM_KINDS:
         return DecisionKind.INFORM, False
@@ -54,9 +63,29 @@ def decide_situation(session: Session, scope: Scope, situation) -> list[Decision
     if reasoning is None:
         return []
 
+    # The thing the situation is about, so the rationale can name it instead of
+    # saying "one resource".
+    entity_name = None
+    if situation.primary_entity_id is not None:
+        from app.models.entity import Entity
+
+        anchor = session.get(Entity, situation.primary_entity_id)
+        entity_name = anchor.display_name if anchor is not None else None
+
     memory = matching_memory(session, scope, situation)
     priority = reasoning.priority_score + (_MEMORY_BOOST if memory is not None else 0.0)
-    memory_note = f" Recurring pattern (learned, seen {memory.evidence.get('occurrence_count', '?')}×) — prioritized." if memory else ""
+    # Said the way a person would say it. The numeric score stays on
+    # `priority_score` for ordering and debugging; repeating it in the rationale
+    # only ever produced copy like "Priority 147.0 (critical, cross-provider)",
+    # which reads as a leaked internal rather than a reason.
+    seen = memory.evidence.get("occurrence_count") if memory else None
+    memory_note = (
+        f" Sentinel has seen this {seen} times before, so it is ranked higher."
+        if memory and seen
+        else " This keeps happening, so it is ranked higher."
+        if memory
+        else ""
+    )
 
     existing = {
         d.action_key: d
@@ -69,11 +98,17 @@ def decide_situation(session: Session, scope: Scope, situation) -> list[Decision
         action_kind = item.get("grounded_in", "unknown")
         action_text = item.get("action", f"Review the {action_kind}")
         kind, requires_confirmation = _classify(action_kind)
-        rationale = (
-            f"{action_text}. Priority {round(priority, 1)} "
-            f"({situation.severity}{', cross-provider' if situation.cross_provider else ''})."
-            f"{memory_note}"
+        # Why this is worth doing, in the user's terms: how serious it is, and
+        # whether it spans more than one tool - which is the whole reason a
+        # correlated situation outranks an isolated finding.
+        reach = (
+            "It spans several of your tools"
+            if situation.cross_provider
+            else f"It concerns {entity_name}"
+            if entity_name
+            else "It concerns one resource"
         )
+        rationale = f"{_SEVERITY_PHRASE.get(situation.severity, 'Worth a look')}. {reach}.{memory_note}"
         desired_keys.add(action_kind)
 
         d = existing.get(action_kind)

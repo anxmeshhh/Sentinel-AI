@@ -221,7 +221,17 @@ def test_memory_boosts_decision_priority_transparently(session, env):
     d = decide_situation(session, scope, sit2)[0]
     assert d.memory_informed is True
     assert d.priority_score == pytest.approx(base + 25.0)  # the boost, deterministic
-    assert "recurring" in d.rationale.lower()  # never opaque
+
+    # The boost must be VISIBLE, not merely applied - a silently reordered list
+    # is exactly the opaque ranking this engine exists to avoid. Asserted on the
+    # meaning rather than one wording, so the copy can be written for humans
+    # without the guard evaporating.
+    rationale = d.rationale.lower()
+    assert "ranked higher" in rationale
+    assert "seen this" in rationale or "keeps happening" in rationale
+    # And it must never leak the internal score it used to print verbatim
+    # ("Priority 147.0 (critical, cross-provider)").
+    assert "priority " not in rationale
 
 
 def test_full_traceability_chain(session, env):

@@ -1132,3 +1132,77 @@ export interface ZoomRecordings {
     files: { id: string; type: string; extension: string; size: number | null; play_url: string; download_url: string }[];
   }[];
 }
+
+// --- Correlated Situations -------------------------------------------------
+//
+// The Situation Engine's output: two or more findings that concern the SAME
+// real-world thing. Mirrors backend/app/api/routes/situations.py.
+
+export interface SituationRow {
+  id: string;
+  title: string;
+  entity: string | null;
+  entity_kind: string | null;
+  severity: "critical" | "review" | "reminder";
+  status: "open" | "resolved";
+  member_count: number;
+  cross_provider: boolean;
+  occurrence_count: number;
+  providers: string[];
+  first_seen_at: string | null;
+  last_activity_at: string | null;
+  resolved_at: string | null;
+}
+
+export interface SituationDetail extends SituationRow {
+  /** Deterministic, generated from the shared entity - never LLM prose. This
+   *  is the sentence that proves the connection is a fact, not a guess. */
+  why_connected: string;
+  findings: {
+    id: string;
+    provider: string | null;
+    tier: string;
+    source: string;
+    title: string | null;
+    why: string | null;
+    url: string | null;
+    occurred_at: string | null;
+    evidence: Record<string, unknown>[];
+    /** False when the member finding has since resolved. Kept in the record
+     *  and dimmed, rather than dropped - it is still part of the evidence. */
+    live: boolean;
+  }[];
+  entities: { id: string; kind: string; name: string; role: string }[];
+  reasoning: {
+    explanation: string;
+    recommended_actions: { action: string; grounded_in: string }[];
+  } | null;
+  memory: {
+    id: string;
+    summary: string;
+    observation_count: number;
+    strength: number;
+    first_observed_at: string | null;
+  } | null;
+  decisions: {
+    id: string;
+    kind: "inform" | "recommend";
+    action: string;
+    action_key: string;
+    grounded_in: string;
+    rationale: string;
+    requires_confirmation: boolean;
+    memory_informed: boolean;
+    priority_score: number;
+  }[];
+  actions: {
+    id: string;
+    action_type: string;
+    status: string;
+    risk: string;
+    verification: string | null;
+    executed_at: string | null;
+    undone_at: string | null;
+    undo_result: string | null;
+  }[];
+}

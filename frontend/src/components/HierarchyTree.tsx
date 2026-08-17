@@ -402,6 +402,7 @@ function PersonalNav() {
       <nav className="mb-5 flex flex-col">
         <PersonalNavLink to="/" label="Dashboard" end />
         <PersonalNavLink to="/attention" label="Attention" />
+        <PersonalNavLink to="/situations" label="Situations" />
         <PersonalNavLink to="/assistant" label="AI Assistant" />
       </nav>
 

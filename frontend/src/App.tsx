@@ -33,6 +33,8 @@ import { OutlookCalendarPage } from "./pages/OutlookCalendarPage";
 import { OutlookMailPage } from "./pages/OutlookMailPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { SituationDetailPage } from "./pages/SituationDetailPage";
+import { SituationsPage } from "./pages/SituationsPage";
 import { SignupPage } from "./pages/SignupPage";
 import { Icon, LoadingBlock } from "./components/ui";
 
@@ -146,6 +148,8 @@ export function App() {
 
       <Route path="/" element={<RequireAuth><BriefPage /></RequireAuth>} />
       <Route path="/attention" element={<RequireAuth><AttentionPage /></RequireAuth>} />
+      <Route path="/situations" element={<RequireAuth><SituationsPage /></RequireAuth>} />
+      <Route path="/situations/:id" element={<RequireAuth><SituationDetailPage /></RequireAuth>} />
       <Route path="/audit/actions" element={<RequireAuth><ActionAuditPage /></RequireAuth>} />
       <Route path="/findings/:id" element={<RequireAuth><FindingDetailPage /></RequireAuth>} />
       <Route path="/history" element={<RequireAuth><HistoryPage /></RequireAuth>} />

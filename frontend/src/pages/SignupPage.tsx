@@ -54,11 +54,11 @@ export function SignupPage() {
       <AuthLayout title="Check your email" subtitle={`We sent a verification code to ${email}.`}>
         <ErrorText>{error}</ErrorText>
         <form onSubmit={handleVerify}>
-          <p className="mb-4 text-small text-ink-dim">
+          <p className="mb-3.5 text-caption text-ink-dim">
             No SMTP configured in this environment yet — read the code from{" "}
             <code className="text-ink">docker compose logs backend</code> instead of your inbox.
           </p>
-          <div className="mb-5">
+          <div className="mb-3.5">
             <FieldLabel>Verification code</FieldLabel>
             <input
               required
@@ -93,7 +93,7 @@ export function SignupPage() {
     >
       <ErrorText>{error}</ErrorText>
       <form onSubmit={handleSignup}>
-        <div className="mb-4">
+        <div className="mb-3.5">
           <FieldLabel>Name</FieldLabel>
           <input
             required
@@ -103,7 +103,7 @@ export function SignupPage() {
             placeholder="Your name"
           />
         </div>
-        <div className="mb-4">
+        <div className="mb-3.5">
           <FieldLabel>Email</FieldLabel>
           <input
             required
@@ -114,7 +114,7 @@ export function SignupPage() {
             placeholder="you@company.com"
           />
         </div>
-        <div className="mb-5">
+        <div className="mb-3.5">
           <FieldLabel>Password</FieldLabel>
           <input
             required

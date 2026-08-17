@@ -28,6 +28,7 @@ export { Tabs } from "./Tabs";
 export type { TabItem } from "./Tabs";
 export { Rows, TableWrap, Td, Th, Tr } from "./Table";
 export { Icon } from "./Icon";
+export { Overflow, OverflowItem } from "./Overflow";
 export type { IconName } from "./Icon";
 export { Tooltip } from "./Tooltip";
 export { LoadingBlock, Spinner } from "./Spinner";

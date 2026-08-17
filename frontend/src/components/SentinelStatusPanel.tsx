@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { SentinelStatus } from "../api/types";
 
 /** "11:34 PM" - the only time format that reads at a glance on the header. */
@@ -217,17 +219,34 @@ function ProviderPills({ status }: { status: SentinelStatus }) {
  * all-clear state otherwise, since that is where doubt would form.
  */
 export function ProvidersChecked({ status }: { status: SentinelStatus | null }) {
+  const [open, setOpen] = useState(false);
   if (!status || status.providers.length === 0) return null;
+
+  // Summarised, not spelled out. Twelve ticked provider pills with counts is a
+  // wall the eye slides off, and it sat directly beneath the findings it was
+  // meant to reassure about. The one-line version answers the same doubt -
+  // "did anything actually run?" - and the full list is still one click away
+  // for the moment someone genuinely wants to audit it.
   return (
-    <section>
-      <h3 className="mb-2.5 text-micro uppercase tracking-wide text-ink-faint">Providers checked</h3>
-      <div className="[&>div]:justify-start">
-        <ProviderPills status={status} />
+    <section className="border-t border-rule pt-4">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="text-caption text-ink-faint">
+          Checked {status.providers.length} {status.providers.length === 1 ? "provider" : "providers"} ·{" "}
+          {status.signals_analysed.toLocaleString()} signals · {status.findings_count}{" "}
+          {status.findings_count === 1 ? "finding" : "findings"}
+        </p>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
+        >
+          {open ? "Hide" : "Show"}
+        </button>
       </div>
-      <p className="mt-2.5 text-caption text-ink-faint">
-        {status.signals_analysed.toLocaleString()} signals analysed · {status.findings_count}{" "}
-        {status.findings_count === 1 ? "finding" : "findings"} generated
-      </p>
+      {open && (
+        <div className="mt-3 [&>div]:justify-start">
+          <ProviderPills status={status} />
+        </div>
+      )}
     </section>
   );
 }

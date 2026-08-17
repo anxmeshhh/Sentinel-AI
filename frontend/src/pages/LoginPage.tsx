@@ -81,7 +81,7 @@ export function LoginPage() {
 
       {mode === "password" && (
         <form onSubmit={handlePasswordLogin}>
-          <div className="mb-4">
+          <div className="mb-3.5">
             <FieldLabel>Email</FieldLabel>
             <input
               required
@@ -92,7 +92,7 @@ export function LoginPage() {
               placeholder="you@company.com"
             />
           </div>
-          <div className="mb-5">
+          <div className="mb-3.5">
             <FieldLabel>Password</FieldLabel>
             <input
               required
@@ -118,7 +118,7 @@ export function LoginPage() {
 
       {mode === "otp-request" && (
         <form onSubmit={handleSendCode}>
-          <div className="mb-5">
+          <div className="mb-3.5">
             <FieldLabel>Email</FieldLabel>
             <input
               required
@@ -144,11 +144,11 @@ export function LoginPage() {
 
       {mode === "otp-verify" && (
         <form onSubmit={handleVerifyCode}>
-          <p className="mb-4 text-small text-ink-dim">
+          <p className="mb-3.5 text-caption text-ink-dim">
             We sent a code to <b className="text-ink">{email}</b>. In dev mode without SMTP configured, check{" "}
             <code className="text-ink">docker compose logs backend</code> for it.
           </p>
-          <div className="mb-5">
+          <div className="mb-3.5">
             <FieldLabel>Code</FieldLabel>
             <input
               required

@@ -17,7 +17,8 @@ import {
   SentinelStatusCard,
   TodaysAttention,
 } from "../components/SentinelStatusPanel";
-import { LoadingBlock } from "../components/ui";
+import { LoadingBlock, Overflow, OverflowItem } from "../components/ui";
+import { PROVIDER_LABEL } from "../components/situations";
 
 const STATE_FILTERS = [
   { key: "new", label: "Open" },
@@ -32,18 +33,16 @@ const SNOOZE_OPTIONS = [
   { label: "Next week", hours: 24 * 7 },
 ];
 
-const PROVIDER_LABELS: Record<string, string> = {
-  gmail: "Gmail",
-  google_calendar: "Calendar",
-  google_drive: "Drive",
-  github: "GitHub",
-  slack: "Slack",
-  agent: "Sentinel",
-};
-
+/** Provider names come from the shared map, not a local copy.
+ *
+ *  The copy that lived here knew about five providers and had not been touched
+ *  since - so Outlook, To Do, OneDrive, OneNote, Teams and Zoom all fell
+ *  through to their raw ids and rendered as "microsoft_outlook_calendar" on a
+ *  user-facing card. One map, or this happens again with the next provider. */
 function providerLabel(src: string | null): string | null {
   if (!src) return null;
-  return PROVIDER_LABELS[src] ?? src;
+  if (src === "agent") return "Sentinel";
+  return PROVIDER_LABEL[src] ?? src;
 }
 
 /** SECTION 8: the finding's severity, read straight from its priority so the
@@ -75,12 +74,15 @@ function recommendedAction(item: AttentionItem): string | null {
   return item.origin === "manual" ? null : RECOMMENDED[item.type] ?? "Review and decide";
 }
 
-/** Confidence as honesty, not a number: every detected item here is a
- *  deterministic fact (an unread starred email, a PR open 12 days), so it is
- *  stated as certain. The inferred layer - a model's reading - is what
- *  Investigate produces, and it carries its own confidence there. */
-function confidenceLabel(item: AttentionItem): string | null {
-  return item.origin === "manual" ? null : "High — a fact, not an inference";
+/** A due date said the way a person says it. `toLocaleString()` produced
+ *  "18/08/2026, 00:04:54", which reads as a log entry rather than a deadline. */
+function dueLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (sameDay) return `today ${time}`;
+  return `${d.toLocaleDateString([], { day: "numeric", month: "short" })}, ${time}`;
 }
 
 /** The tab the page should open on, so the content immediately matches the
@@ -116,8 +118,8 @@ export function AttentionPage() {
   const [items, setItems] = useState<AttentionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [snoozeMenuFor, setSnoozeMenuFor] = useState<string | null>(null);
   const [askItem, setAskItem] = useState<AttentionItem | null>(null);
+  const [addingReminder, setAddingReminder] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<{ item: AttentionItem; plan: CalendarPlan } | null>(null);
   const [planBusy, setPlanBusy] = useState(false);
@@ -199,7 +201,6 @@ export function AttentionPage() {
   }
 
   async function setState(item: AttentionItem, state: string, snoozeHours?: number) {
-    setSnoozeMenuFor(null);
     setItems((list) => list.filter((i) => i.id !== item.id));
     try {
       await api.patch(`/attention/${item.id}`, {
@@ -314,86 +315,113 @@ export function AttentionPage() {
                     </div>
                   </div>
                   {/* SECTION 8: why Sentinel surfaced this - a fact, labelled as one. */}
+                  {/* Why Sentinel surfaced this. Deliberately just the fact:
+                      "detected" and a confidence label were decoration on a
+                      line that already carries the reason, and a raw
+                      toLocaleString due date read as a log entry. */}
                   <div className="mt-1 text-caption text-ink-dim">
                     {item.why}
-                    {item.origin === "detected" ? " · ✨ detected" : " · 📌 reminder"}
-                    {item.due_at && ` · due ${new Date(item.due_at).toLocaleString()}`}
-                    {item.state === "snoozed" && item.snoozed_until && ` · snoozed until ${new Date(item.snoozed_until).toLocaleString()}`}
+                    {item.due_at && ` · due ${dueLabel(item.due_at)}`}
+                    {item.state === "snoozed" && item.snoozed_until && ` · snoozed until ${dueLabel(item.snoozed_until)}`}
                   </div>
                   {/* SECTION 8: what to do + how sure - deterministic, on the card. */}
                   {item.state === "new" && recommendedAction(item) && (
                     <div className="mt-1.5 text-caption">
                       <span className="text-ink-faint">▸ Recommended </span>
                       <span className="text-ink">{recommendedAction(item)}</span>
-                      <span className="ml-2 text-micro text-ink-faint">· Confidence {confidenceLabel(item)}</span>
                     </div>
                   )}
                 </div>
               </div>
 
+              {/* Two actions, and a menu.
+                  This row used to print seven links side by side - Mark done,
+                  Snooze, Dismiss, Prepare Me, Investigate, Ask Sentinel, Open -
+                  which is a menu laid out flat, with nothing reading as
+                  primary. What people actually do is finish it or go look at
+                  it; everything else is one click away. */}
               <div className="mt-2.5 flex flex-wrap items-center gap-3 pl-5 text-caption">
-                {item.state === "new" && (
+                {item.state === "new" ? (
                   <>
-                    <button onClick={() => setState(item, "done")} className="text-ink-faint underline underline-offset-2 hover:text-good">
-                      Mark done
-                    </button>
-                    <span className="relative">
-                      <button
-                        onClick={() => setSnoozeMenuFor(snoozeMenuFor === item.id ? null : item.id)}
-                        className="text-ink-faint underline underline-offset-2 hover:text-watch"
-                      >
-                        Snooze &#9662;
-                      </button>
-                      {snoozeMenuFor === item.id && (
-                        <span className="absolute left-0 top-5 z-10 flex flex-col rounded-md border border-border bg-surface-2 p-1 shadow-overlay">
-                          {SNOOZE_OPTIONS.map((o) => (
-                            <button
-                              key={o.label}
-                              onClick={() => setState(item, "snoozed", o.hours)}
-                              className="px-3 py-1.5 text-left text-caption text-ink-dim hover:bg-surface-3 hover:text-ink"
-                            >
-                              {o.label}
-                            </button>
-                          ))}
-                        </span>
-                      )}
-                    </span>
-                    <button onClick={() => setState(item, "dismissed")} className="text-ink-faint underline underline-offset-2 hover:text-crit">
-                      Dismiss
-                    </button>
-                    {item.type === "upcoming_meeting" && (
-                      <button
-                        onClick={() => prepareFor(item)}
-                        disabled={meetingBrief.loading && prepItemId === item.id}
-                        className={`underline underline-offset-2 disabled:opacity-50 ${prepItemId === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"}`}
-                      >
-                        {meetingBrief.loading && prepItemId === item.id ? "Preparing…" : "Prepare Me ✨"}
-                      </button>
-                    )}
-                    {item.due_at && item.type !== "upcoming_meeting" && (
-                      <button onClick={() => proposeCalendar(item)} className="text-ink-faint underline underline-offset-2 hover:text-ink">
-                        Add to Calendar
-                      </button>
-                    )}
-                    {item.origin === "detected" && (
-                      <button
-                        onClick={() => investigateFor(item)}
-                        disabled={investigation.loading && investigateItemId === item.id}
-                        className={`underline underline-offset-2 disabled:opacity-50 ${investigateItemId === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"}`}
-                      >
-                        {investigation.loading && investigateItemId === item.id ? "Investigating…" : "Investigate ✨"}
-                      </button>
-                    )}
                     <button
-                      onClick={() => setAskItem(askItem?.id === item.id ? null : item)}
-                      className={`underline underline-offset-2 ${askItem?.id === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"}`}
+                      onClick={() => setState(item, "done")}
+                      className="text-ink-faint underline underline-offset-2 hover:text-good"
                     >
-                      Ask Sentinel ✨
+                      Done
                     </button>
+                    <Overflow align="left">
+                      {(close) => (
+                        <>
+                          {SNOOZE_OPTIONS.map((o) => (
+                            <OverflowItem
+                              key={o.label}
+                              onClick={() => {
+                                setState(item, "snoozed", o.hours);
+                                close();
+                              }}
+                            >
+                              Snooze {o.label.toLowerCase()}
+                            </OverflowItem>
+                          ))}
+                          <OverflowItem
+                            onClick={() => {
+                              setState(item, "dismissed");
+                              close();
+                            }}
+                          >
+                            Dismiss
+                          </OverflowItem>
+                          {item.type === "upcoming_meeting" && (
+                            <OverflowItem
+                              disabled={meetingBrief.loading && prepItemId === item.id}
+                              onClick={() => {
+                                prepareFor(item);
+                                close();
+                              }}
+                            >
+                              {meetingBrief.loading && prepItemId === item.id ? "Preparing…" : "Prepare me"}
+                            </OverflowItem>
+                          )}
+                          {item.due_at && item.type !== "upcoming_meeting" && (
+                            <OverflowItem
+                              onClick={() => {
+                                proposeCalendar(item);
+                                close();
+                              }}
+                            >
+                              Add to calendar
+                            </OverflowItem>
+                          )}
+                          {item.origin === "detected" && (
+                            <OverflowItem
+                              disabled={investigation.loading && investigateItemId === item.id}
+                              onClick={() => {
+                                investigateFor(item);
+                                close();
+                              }}
+                            >
+                              {investigation.loading && investigateItemId === item.id
+                                ? "Investigating…"
+                                : "Investigate"}
+                            </OverflowItem>
+                          )}
+                          <OverflowItem
+                            onClick={() => {
+                              setAskItem(askItem?.id === item.id ? null : item);
+                              close();
+                            }}
+                          >
+                            Ask Sentinel
+                          </OverflowItem>
+                        </>
+                      )}
+                    </Overflow>
                   </>
-                )}
-                {(item.state === "snoozed" || item.state === "dismissed" || item.state === "done") && (
-                  <button onClick={() => setState(item, "new")} className="text-ink-faint underline underline-offset-2 hover:text-ink">
+                ) : (
+                  <button
+                    onClick={() => setState(item, "new")}
+                    className="text-ink-faint underline underline-offset-2 hover:text-ink"
+                  >
                     Reopen
                   </button>
                 )}
@@ -498,16 +526,26 @@ export function AttentionPage() {
           <div className="flex items-center gap-3 rounded-md border border-border px-4 py-3">
             <span className="text-small text-ink-dim">Need help making sense of something?</span>
             <button onClick={() => setAssistantOpen(true)} className="text-small font-medium text-accent-text hover:underline">
-              Ask Sentinel ✨
+              Ask Sentinel
             </button>
           </div>
         )}
       </section>
 
       {/* SECTION 6: reminders are the user's own notes - below the operational
-          findings, never above them. */}
-      <section>
-        <h3 className="mb-2.5 text-micro uppercase tracking-wide text-ink-faint">Add a reminder</h3>
+          findings, never above them, and folded away until wanted. A form
+          parked permanently at the bottom of an intelligence feed reads as
+          part of the feed, and it was the last thing on a page whose job is
+          to be scanned. */}
+      <section className="border-t border-rule pt-4">
+        {!addingReminder ? (
+          <button
+            onClick={() => setAddingReminder(true)}
+            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
+          >
+            + Add a reminder
+          </button>
+        ) : (
         <form onSubmit={addReminder} className="flex flex-wrap gap-2">
           <input
             value={newTitle}
@@ -525,7 +563,15 @@ export function AttentionPage() {
           <button type="submit" disabled={!newTitle.trim()} className="btn-primary">
             Add
           </button>
+          <button
+            type="button"
+            onClick={() => setAddingReminder(false)}
+            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
+          >
+            Cancel
+          </button>
         </form>
+        )}
       </section>
     </div>
   );

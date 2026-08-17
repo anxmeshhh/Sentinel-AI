@@ -42,8 +42,8 @@ export function HierarchyTree() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-none border-b border-border px-4 py-5">
-        <div className="truncate text-lead font-semibold text-ink" title={active.name}>
+      <div className="flex-none border-b border-border px-3.5 py-4">
+        <div className="truncate text-small font-semibold text-ink" title={active.name}>
           {active.name.trim()}
         </div>
         <div className="mt-1.5 flex items-center justify-between gap-2">
@@ -84,7 +84,7 @@ export function HierarchyTree() {
         />
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-4">
         {loading && <div className="mx-2 h-6 animate-pulse rounded bg-surface-2" />}
 
         {!loading && tree.length === 0 && (
@@ -392,14 +392,18 @@ function PersonalNav() {
 
   return (
     <>
-      <div className="mb-1 px-2 text-body font-semibold text-ink">Personal</div>
-      <p className="mb-4 px-2 text-caption leading-relaxed text-ink-faint">
-        What matters to you, across your own connected accounts. Private to you.
-      </p>
+      {/* Name and one word about visibility. The two-line paragraph that used
+          to sit here ("What matters to you, across your own connected
+          accounts. Private to you.") restated what the context dot and badge
+          already say, and cost two lines at the top of every screen. */}
+      <div className="mb-3 flex items-baseline gap-2 px-2">
+        <span className="text-small font-semibold text-ink">Personal</span>
+        <span className="text-micro text-ink-faint">Private to you</span>
+      </div>
 
       {/* Tier 1 - Sentinel's own intelligence. Always present, because these
           are the product, not a provider. */}
-      <nav className="mb-5 flex flex-col">
+      <nav className="mb-4 flex flex-col">
         <PersonalNavLink to="/" label="Dashboard" end />
         <PersonalNavLink to="/attention" label="Attention" />
         <PersonalNavLink to="/situations" label="Situations" />
@@ -455,8 +459,8 @@ function PersonalNavLink({ to, label, end = false }: { to: string; label: string
       to={to}
       end={end}
       className={({ isActive }) =>
-        `rounded-sm px-2.5 py-2 text-small transition-colors ${
-          isActive ? "bg-surface-2 font-semibold text-ink" : "text-ink-dim hover:bg-surface/60 hover:text-ink"
+        `rounded-sm px-2.5 py-1.5 text-small transition-colors ${
+          isActive ? "bg-surface-2 font-medium text-ink" : "text-ink-dim hover:bg-surface/60 hover:text-ink"
         }`
       }
     >

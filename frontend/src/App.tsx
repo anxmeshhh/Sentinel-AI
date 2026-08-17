@@ -65,7 +65,7 @@ function AppShell({ children }: { children: ReactNode }) {
         <div className="fixed inset-0 z-40 bg-black/70 md:hidden" onClick={() => setMobileNavOpen(false)} aria-hidden="true" />
       )}
       <div
-        className={`fixed inset-y-0 left-0 z-50 flex w-[288px] transition-transform duration-200 md:static md:z-auto md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[248px] transition-transform duration-200 md:static md:z-auto md:translate-x-0 ${
           mobileNavOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >

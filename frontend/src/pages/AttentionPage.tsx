@@ -15,7 +15,6 @@ import {
   FindingsEmptyState,
   ProvidersChecked,
   SentinelStatusCard,
-  TodaysAttention,
 } from "../components/SentinelStatusPanel";
 import { LoadingBlock, Overflow, OverflowItem } from "../components/ui";
 import { PROVIDER_LABEL } from "../components/situations";
@@ -134,7 +133,6 @@ export function AttentionPage() {
   // always reflect the open picture regardless of which filter is shown.
   const [status, setStatus] = useState<SentinelStatus | null>(null);
   const [openItems, setOpenItems] = useState<AttentionItem[]>([]);
-  const [dismissedCount, setDismissedCount] = useState(0);
   const [tabCounts, setTabCounts] = useState<{ risks?: number; commitments?: number; goals?: number }>({});
   const [focusTab, setFocusTab] = useState<TabKey | undefined>(undefined);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -156,17 +154,17 @@ export function AttentionPage() {
   /** Everything the status card, summary, tab badges and opening tab need. All
    *  non-fatal: the findings list stands on its own if any of these fail. */
   async function loadMeta() {
-    const [st, open, dismissed, r, c, g] = await Promise.all([
+    // The dismissed list is no longer fetched: it existed only to count a
+    // number for the "Today" row, which is gone. One request less per load.
+    const [st, open, r, c, g] = await Promise.all([
       api.get<SentinelStatus>("/attention/status").catch(() => null),
       api.get<AttentionItem[]>("/attention?state=new").catch(() => [] as AttentionItem[]),
-      api.get<AttentionItem[]>("/attention?state=dismissed").catch(() => [] as AttentionItem[]),
       api.get<Situation[]>("/proactive").catch(() => null),
       api.get<Commitment[]>("/commitments").catch(() => null),
       api.get<Goal[]>("/goals").catch(() => null),
     ]);
     setStatus(st);
     setOpenItems(open);
-    setDismissedCount(dismissed.length);
     const counts = { risks: r?.length, commitments: c?.length, goals: g?.length };
     setTabCounts(counts);
     // Decide the opening tab once, when the counts are in. IntelligenceTabs
@@ -579,22 +577,19 @@ export function AttentionPage() {
   return (
     <div className="max-w-5xl">
       <BackNav back={{ to: "/", label: "Dashboard" }} />
-      <h1 className="mb-1 text-h2 font-medium text-balance">Attention</h1>
-      <p className="mb-5 text-body text-ink-dim">
-        What matters, why it matters, and what to do next — across every connection.
-      </p>
+      {/* No subtitle. The verdict card directly below says what this page is
+          for, in terms of the user's actual data - a generic restatement above
+          it only pushed the real answer further down. */}
+      <h1 className="mb-4 text-h2 font-medium text-balance">Attention</h1>
 
       {/* SECTION 1 — always visible */}
       <SentinelStatusCard status={status} onSync={refresh} syncing={refreshing} />
 
-      {/* SECTION 2 — the same operational counts the verdict uses (attention
-          items AND situations), so the summary can never disagree with it. */}
-      <TodaysAttention
-        critical={status?.critical_count ?? 0}
-        needsReview={status?.review_count ?? 0}
-        reminders={status?.reminder_count ?? 0}
-        dismissed={dismissedCount}
-      />
+      {/* The "Today" counter row lived here: Critical / Needs review /
+          Reminders / Dismissed. It was the third place the same numbers
+          appeared - the verdict card states them in prose above, and the tabs
+          carry them as badges below. Three restatements of one fact is what
+          made this page feel like a wall. */}
 
       {error && <p className="mb-4 text-small text-crit">{error}</p>}
       {planResult && (

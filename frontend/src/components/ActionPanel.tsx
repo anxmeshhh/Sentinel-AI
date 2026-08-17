@@ -33,6 +33,25 @@ const RISK_COPY: Record<string, string> = {
  * middle state: "ran, but Sentinel could not confirm it" is shown as such
  * rather than being rounded to success or failure.
  */
+/** What an action should be called on screen.
+ *
+ *  The old fallback was `preview.title ?? action_type`, and most previews carry
+ *  `summary` rather than `title` - so the history list rendered raw registry
+ *  keys at the user: "todo.create_task", "zoom.create_meeting". The last resort
+ *  now humanises the key instead of printing it, because a user should never
+ *  have to read an identifier.
+ */
+function actionLabel(a: { preview?: Record<string, unknown>; action_type: string }): string {
+  const preview = a.preview ?? {};
+  for (const key of ["title", "summary"]) {
+    const v = preview[key];
+    if (typeof v === "string" && v.trim()) return v;
+  }
+  const [, verbNoun = a.action_type] = a.action_type.split(".");
+  const words = verbNoun.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; teamId?: string }) {
   const [actions, setActions] = useState<SentinelAction[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -221,7 +240,7 @@ export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; 
 
       {pending.map((a) => (
         <div key={a.id} className="mb-2 rounded-md border border-watch/40 bg-watch/5 p-3.5">
-          <div className="label-sub mb-1 font-bold text-ink-dim">{a.preview.title ?? a.action_type}</div>
+          <div className="label-sub mb-1 font-bold text-ink-dim">{actionLabel(a)}</div>
 
           {/* Exactly what will happen, field by field. */}
           <div className="mb-2 flex flex-col gap-0.5">
@@ -264,7 +283,7 @@ export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; 
             return (
               <div key={a.id} className="flex items-baseline justify-between gap-3 text-caption">
                 <span className="min-w-0 flex-1 truncate text-ink-dim">
-                  {a.preview.title ?? a.action_type}
+                  {actionLabel(a)}
                   {Boolean(a.result?.url) && (
                     <a
                       href={String(a.result.url)}
@@ -286,10 +305,10 @@ export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; 
                     disabled={busy === a.id}
                     className="flex-none text-micro text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
                   >
-                    undo
+                    Undo
                   </button>
                 )}
-                {a.undone_at && <span className="flex-none text-micro text-watch">undone</span>}
+                {a.undone_at && <span className="flex-none text-micro text-watch">Undone</span>}
               </div>
             );
           })}

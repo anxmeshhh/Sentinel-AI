@@ -60,7 +60,6 @@ export function IntelligenceTabs({
     touched.current = true;
     setTab(key);
   }
-  const active = TABS.find((t) => t.key === tab)!;
 
   function badge(key: TabKey): number | undefined {
     const map: Record<TabKey, number | undefined> = {
@@ -108,14 +107,16 @@ export function IntelligenceTabs({
         })}
       </div>
 
-      {/* The question this tab answers, so the surface explains itself. */}
-      <p className="mb-3 text-caption text-ink-faint">{active.question}</p>
 
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
         {tab === "now" && (
           <>
-            <ActionPanel scope={scope} teamId={teamId} />
+            {/* Findings first. The action composer used to sit above them, so
+                the page opened with an empty text box and its explanation, and
+                the things needing attention began ~900px down. A tool belongs
+                after the content it acts on. */}
             {attention}
+            <ActionPanel scope={scope} teamId={teamId} />
           </>
         )}
         {tab === "risks" && <ProactiveStrip scope={scope} teamId={teamId} alwaysShow />}

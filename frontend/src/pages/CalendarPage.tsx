@@ -8,7 +8,7 @@ import { BackNav } from "../components/BackNav";
 import { SentinelPanel } from "../components/SentinelPanel";
 import { workspaceContext } from "../components/context";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { LoadingBlock } from "../components/ui";
+import { Button, LoadingBlock } from "../components/ui";
 
 type View = "month" | "week" | "day" | "agenda";
 type ScheduleTab = "ai" | "manual";
@@ -505,13 +505,9 @@ function NewEventForm({ onCreated }: { onCreated: () => void }) {
         Add a Google Meet link
       </label>
       {error && <p className="mb-2 text-small text-crit">{error}</p>}
-      <button
-        type="submit"
-        disabled={submitting}
-        className="btn-primary"
-      >
+      <Button size="sm" variant="primary" type="submit" disabled={submitting}>
         {submitting ? "Creating…" : "Create event"}
-      </button>
+      </Button>
     </form>
   );
 }

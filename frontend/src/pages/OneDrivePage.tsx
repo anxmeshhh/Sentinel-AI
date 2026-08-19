@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import type { DriveBrowse, DriveItem } from "../api/types";
 import { DriveIcon } from "../components/ProviderIcons";
 import { ActionButton, ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
-import { Icon, LoadingBlock } from "../components/ui";
+import { Button, Icon, LoadingBlock } from "../components/ui";
 
 /** OneDrive as a workspace: browse, search, and act on files without leaving
  *  Sentinel. Fourth page on the shared shell - again only a work surface. */
@@ -82,15 +82,12 @@ export function OneDrivePage() {
       }}
       quickActions={
         <>
-          <button
-            onClick={() => { setNewFolder((v) => !v); setNewFile(false); }}
-            className="rounded-md border border-border px-2.5 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
-          >
+          <Button size="sm" onClick={() => { setNewFolder((v) => !v); setNewFile(false); }}>
             New folder
-          </button>
-          <button onClick={() => { setNewFile((v) => !v); setNewFolder(false); }} className="btn-primary">
+          </Button>
+          <Button size="sm" variant="primary" onClick={() => { setNewFile((v) => !v); setNewFolder(false); }}>
             New file
-          </button>
+          </Button>
         </>
       }
     >
@@ -179,12 +176,9 @@ export function OneDrivePage() {
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2 border-y border-border py-2.5">
-                  <button
-                    onClick={() => setRenaming((v) => !v)}
-                    className="rounded-md border border-border px-2.5 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
-                  >
+                  <Button size="sm" onClick={() => setRenaming((v) => !v)}>
                     {renaming ? "Cancel rename" : "Rename"}
-                  </button>
+                  </Button>
                   <ActionButton
                     actionType="onedrive.delete_item"
                     params={{ item_id: selected.id, name: selected.name, is_folder: selected.is_folder }}

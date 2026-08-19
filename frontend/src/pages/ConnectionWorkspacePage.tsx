@@ -12,7 +12,7 @@ import { ScopeNotice, scopeOf } from "../components/ScopeBadge";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { CalendarIcon, DriveIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, MicrosoftIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
 import { ServiceCard } from "../components/ServiceCard";
-import { Icon, LoadingBlock } from "../components/ui";
+import { Button, Icon, LoadingBlock } from "../components/ui";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -445,9 +445,9 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
       )}
 
       <div className="mb-2 flex flex-wrap items-center gap-3">
-        <button onClick={handleConnect} disabled={connecting} className="btn-primary">
+        <Button size="sm" variant="primary" onClick={handleConnect} disabled={connecting}>
           {connecting ? "Redirecting…" : connectedCount > 0 ? "Reconnect Microsoft 365" : "Connect Microsoft 365"}
-        </button>
+        </Button>
         {connectedCount > 0 && (
           <button onClick={handleDisconnectAll} className="text-caption text-crit underline underline-offset-2">
             Disconnect all
@@ -541,13 +541,9 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
       </div>
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
-        <button
-          onClick={() => setShowScopeDialog(true)}
-          disabled={connecting}
-          className="btn-primary"
-        >
+        <Button size="sm" variant="primary" onClick={() => setShowScopeDialog(true)} disabled={connecting}>
           {connecting ? "Redirecting…" : connectedCount > 0 ? "Reconnect Google" : "Connect Google"}
-        </button>
+        </Button>
         {gmail && (
           <button onClick={() => handleDisconnect(gmail.id)} className="text-caption text-ink-faint underline underline-offset-2 hover:text-crit">
             Disconnect Gmail
@@ -745,9 +741,9 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
             commit, issue and review <span className="text-ink">metadata only</span> — never source code, diffs or file
             contents.
           </p>
-          <button onClick={connect} disabled={busy === "connect"} className="btn-primary">
+          <Button size="sm" variant="primary" onClick={connect} disabled={busy === "connect"}>
             {busy === "connect" ? "Redirecting…" : "Connect GitHub"}
-          </button>
+          </Button>
         </div>
       </div>
     );

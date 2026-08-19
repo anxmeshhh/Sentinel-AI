@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Commitment } from "../api/types";
 import { InvestigationPanel, useInvestigation } from "./InvestigationPanel";
+import { Button } from "./ui";
 
 const STATUS_COPY: Record<string, { label: string; tone: string; border: string }> = {
   // A suggestion is a question, so it is styled as one - quiet, not alarming.
@@ -130,9 +131,9 @@ export function CommitmentStrip({ scope, teamId }: { scope: "personal" | "channe
             onChange={(e) => setDue(e.target.value)}
             className="rounded-md border border-border bg-transparent px-2 py-1.5 text-caption text-ink-dim outline-none focus:border-border-strong"
           />
-          <button onClick={add} disabled={busy} className="btn-primary">
+          <Button size="sm" variant="primary" onClick={add} disabled={busy}>
             Track
-          </button>
+          </Button>
         </div>
       )}
 

@@ -5,6 +5,7 @@ import { api, ApiError } from "../api/client";
 import type { DemoWorkspace, OnboardingState, Persona } from "../api/types";
 import { useOnboarding } from "../context/OnboardingContext";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { Button } from "../components/ui";
 
 interface PersonaOption {
   value: Persona;
@@ -129,13 +130,9 @@ export function OnboardingPage() {
           Try Sentinel on a realistic sample workspace — mail, calendar, documents and pull requests already in
           place. No accounts to connect, nothing of yours is touched.
         </p>
-        <button
-          onClick={explore}
-          disabled={busy}
-          className="btn-primary"
-        >
+        <Button size="sm" variant="primary" onClick={explore} disabled={busy}>
           {busy && selected === "explorer" ? "Setting up…" : "Explore Sentinel →"}
-        </button>
+        </Button>
       </div>
     </div>
   );

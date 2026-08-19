@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { api, ApiError } from "../../api/client";
 import type { ChannelConnection, ChannelReadiness, ChannelRequirement, Connection, AuthorizedConnection, ChannelExclusion } from "../../api/types";
 import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
-import { LoadingBlock, useToast } from "../ui";
+import { Button, LoadingBlock, useToast } from "../ui";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const REQUIREABLE_PROVIDERS = ["gmail", "google_calendar", "google_drive", "github"];
@@ -197,13 +197,9 @@ function RequirementsSection({
               placeholder="Why this channel needs it (shown to members)"
               className="min-w-[200px] flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
             />
-            <button
-              onClick={add}
-              disabled={busy}
-              className="btn-primary"
-            >
+            <Button size="sm" variant="primary" onClick={add} disabled={busy}>
               Add
-            </button>
+            </Button>
           </div>
           <label className="mt-1.5 flex items-center gap-1.5 text-caption text-ink-dim">
             <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} />

@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import type { OutlookCalendar, OutlookEvent } from "../api/types";
 import { CalendarIcon } from "../components/ProviderIcons";
 import { ActionButton, ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
-import { Icon, LoadingBlock } from "../components/ui";
+import { Button, Icon, LoadingBlock } from "../components/ui";
 
 /**
  * Outlook Calendar as a workspace: see the real agenda, and create, edit or
@@ -68,9 +68,9 @@ export function OutlookCalendarPage() {
         placeholder: "Ask about your schedule…",
       }}
       quickActions={
-        <button onClick={() => { setCreating((v) => !v); setEditing(false); }} className="btn-primary">
+        <Button size="sm" variant="primary" onClick={() => { setCreating((v) => !v); setEditing(false); }}>
           {creating ? "Close" : "New event"}
-        </button>
+        </Button>
       }
     >
       {creating && <EventComposer onDone={afterWrite} />}
@@ -192,12 +192,9 @@ export function OutlookCalendarPage() {
                   )}
 
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-y border-border py-2.5">
-                    <button
-                      onClick={() => setEditing((v) => !v)}
-                      className="rounded-md border border-border px-2.5 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
-                    >
+                    <Button size="sm" onClick={() => setEditing((v) => !v)}>
                       {editing ? "Cancel edit" : "Edit"}
-                    </button>
+                    </Button>
                     <ActionButton
                       actionType="outlook.cancel_event"
                       params={{

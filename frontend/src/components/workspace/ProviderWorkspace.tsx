@@ -7,7 +7,7 @@ import { BackNav } from "../BackNav";
 import { SentinelPanel } from "../SentinelPanel";
 import { workspaceContext } from "../context";
 import { useWorkspace } from "../../context/WorkspaceContext";
-import { LoadingBlock } from "../ui";
+import { Action, ActionGroup, Badge, Button, LoadingBlock } from "../ui";
 
 /**
  * The Provider Workspace shell.
@@ -325,15 +325,11 @@ export function ActionButton({
 
   if (done) {
     return (
-      <span className="inline-flex items-center gap-2 text-caption text-ink-faint">
-        <span className="text-good">Done</span>
-        {undoable && (
-          <button onClick={undo} disabled={busy} className="underline underline-offset-2 hover:text-ink">
-            Undo
-          </button>
-        )}
-        {error && <span className="text-warn">{error}</span>}
-      </span>
+      <ActionGroup>
+        <Badge tone="good">Done</Badge>
+        {undoable && <Action kind="undo" onClick={undo} disabled={busy} />}
+        {error && <span className="text-caption text-warn">{error}</span>}
+      </ActionGroup>
     );
   }
 
@@ -364,20 +360,18 @@ export function ActionButton({
           </div>
         </dl>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
+          {/* The one place a filled danger button is right: the preview above
+              states exactly what goes out, and it cannot be undone. */}
+          <Button
+            size="sm"
+            variant="danger"
+            loading={busy}
             onClick={() => run(pending.id, true)}
-            disabled={busy}
-            className="rounded-md bg-crit px-3 py-1.5 text-caption font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="bg-crit/15"
           >
-            {busy ? "Sending…" : "Send now"}
-          </button>
-          <button
-            onClick={() => setPending(null)}
-            disabled={busy}
-            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-          >
-            Cancel
-          </button>
+            Send now
+          </Button>
+          <Action kind="cancel" onClick={() => setPending(null)} disabled={busy} />
           {error && <span className="text-caption text-crit">{error}</span>}
         </div>
       </div>
@@ -389,16 +383,8 @@ export function ActionButton({
     return (
       <span className="inline-flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface/60 px-2.5 py-1.5">
         <span className="text-caption text-ink-dim">{summary}</span>
-        <button onClick={() => run(pending.id, true)} disabled={busy} className="btn-primary px-2.5 py-1 text-caption">
-          {busy ? "Working…" : confirmLabel}
-        </button>
-        <button
-          onClick={() => setPending(null)}
-          disabled={busy}
-          className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-        >
-          Cancel
-        </button>
+        <Action kind="confirm" label={confirmLabel} loading={busy} onClick={() => run(pending.id, true)} />
+        <Action kind="cancel" onClick={() => setPending(null)} disabled={busy} />
         {error && <span className="text-caption text-crit">{error}</span>}
       </span>
     );
@@ -406,17 +392,9 @@ export function ActionButton({
 
   return (
     <span className="inline-flex items-center gap-2">
-      <button
-        onClick={propose}
-        disabled={busy || disabled}
-        className={
-          variant === "primary"
-            ? "btn-primary"
-            : "rounded-md border border-border px-2.5 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
-        }
-      >
-        {busy ? "…" : label}
-      </button>
+      <Button size="sm" variant={variant} loading={busy} disabled={disabled} onClick={propose}>
+        {label}
+      </Button>
       {error && <span className="text-caption text-crit">{error}</span>}
     </span>
   );

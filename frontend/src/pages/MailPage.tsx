@@ -5,7 +5,7 @@ import { api, ApiError } from "../api/client";
 import type { Connection, MailAskResult, MailBody, MailItem, MailSummary } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { Markdown } from "../components/Markdown";
-import { LoadingBlock } from "../components/ui";
+import { Button, LoadingBlock } from "../components/ui";
 
 type Tab = { key: string; label: string; filter: string; category?: string };
 
@@ -399,13 +399,9 @@ function EmailReader({
             >
               Open in Gmail
             </a>
-            <button
-              onClick={onSummarize}
-              disabled={summarizing}
-              className="btn-primary"
-            >
+            <Button size="sm" variant="primary" onClick={onSummarize} disabled={summarizing}>
               {summarizing ? "Summarizing…" : "Summarize ✨"}
-            </button>
+            </Button>
           </div>
         </div>
 

@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import type { TodoBoard, TodoTask } from "../api/types";
 import { CalendarIcon } from "../components/ProviderIcons";
 import { ActionButton, ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
-import { LoadingBlock } from "../components/ui";
+import { Button, LoadingBlock } from "../components/ui";
 
 const VIEWS = [
   { key: "today", label: "Today" },
@@ -74,9 +74,9 @@ export function MicrosoftTodoPage() {
         placeholder: "Ask about your tasks…",
       }}
       quickActions={
-        <button onClick={() => { setCreating((v) => !v); setEditing(false); }} className="btn-primary">
+        <Button size="sm" variant="primary" onClick={() => { setCreating((v) => !v); setEditing(false); }}>
           {creating ? "Close" : "New task"}
-        </button>
+        </Button>
       }
     >
       {creating && defaultList && <TaskComposer listId={defaultList.id} onDone={afterWrite} />}
@@ -191,12 +191,9 @@ export function MicrosoftTodoPage() {
                   )}
 
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-y border-border py-2.5">
-                    <button
-                      onClick={() => setEditing((v) => !v)}
-                      className="rounded-md border border-border px-2.5 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
-                    >
+                    <Button size="sm" onClick={() => setEditing((v) => !v)}>
                       {editing ? "Cancel edit" : "Edit"}
-                    </button>
+                    </Button>
                     <ActionButton
                       actionType="todo.delete_task"
                       params={{ list_id: selected.list_id, task_id: selected.id, title: selected.title }}

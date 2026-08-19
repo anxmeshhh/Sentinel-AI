@@ -5,6 +5,7 @@ import { api, ApiError } from "../../api/client";
 import type { ChannelPrivacy, Team } from "../../api/types";
 import { useHierarchy } from "../../context/HierarchyContext";
 import { useTeams } from "../../context/TeamContext";
+import { Button } from "../ui";
 
 /** Channel-level configuration only.
  *
@@ -111,13 +112,9 @@ export function SettingsModule({ team, onChanged }: { team: Team; onChanged: () 
         <option value="private">Private</option>
       </select>
 
-      <button
-        onClick={save}
-        disabled={busy || !name.trim()}
-        className="btn-primary"
-      >
+      <Button size="sm" variant="primary" onClick={save} disabled={busy || !name.trim()}>
         {busy ? "Saving…" : "Save changes"}
-      </button>
+      </Button>
       {message && <p className={`text-caption ${message === "Saved." ? "text-good" : "text-crit"}`}>{message}</p>}
 
       <div className="mt-2 rounded-md border border-crit/30 p-2.5">

@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { MyTeam } from "../api/types";
 import { InviteModal } from "./InviteModal";
-import { LoadingBlock } from "./ui";
+import { ButtonLink, LoadingBlock } from "./ui";
 
 function formatRole(role: string): string {
   return role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -124,12 +123,9 @@ function ChannelDetailPanel({ team, onClose, onLeave }: { team: MyTeam; onClose:
       </div>
 
       <div className="mt-4 flex gap-2.5">
-        <Link
-          to={`/channels/${team.id}`}
-          className="btn-primary"
-        >
+        <ButtonLink to={`/channels/${team.id}`} size="sm" variant="primary">
           Open channel &rarr;
-        </Link>
+        </ButtonLink>
         <button
           onClick={() => setInviteOpen(true)}
           className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-transparent px-4 py-2.5 text-small font-medium text-ink-dim transition-colors duration-200 hover:border-border-strong hover:text-ink disabled:pointer-events-none disabled:opacity-45"

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { ChannelReadiness, ReadinessState, RequirementStatus } from "../api/types";
+import { Button, ButtonLink } from "./ui";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -171,20 +172,13 @@ function ChecklistRow({
           </span>
           {needsAction &&
             (isGoogle ? (
-              <button
-                onClick={onConnectGoogle}
-                disabled={busy}
-                className="btn-primary"
-              >
+              <Button size="sm" variant="primary" onClick={onConnectGoogle} disabled={busy}>
                 {status.state === "expired" ? "Reconnect" : "Connect"}
-              </button>
+              </Button>
             ) : (
-              <Link
-                to={`/connections/${status.provider}`}
-                className="btn-primary"
-              >
+              <ButtonLink to={`/connections/${status.provider}`} size="sm" variant="primary">
                 {status.state === "expired" ? "Reconnect" : "Connect"}
-              </Link>
+              </ButtonLink>
             ))}
         </div>
       </div>

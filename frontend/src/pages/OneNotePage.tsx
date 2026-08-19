@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import type { NoteBrowse, NotePage } from "../api/types";
 import { MailIcon } from "../components/ProviderIcons";
 import { ActionButton, ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
-import { Icon, LoadingBlock } from "../components/ui";
+import { Button, Icon, LoadingBlock } from "../components/ui";
 
 /** OneNote as a workspace: notebook → section → page, read the page, add to it,
  *  or write a new one. Fifth page on the shared shell. */
@@ -170,12 +170,9 @@ export function OneNotePage() {
                 <h2 className="text-lead font-semibold leading-tight text-ink text-balance">{selected.title}</h2>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2 border-y border-border py-2.5">
-                  <button
-                    onClick={() => setAppending((v) => !v)}
-                    className="rounded-md border border-border px-2.5 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
-                  >
+                  <Button size="sm" onClick={() => setAppending((v) => !v)}>
                     {appending ? "Cancel" : "Add to this note"}
-                  </button>
+                  </Button>
                   {selected.url && (
                     <a
                       href={selected.url}

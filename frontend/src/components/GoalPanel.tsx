@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Commitment, Goal, GoalDetail } from "../api/types";
 import { InvestigationPanel, useInvestigation } from "./InvestigationPanel";
+import { Button } from "./ui";
 
 const HEALTH_COPY: Record<string, { label: string; tone: string; border: string }> = {
   blocked: { label: "Blocked", tone: "text-crit", border: "border-crit/40 bg-crit/5" },
@@ -204,9 +205,9 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
               onChange={(e) => setDue(e.target.value)}
               className="rounded-md border border-border bg-transparent px-2 py-1.5 text-caption text-ink-dim outline-none focus:border-border-strong"
             />
-            <button onClick={add} disabled={busy} className="btn-primary">
+            <Button size="sm" variant="primary" onClick={add} disabled={busy}>
               Set goal
-            </button>
+            </Button>
           </div>
         </div>
       )}

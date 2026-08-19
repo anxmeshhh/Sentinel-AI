@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import type { OutlookMailBody, OutlookMailItem } from "../api/types";
 import { MailIcon } from "../components/ProviderIcons";
 import { ActionButton, ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
-import { Icon, LoadingBlock } from "../components/ui";
+import { Button, Icon, LoadingBlock } from "../components/ui";
 
 const FILTERS = [
   { key: "recent", label: "All" },
@@ -87,9 +87,9 @@ export function OutlookMailPage() {
         placeholder: "Ask about your mail…",
       }}
       quickActions={
-        <button onClick={() => setComposing((v) => !v)} className="btn-primary">
+        <Button size="sm" variant="primary" onClick={() => setComposing((v) => !v)}>
           {composing ? "Close" : "New draft"}
-        </button>
+        </Button>
       }
     >
       {composing && <Composer onDone={() => { setComposing(false); afterWrite(); }} />}
@@ -208,12 +208,9 @@ export function OutlookMailPage() {
                     undoable
                     onDone={afterWrite}
                   />
-                  <button
-                    onClick={() => setReplying((v) => !v)}
-                    className="rounded-md border border-border px-2.5 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
-                  >
+                  <Button size="sm" onClick={() => setReplying((v) => !v)}>
                     {replying ? "Cancel reply" : "Reply"}
-                  </button>
+                  </Button>
                   {selected.url && (
                     <a
                       href={selected.url}

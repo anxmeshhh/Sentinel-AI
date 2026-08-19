@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import type { ZoomAccount, ZoomMeeting, ZoomMeetingDetail, ZoomParticipants, ZoomRecordings } from "../api/types";
 import { ZoomIcon } from "../components/ProviderIcons";
 import { ActionButton, ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
-import { Icon, LoadingBlock } from "../components/ui";
+import { Button, Icon, LoadingBlock } from "../components/ui";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -68,9 +68,9 @@ export function ZoomPage() {
       refreshKey={refreshKey}
       assistant={{ contextLabel: "Zoom", endpointBase: "/connections/zoom", placeholder: "Ask about your meetings…" }}
       quickActions={
-        <button onClick={() => setScheduling((v) => !v)} className="btn-primary">
+        <Button size="sm" variant="primary" onClick={() => setScheduling((v) => !v)}>
           {scheduling ? "Close" : "Schedule meeting"}
-        </button>
+        </Button>
       }
     >
       {scheduling && <MeetingComposer onDone={afterWrite} timezone={account?.timezone} />}
@@ -251,12 +251,9 @@ function MeetingDetail({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2 border-y border-border py-2.5">
-        <button
-          onClick={() => setEditing((v) => !v)}
-          className="rounded-md border border-border px-2.5 py-1.5 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
-        >
+        <Button size="sm" onClick={() => setEditing((v) => !v)}>
           {editing ? "Cancel edit" : "Edit"}
-        </button>
+        </Button>
         <ActionButton
           actionType="zoom.delete_meeting"
           params={{ meeting_id: meeting.meeting_id, topic: meeting.topic, notify: true }}
@@ -511,12 +508,9 @@ function RecordingList({ data, loading }: { data: ZoomRecordings | null; loading
               </a>
             )}
             {r.has_transcript && (
-              <button
-                onClick={() => openTranscript(r.uuid)}
-                className="rounded-md border border-border px-2.5 py-1 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
-              >
+              <Button size="sm" onClick={() => openTranscript(r.uuid)}>
                 Read transcript
-              </button>
+              </Button>
             )}
           </div>
           {transcript[r.uuid] && (

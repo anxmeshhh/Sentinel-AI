@@ -11,7 +11,7 @@ import {
   relativeTime,
   severityOf,
 } from "../components/situations";
-import { Badge, Button, Card, EmptyState, Section, SkeletonRows } from "../components/ui";
+import { ActionLink, Badge, Button, ButtonLink, Card, EmptyState, Section, SkeletonRows } from "../components/ui";
 
 /**
  * One Situation, in the order the page has to argue it:
@@ -140,22 +140,12 @@ export function SituationDetailPage() {
                       {f.why && <p className="mt-0.5 text-caption text-ink-faint">{f.why}</p>}
                       <div className="mt-2 flex flex-wrap items-center gap-3">
                         {f.url && (
-                          <a
-                            href={f.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-                          >
-                            Open in {label} ↗
-                          </a>
+                          <ActionLink kind="open" to={f.url} label={`Open in ${label}`} />
                         )}
                         {route && (
-                          <Link
-                            to={route}
-                            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-                          >
+                          <ButtonLink to={route} size="sm">
                             Go to {label}
-                          </Link>
+                          </ButtonLink>
                         )}
                       </div>
                     </Card>

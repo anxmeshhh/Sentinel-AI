@@ -1,9 +1,9 @@
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
 import type { AttentionItem, CalendarPlan, Commitment, Goal, SentinelStatus, Situation } from "../api/types";
-import { EvidenceLink } from "../components/AttentionStrip";
 import { BackNav } from "../components/BackNav";
 import { SentinelPanel } from "../components/SentinelPanel";
 import { workspaceContext } from "../components/context";
@@ -12,19 +12,44 @@ import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPa
 import { InvestigationPanel, useInvestigation } from "../components/InvestigationPanel";
 import { IntelligenceTabs, type TabKey } from "../components/IntelligenceTabs";
 import {
-  FindingsEmptyState,
-  ProvidersChecked,
-  SentinelStatusCard,
-} from "../components/SentinelStatusPanel";
-import { LoadingBlock, Overflow, OverflowItem } from "../components/ui";
-import { PROVIDER_LABEL } from "../components/situations";
+  Composer,
+  ContextRail,
+  MetricChip,
+  RecommendedCard,
+  SummaryCard,
+} from "../components/assistant/CommandCenter";
+import { openAttention, useIntelligence } from "../hooks/useIntelligence";
+import { FindingsEmptyState, ProvidersChecked } from "../components/SentinelStatusPanel";
+import {
+  Action,
+  ActionGroup,
+  Icon,
+  ActionLink,
+  Badge,
+  Button,
+  FilterChips,
+  ItemList,
+  ItemRow,
+  LoadingBlock,
+  Overflow,
+  OverflowItem,
+} from "../components/ui";
+import type { IconName } from "../components/ui";
+import {
+  PROVIDER_LABEL,
+  ATTENTION_ICON,
+  attentionMeta,
+  priorityOf,
+  dueLabel,
+  relativeTime,
+} from "../components/situations";
 
 const STATE_FILTERS = [
   { key: "new", label: "Open" },
   { key: "snoozed", label: "Snoozed" },
   { key: "done", label: "Done" },
   { key: "dismissed", label: "Dismissed" },
-];
+] as const;
 
 const SNOOZE_OPTIONS = [
   { label: "3 hours", hours: 3 },
@@ -42,16 +67,6 @@ function providerLabel(src: string | null): string | null {
   if (!src) return null;
   if (src === "agent") return "Sentinel";
   return PROVIDER_LABEL[src] ?? src;
-}
-
-/** SECTION 8: the finding's severity, read straight from its priority so the
- *  card leads with "how serious" before anything else. Manual reminders are
- *  never "critical" - they are the user's own notes. */
-function severityOf(item: AttentionItem): { dot: string; label: string } {
-  if (item.origin === "manual") return { dot: "bg-watch", label: "Reminder" };
-  if (item.priority >= 0.8) return { dot: "bg-crit", label: "Critical" };
-  if (item.priority >= 0.5) return { dot: "bg-warn", label: "Needs review" };
-  return { dot: "bg-watch", label: "FYI" };
 }
 
 /** SECTION 8: the recommended action, deterministic and free on every card -
@@ -73,17 +88,6 @@ function recommendedAction(item: AttentionItem): string | null {
   return item.origin === "manual" ? null : RECOMMENDED[item.type] ?? "Review and decide";
 }
 
-/** A due date said the way a person says it. `toLocaleString()` produced
- *  "18/08/2026, 00:04:54", which reads as a log entry rather than a deadline. */
-function dueLabel(iso: string): string {
-  const d = new Date(iso);
-  const today = new Date();
-  const sameDay = d.toDateString() === today.toDateString();
-  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  if (sameDay) return `today ${time}`;
-  return `${d.toLocaleDateString([], { day: "numeric", month: "short" })}, ${time}`;
-}
-
 /** The tab the page should open on, so the content immediately matches the
  *  narrative verdict: the highest-priority non-empty category. Critical items
  *  live in Now (a critical attention item) or Risks (a critical situation) -
@@ -100,15 +104,6 @@ function pickFocusTab(
   if ((counts.commitments ?? 0) > 0) return "commitments";
   if ((counts.goals ?? 0) > 0) return "goals";
   return "now";
-}
-
-function shortTime(iso: string): string {
-  const d = new Date(iso);
-  const today = new Date();
-  const sameDay = d.toDateString() === today.toDateString();
-  return sameDay
-    ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    : d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 export function AttentionPage() {
@@ -139,6 +134,19 @@ export function AttentionPage() {
 
   const [newTitle, setNewTitle] = useState("");
   const [newDue, setNewDue] = useState("");
+
+  // The rail, the recommendation and the provider count come from the shared
+  // Core hook - the same one the Dashboard and Assistant use, so this page
+  // cannot disagree with them. The page's own item loading below is untouched:
+  // it owns the state filter and the tab content.
+  const intel = useIntelligence();
+  const navigate = useNavigate();
+  const [ask, setAsk] = useState("");
+
+  function handOff(question: string) {
+    const q = question.trim();
+    if (q) navigate(`/assistant?q=${encodeURIComponent(q)}`);
+  }
 
   async function load(filter = stateFilter) {
     setLoading(true);
@@ -290,142 +298,110 @@ export function AttentionPage() {
         </p>
       )
     ) : (
-      <div className="flex flex-col gap-2">
+      <ItemList>
         {items.map((item) => {
-          const sev = severityOf(item);
           const src = providerLabel(item.source_provider);
           return (
-            <div
+            <ItemRow
               key={item.id}
-              className={`rounded-md border bg-surface p-3.5 ${askItem?.id === item.id ? "border-border-strong" : "border-border"}`}
-            >
-              <div className="flex items-start gap-3">
-                <span aria-hidden className={`mt-1.5 inline-block h-2 w-2 flex-none rounded-full ${sev.dot}`} title={sev.label} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className={`text-body font-semibold ${item.state === "done" ? "text-ink-faint line-through" : "text-ink"}`}>
-                      {item.title}
-                    </div>
-                    <div className="flex flex-none items-center gap-2 pt-0.5 text-micro text-ink-faint">
-                      {src && <span>{src}</span>}
-                      <span aria-hidden>·</span>
-                      <span title={new Date(item.created_at).toLocaleString()}>{shortTime(item.created_at)}</span>
-                    </div>
-                  </div>
-                  {/* SECTION 8: why Sentinel surfaced this - a fact, labelled as one. */}
-                  {/* Why Sentinel surfaced this. Deliberately just the fact:
-                      "detected" and a confidence label were decoration on a
-                      line that already carries the reason, and a raw
-                      toLocaleString due date read as a log entry. */}
-                  <div className="mt-1 text-caption text-ink-dim">
-                    {item.why}
-                    {item.due_at && ` · due ${dueLabel(item.due_at)}`}
-                    {item.state === "snoozed" && item.snoozed_until && ` · snoozed until ${dueLabel(item.snoozed_until)}`}
-                  </div>
-                  {/* SECTION 8: what to do + how sure - deterministic, on the card. */}
-                  {item.state === "new" && recommendedAction(item) && (
-                    <div className="mt-1.5 text-caption">
-                      <span className="text-ink-faint">▸ Recommended </span>
-                      <span className="text-ink">{recommendedAction(item)}</span>
-                    </div>
+              tone={priorityOf(item).tone}
+              muted={item.state === "done"}
+              title={item.title}
+              source={src}
+              // Structured facts, not a sentence. `why` is the sentence and it
+              // now lives behind the row's "Why" toggle - present for anyone
+              // who wants it, not read aloud to everyone who doesn't.
+              meta={[
+                ...attentionMeta(item),
+                item.state === "snoozed" && item.snoozed_until
+                  ? `snoozed until ${dueLabel(item.snoozed_until)}`
+                  : null,
+                item.state === "new" ? recommendedAction(item) : null,
+              ]}
+              badge={<Badge tone={priorityOf(item).tone}>{priorityOf(item).label}</Badge>}
+              icon={(ATTENTION_ICON[item.type] as IconName) ?? "alert"}
+              details={item.why}
+              className={askItem?.id === item.id ? "bg-surface/60" : undefined}
+              actions={
+                <ActionGroup>
+                  {item.state === "new" ? (
+                    <>
+                      <Action kind="done" onClick={() => setState(item, "done")} />
+                      <Overflow align="right">
+                        {(close) => (
+                          <>
+                            {SNOOZE_OPTIONS.map((o) => (
+                              <OverflowItem
+                                key={o.label}
+                                onClick={() => {
+                                  setState(item, "snoozed", o.hours);
+                                  close();
+                                }}
+                              >
+                                Snooze {o.label.toLowerCase()}
+                              </OverflowItem>
+                            ))}
+                            <OverflowItem
+                              onClick={() => {
+                                setState(item, "dismissed");
+                                close();
+                              }}
+                            >
+                              Dismiss
+                            </OverflowItem>
+                            {item.type === "upcoming_meeting" && (
+                              <OverflowItem
+                                disabled={meetingBrief.loading && prepItemId === item.id}
+                                onClick={() => {
+                                  prepareFor(item);
+                                  close();
+                                }}
+                              >
+                                {meetingBrief.loading && prepItemId === item.id ? "Preparing…" : "Prepare me"}
+                              </OverflowItem>
+                            )}
+                            {item.due_at && item.type !== "upcoming_meeting" && (
+                              <OverflowItem
+                                onClick={() => {
+                                  proposeCalendar(item);
+                                  close();
+                                }}
+                              >
+                                Add to calendar
+                              </OverflowItem>
+                            )}
+                            {item.origin === "detected" && (
+                              <OverflowItem
+                                disabled={investigation.loading && investigateItemId === item.id}
+                                onClick={() => {
+                                  investigateFor(item);
+                                  close();
+                                }}
+                              >
+                                {investigation.loading && investigateItemId === item.id
+                                  ? "Investigating…"
+                                  : "Investigate"}
+                              </OverflowItem>
+                            )}
+                            <OverflowItem
+                              onClick={() => {
+                                setAskItem(askItem?.id === item.id ? null : item);
+                                close();
+                              }}
+                            >
+                              Ask Sentinel
+                            </OverflowItem>
+                          </>
+                        )}
+                      </Overflow>
+                    </>
+                  ) : (
+                    <Action kind="undo" label="Reopen" onClick={() => setState(item, "new")} />
                   )}
-                </div>
-              </div>
-
-              {/* Two actions, and a menu.
-                  This row used to print seven links side by side - Mark done,
-                  Snooze, Dismiss, Prepare Me, Investigate, Ask Sentinel, Open -
-                  which is a menu laid out flat, with nothing reading as
-                  primary. What people actually do is finish it or go look at
-                  it; everything else is one click away. */}
-              <div className="mt-2.5 flex flex-wrap items-center gap-3 pl-5 text-caption">
-                {item.state === "new" ? (
-                  <>
-                    <button
-                      onClick={() => setState(item, "done")}
-                      className="text-ink-faint underline underline-offset-2 hover:text-good"
-                    >
-                      Done
-                    </button>
-                    <Overflow align="left">
-                      {(close) => (
-                        <>
-                          {SNOOZE_OPTIONS.map((o) => (
-                            <OverflowItem
-                              key={o.label}
-                              onClick={() => {
-                                setState(item, "snoozed", o.hours);
-                                close();
-                              }}
-                            >
-                              Snooze {o.label.toLowerCase()}
-                            </OverflowItem>
-                          ))}
-                          <OverflowItem
-                            onClick={() => {
-                              setState(item, "dismissed");
-                              close();
-                            }}
-                          >
-                            Dismiss
-                          </OverflowItem>
-                          {item.type === "upcoming_meeting" && (
-                            <OverflowItem
-                              disabled={meetingBrief.loading && prepItemId === item.id}
-                              onClick={() => {
-                                prepareFor(item);
-                                close();
-                              }}
-                            >
-                              {meetingBrief.loading && prepItemId === item.id ? "Preparing…" : "Prepare me"}
-                            </OverflowItem>
-                          )}
-                          {item.due_at && item.type !== "upcoming_meeting" && (
-                            <OverflowItem
-                              onClick={() => {
-                                proposeCalendar(item);
-                                close();
-                              }}
-                            >
-                              Add to calendar
-                            </OverflowItem>
-                          )}
-                          {item.origin === "detected" && (
-                            <OverflowItem
-                              disabled={investigation.loading && investigateItemId === item.id}
-                              onClick={() => {
-                                investigateFor(item);
-                                close();
-                              }}
-                            >
-                              {investigation.loading && investigateItemId === item.id
-                                ? "Investigating…"
-                                : "Investigate"}
-                            </OverflowItem>
-                          )}
-                          <OverflowItem
-                            onClick={() => {
-                              setAskItem(askItem?.id === item.id ? null : item);
-                              close();
-                            }}
-                          >
-                            Ask Sentinel
-                          </OverflowItem>
-                        </>
-                      )}
-                    </Overflow>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => setState(item, "new")}
-                    className="text-ink-faint underline underline-offset-2 hover:text-ink"
-                  >
-                    Reopen
-                  </button>
-                )}
-                <EvidenceLink item={item} className="font-semibold text-accent-text hover:underline" />
-              </div>
-
+                  {item.evidence_url && <ActionLink kind="open" to={item.evidence_url} />}
+                </ActionGroup>
+              }
+            >
               {prepItemId === item.id && (meetingBrief.brief || meetingBrief.error) && (
                 <div className="mt-3">
                   {meetingBrief.error ? (
@@ -473,10 +449,10 @@ export function AttentionPage() {
                   />
                 </div>
               )}
-            </div>
+            </ItemRow>
           );
         })}
-      </div>
+      </ItemList>
     );
 
   // SECTION 9: the Now tab reads top-to-bottom as the spec's flow -
@@ -487,19 +463,7 @@ export function AttentionPage() {
       <div>
         <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-micro uppercase tracking-wide text-ink-faint">Findings</h3>
-          <div className="flex flex-wrap gap-1">
-            {STATE_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setStateFilter(f.key)}
-                className={`rounded-full px-2.5 py-1 font-mono text-micro transition-colors ${
-                  stateFilter === f.key ? "bg-surface-3 text-ink" : "text-ink-faint hover:text-ink-dim"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <FilterChips options={STATE_FILTERS} value={stateFilter} onChange={setStateFilter} />
         </div>
         {findingsList}
       </div>
@@ -537,12 +501,7 @@ export function AttentionPage() {
           to be scanned. */}
       <section className="border-t border-rule pt-4">
         {!addingReminder ? (
-          <button
-            onClick={() => setAddingReminder(true)}
-            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-          >
-            + Add a reminder
-          </button>
+          <Action kind="create" label="Add a reminder" onClick={() => setAddingReminder(true)} />
         ) : (
         <form onSubmit={addReminder} className="flex flex-wrap gap-2">
           <input
@@ -558,72 +517,140 @@ export function AttentionPage() {
             aria-label="Due (optional)"
             className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink outline-none transition-colors focus:border-border-strong"
           />
-          <button type="submit" disabled={!newTitle.trim()} className="btn-primary">
+          <Button size="sm" variant="primary" type="submit" disabled={!newTitle.trim()}>
             Add
-          </button>
-          <button
-            type="button"
-            onClick={() => setAddingReminder(false)}
-            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-          >
-            Cancel
-          </button>
+          </Button>
+          <Action kind="cancel" onClick={() => setAddingReminder(false)} />
         </form>
         )}
       </section>
     </div>
   );
 
+  // Summary counts, all derived from data already loaded - nothing new is
+  // fetched and nothing is invented. A card with a zero count does not render.
+  // Counted from the shared Core hook, not this page's own list, so the
+  // summary here can never disagree with the same numbers on the Dashboard.
+  // `priorityOf` is the one place the four-step scale is defined.
+  const openNow = openAttention(intel.attention);
+  const criticalCount = openNow.filter((i) => priorityOf(i).label === "Critical").length;
+  const upcomingCount = openNow.filter(
+    (i) => i.due_at && new Date(i.due_at).getTime() > Date.now(),
+  ).length;
+  const insightCount = intel.memories.length;
+
   return (
-    <div className="max-w-5xl">
-      <BackNav back={{ to: "/", label: "Dashboard" }} />
-      {/* No subtitle. The verdict card directly below says what this page is
-          for, in terms of the user's actual data - a generic restatement above
-          it only pushed the real answer further down. */}
-      <h1 className="mb-4 text-h2 font-medium text-balance">Attention</h1>
+    <div className="flex gap-6">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <BackNav back={{ to: "/", label: "Dashboard" }} />
 
-      {/* SECTION 1 — always visible */}
-      <SentinelStatusCard status={status} onSync={refresh} syncing={refreshing} />
-
-      {/* The "Today" counter row lived here: Critical / Needs review /
-          Reminders / Dismissed. It was the third place the same numbers
-          appeared - the verdict card states them in prose above, and the tabs
-          carry them as badges below. Three restatements of one fact is what
-          made this page feel like a wall. */}
-
-      {error && <p className="mb-4 text-small text-crit">{error}</p>}
-      {planResult && (
-        <p className={`mb-4 text-small ${planResult.startsWith("Added") ? "text-good" : "text-crit"}`}>{planResult}</p>
-      )}
-      {plan && (
-        <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 p-3.5">
-          <div className="label-sub mb-2 font-bold text-watch">Sentinel plans to create this event</div>
-          <div className="mb-1 text-body font-semibold text-ink">{plan.plan.title}</div>
-          <div className="mb-3 text-caption text-ink-dim">
-            {new Date(plan.plan.start).toLocaleString()} — {new Date(plan.plan.end).toLocaleTimeString()}
+        <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-h2 font-semibold tracking-tight text-ink">Attention</h1>
+            <p className="mt-1 text-small text-ink-dim">Here's what needs your immediate attention.</p>
           </div>
-          <div className="flex gap-2">
-            <button onClick={confirmCalendar} disabled={planBusy} className="btn-primary">
-              {planBusy ? "Adding…" : "Confirm & Add"}
-            </button>
-            <button
-              onClick={() => setPlan(null)}
-              disabled={planBusy}
-              className="rounded-md border border-border px-3 py-1.5 text-caption text-ink-dim hover:border-crit hover:text-crit disabled:opacity-50"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+          <Button size="sm" variant="secondary" loading={refreshing} onClick={() => void refresh()}>
+            <Icon name="refresh" size={13} /> Sync now
+          </Button>
+        </header>
 
-      {/* SECTION 7 — tabs carry live counts; zero tabs de-emphasise themselves. */}
-      <IntelligenceTabs
-        scope="personal"
-        counts={{ attention: nowCount, ...tabCounts }}
-        attention={nowContent}
-        autoFocus={focusTab}
-      />
+        {/* The verdict card's numbers, as chips. Same source, a fraction of
+            the height - this page is scanned, not read. */}
+        {status && (
+          <div className="mb-5 flex flex-wrap gap-2">
+            <MetricChip icon="activity" label="Signals" value={status.signals_analysed.toLocaleString()} />
+            <MetricChip icon="layers" label="Services" value={status.provider_count} />
+            <MetricChip icon="grid" label="Providers" value={intel.connections.length} />
+            {status.last_synced_at && (
+              <MetricChip icon="check" label="Synced" value={relativeTime(status.last_synced_at)} tone="good" />
+            )}
+          </div>
+        )}
+
+        {(criticalCount > 0 || upcomingCount > 0 || insightCount > 0) && (
+          <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {criticalCount > 0 && (
+              <SummaryCard
+                tone="critical"
+                label="Critical"
+                count={criticalCount}
+                description={criticalCount === 1 ? "critical risk" : "critical risks"}
+                to="/findings"
+              />
+            )}
+            {upcomingCount > 0 && (
+              <SummaryCard
+                tone="upcoming"
+                label="Upcoming"
+                count={upcomingCount}
+                description={upcomingCount === 1 ? "upcoming item" : "upcoming items"}
+                to="/attention"
+              />
+            )}
+            {insightCount > 0 && (
+              <SummaryCard
+                tone="insight"
+                label="Insight"
+                count={insightCount}
+                description={insightCount === 1 ? "pattern detected" : "patterns detected"}
+                to="/memory"
+              />
+            )}
+          </div>
+        )}
+
+        {error && <p className="mb-4 text-small text-crit">{error}</p>}
+        {planResult && (
+          <p className={`mb-4 text-small ${planResult.startsWith("Added") ? "text-good" : "text-crit"}`}>
+            {planResult}
+          </p>
+        )}
+        {plan && (
+          <div className="mb-4 rounded-lg border border-warn/40 bg-warn/5 p-3.5">
+            <div className="mb-2 text-micro font-semibold uppercase tracking-wide text-warn">
+              Sentinel plans to create this event
+            </div>
+            <div className="mb-1 text-small font-semibold text-ink">{plan.plan.title}</div>
+            <div className="mb-3 text-caption text-ink-dim">
+              {new Date(plan.plan.start).toLocaleString()} — {new Date(plan.plan.end).toLocaleTimeString()}
+            </div>
+            <ActionGroup>
+              <Action kind="confirm" label="Confirm & add" loading={planBusy} onClick={() => void confirmCalendar()} />
+              <Action kind="cancel" onClick={() => setPlan(null)} disabled={planBusy} />
+            </ActionGroup>
+          </div>
+        )}
+
+        {/* Tabs carry live counts; zero tabs de-emphasise themselves. */}
+        <IntelligenceTabs
+          scope="personal"
+          counts={{ attention: nowCount, ...tabCounts }}
+          attention={nowContent}
+          autoFocus={focusTab}
+        />
+
+        <RecommendedCard
+          decision={intel.decisions.find((d) => d.kind === "recommend") ?? intel.decisions[0]}
+          onDecide={async (id, verb) => {
+            intel.dropDecision(id);
+            await api.post(`/decisions/${id}/${verb}`).catch(() => void intel.reload());
+          }}
+        />
+
+        {/* The way in to the Assistant - it owns every capability, so this
+            hands the question over rather than answering it here. */}
+        <Composer
+          value={ask}
+          onChange={setAsk}
+          onSubmit={() => handOff(ask)}
+          busy={false}
+          showSuggestions
+          onSuggest={handOff}
+          sticky={false}
+        />
+      </div>
+
+      <ContextRail intel={intel} onAsk={handOff} />
     </div>
   );
 }

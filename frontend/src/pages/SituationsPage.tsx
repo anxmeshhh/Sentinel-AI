@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { SituationRow } from "../api/types";
 import { BackNav } from "../components/BackNav";
-import { EmptyState, PageHeader, SkeletonRows } from "../components/ui";
-import { PROVIDER_LABEL, relativeTime, severityOf } from "../components/situations";
+import { EmptyState, FilterChips, PageHeader, SkeletonRows } from "../components/ui";
+import { SituationCard } from "../components/SituationCard";
 
 /**
  * Situations - the Intelligence Core's most synthesised output, and until now
@@ -39,19 +38,16 @@ export function SituationsPage() {
         description="When several things across your tools turn out to be about the same repository, channel or service, Sentinel groups them here."
       />
 
-      <div className="mb-5 flex flex-wrap gap-1.5">
-        {(["open", "resolved", "all"] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`rounded-md px-2.5 py-1 text-caption capitalize transition-colors ${
-              filter === f ? "bg-surface-2 text-ink" : "text-ink-faint hover:text-ink"
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      <FilterChips
+        className="mb-5"
+        options={[
+          { key: "open", label: "Open" },
+          { key: "resolved", label: "Resolved" },
+          { key: "all", label: "All" },
+        ] as const}
+        value={filter}
+        onChange={setFilter}
+      />
 
       {error ? (
         <p className="text-caption text-crit">{error}</p>
@@ -60,45 +56,15 @@ export function SituationsPage() {
       ) : rows.length === 0 ? (
         <EmptyState
           title={filter === "resolved" ? "Nothing has been resolved yet." : "No situations right now."}
-          description="A situation forms when Sentinel finds two or more related things about the same repository, channel or service — a repo that went quiet, a meeting about it, and an overdue task, for instance."
+          description="Situations form when two or more findings point at the same repository, channel or service."
         />
       ) : (
-        <ul className="divide-y divide-border border-y border-border">
-          {rows.map((s) => {
-            const sev = severityOf(s.severity);
-            return (
-              <li key={s.id}>
-                <Link
-                  to={`/situations/${s.id}`}
-                  className="flex items-start gap-3 px-1 py-3.5 transition-colors hover:bg-surface/60"
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`mt-[7px] h-1.5 w-1.5 flex-none rounded-full ${sev.dot}`}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-small text-ink">
-                      {s.entity ?? s.title}
-                    </span>
-                    <span className="block truncate text-caption text-ink-faint">
-                      {s.member_count} related findings
-                      {s.providers.length > 0 &&
-                        ` · ${s.providers.map((p) => PROVIDER_LABEL[p] ?? p).join(", ")}`}
-                      {s.occurrence_count > 1 && ` · seen ${s.occurrence_count} times`}
-                    </span>
-                  </span>
-                  <span className="flex-none text-right text-micro text-ink-faint">
-                    <span className={`block ${s.status === "resolved" ? "text-good" : sev.text}`}>
-                      {s.status === "resolved" ? "Resolved" : sev.label}
-                    </span>
-                    <span className="block">
-                      {relativeTime(s.status === "resolved" ? s.resolved_at : s.last_activity_at)}
-                    </span>
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
+        <ul className="flex flex-col gap-2">
+          {rows.map((s) => (
+            <li key={s.id}>
+              <SituationCard situation={s} />
+            </li>
+          ))}
         </ul>
       )}
     </div>

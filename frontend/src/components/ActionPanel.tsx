@@ -2,16 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, ApiError } from "../api/client";
 import type { ActionCatalogEntry, ActionPolicy, SentinelAction } from "../api/types";
+import { Action, ActionLink, Badge, Button, type Tone } from "./ui";
 
-const STATUS_COPY: Record<string, { label: string; tone: string }> = {
-  awaiting_approval: { label: "Needs your approval", tone: "text-watch" },
-  approved: { label: "Approved", tone: "text-ink-faint" },
-  executing: { label: "Running", tone: "text-watch" },
-  succeeded: { label: "Done", tone: "text-good" },
-  failed: { label: "Failed", tone: "text-crit" },
-  unknown: { label: "Unconfirmed", tone: "text-watch" },
-  rejected: { label: "Declined", tone: "text-ink-faint" },
-  cancelled: { label: "Cancelled", tone: "text-ink-faint" },
+const STATUS_COPY: Record<string, { label: string; badge: Tone }> = {
+  proposed: { label: "Proposed", badge: "neutral" },
+  awaiting_approval: { label: "Needs your approval", badge: "watch" },
+  approved: { label: "Approved", badge: "neutral" },
+  executing: { label: "Running", badge: "watch" },
+  succeeded: { label: "Done", badge: "good" },
+  failed: { label: "Failed", badge: "crit" },
+  unknown: { label: "Unconfirmed", badge: "warn" },
+  rejected: { label: "Declined", badge: "neutral" },
+  cancelled: { label: "Cancelled", badge: "neutral" },
 };
 
 const RISK_COPY: Record<string, string> = {
@@ -172,7 +174,7 @@ export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; 
         </div>
         <button
           onClick={openCatalog}
-          className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
+          className="text-caption text-ink-faint transition-colors hover:text-ink"
         >
           {showCatalog ? "Hide" : "What can Sentinel do?"}
         </button>
@@ -193,9 +195,9 @@ export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; 
           }
           className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-small outline-none focus:border-border-strong"
         />
-        <button onClick={ask} disabled={asking || text.trim().length < 3} className="btn-primary">
-          {asking ? "Thinking…" : "Propose"}
-        </button>
+        <Button size="sm" variant="primary" loading={asking} disabled={text.trim().length < 3} onClick={ask}>
+          Propose
+        </Button>
       </div>
       <p className="mb-2 text-micro text-ink-faint">
         Sentinel will show you exactly what it plans to do. Nothing runs until you confirm.
@@ -261,16 +263,8 @@ export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; 
           {a.reason && <p className="mb-2 text-caption leading-relaxed text-ink-faint">Why: {a.reason}</p>}
 
           <div className="flex flex-wrap items-center gap-3 text-caption">
-            <button onClick={() => act(a.id, "approve")} disabled={busy === a.id} className="btn-primary">
-              {busy === a.id ? "Working…" : "Confirm"}
-            </button>
-            <button
-              onClick={() => act(a.id, "reject")}
-              disabled={busy === a.id}
-              className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
-            >
-              Cancel
-            </button>
+            <Action kind="confirm" loading={busy === a.id} onClick={() => act(a.id, "approve")} />
+            <Action kind="cancel" onClick={() => act(a.id, "reject")} disabled={busy === a.id} />
             <span className="text-micro text-ink-faint">{RISK_COPY[a.risk] ?? a.risk}</span>
           </div>
         </div>
@@ -285,30 +279,15 @@ export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; 
                 <span className="min-w-0 flex-1 truncate text-ink-dim">
                   {actionLabel(a)}
                   {Boolean(a.result?.url) && (
-                    <a
-                      href={String(a.result.url)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-2 text-accent-text hover:underline"
-                    >
-                      open
-                    </a>
+                    <ActionLink kind="open" to={String(a.result.url)} className="ml-2" />
                   )}
                 </span>
-                <span className={`flex-none font-mono text-micro uppercase tracking-wide ${status.tone}`}>
-                  {status.label}
-                </span>
+                <Badge tone={status.badge}>{status.label}</Badge>
                 {/* Only offered where the registry says an inverse exists. */}
                 {(a.status === "succeeded" || a.status === "unknown") && !a.undone_at && (
-                  <button
-                    onClick={() => undo(a.id)}
-                    disabled={busy === a.id}
-                    className="flex-none text-micro text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
-                  >
-                    Undo
-                  </button>
+                  <Action kind="undo" onClick={() => undo(a.id)} disabled={busy === a.id} />
                 )}
-                {a.undone_at && <span className="flex-none text-micro text-watch">Undone</span>}
+                {a.undone_at && <Badge tone="watch">Undone</Badge>}
               </div>
             );
           })}

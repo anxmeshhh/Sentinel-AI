@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Situation } from "../api/types";
 import { InvestigationPanel, useInvestigation } from "./InvestigationPanel";
+import { Action, ActionGroup } from "./ui";
 
 const STATUS_COPY: Record<string, { label: string; tone: string }> = {
   emerging: { label: "Emerging", tone: "border-watch/40 bg-watch/5" },
@@ -86,13 +87,7 @@ export function ProactiveStrip({
             {scope === "personal" ? "🔒 Private to you" : "👥 Shared with this channel"}
           </span>
         </div>
-        <button
-          onClick={() => load(true)}
-          disabled={busy}
-          className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
-        >
-          {busy ? "Checking…" : "↻ Check again"}
-        </button>
+        <Action kind="retry" label="Check again" loading={busy} onClick={() => load(true)} />
       </div>
 
       {situations.length === 0 && (
@@ -134,26 +129,22 @@ export function ProactiveStrip({
               </ul>
             )}
 
-            <div className="mt-2.5 flex flex-wrap items-center gap-3 text-caption">
-              <button
+            {/* Same buttons as every other row in Sentinel. These were three
+                underlined text links, which is why this card read as a
+                different product from the findings list above it. */}
+            <ActionGroup className="mt-3">
+              <Action
+                kind="details"
+                label={open ? "Hide evidence" : `Evidence (${s.evidence.length})`}
                 onClick={() => setExpanded(open ? null : s.id)}
-                className="text-ink-faint underline underline-offset-2 hover:text-ink"
-              >
-                {open ? "Hide evidence" : `Show evidence (${s.evidence.length})`}
-              </button>
-              <button
+              />
+              <Action
+                kind="takeAction"
+                label="Investigate"
+                loading={investigation.loading && investigatingId === s.id}
                 onClick={() => investigateFor(s.id)}
-                disabled={investigation.loading && investigatingId === s.id}
-                className={`underline underline-offset-2 disabled:opacity-50 ${
-                  investigatingId === s.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
-                }`}
-              >
-                {investigation.loading && investigatingId === s.id ? "Investigating…" : "Investigate This ✨"}
-              </button>
-              <span className="text-micro text-ink-faint">
-                confidence {Math.round(s.confidence * 100)}%
-              </span>
-            </div>
+              />
+            </ActionGroup>
 
             {investigatingId === s.id && (investigation.investigation || investigation.error) && (
               <div className="mt-2">

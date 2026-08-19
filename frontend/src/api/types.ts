@@ -1206,3 +1206,32 @@ export interface SituationDetail extends SituationRow {
     undo_result: string | null;
   }[];
 }
+
+/** A grounded, confirm-first proposal. Mirrors routes/decisions.py::_out. */
+export interface DecisionRow {
+  id: string;
+  situation_id: string;
+  kind: "inform" | "recommend";
+  action: string;
+  grounded_in: string;
+  rationale: string;
+  requires_confirmation: boolean;
+  memory_informed: boolean;
+  priority_score: number;
+  status: "proposed" | "confirmed" | "dismissed" | "executed";
+}
+
+/** Something Sentinel learned by watching what keeps happening.
+ *  Mirrors routes/memory.py::_out. */
+export interface MemoryRow {
+  id: string;
+  kind: string;
+  subject_key: string;
+  summary: string;
+  strength: number;
+  observation_count: number;
+  status: "active" | "forgotten";
+  evidence: Record<string, unknown>;
+  first_observed_at: string | null;
+  last_observed_at: string | null;
+}

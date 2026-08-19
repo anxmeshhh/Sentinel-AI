@@ -402,12 +402,33 @@ function PersonalNav() {
       </div>
 
       {/* Tier 1 - Sentinel's own intelligence. Always present, because these
-          are the product, not a provider. */}
-      <nav className="mb-4 flex flex-col">
+          are the product, not a provider.
+
+          The Assistant sits first and carries the only coloured treatment in
+          the sidebar, because it is the primary interface: everything below it
+          is a way of looking at what the Assistant can already tell you. */}
+      <nav className="mb-4 flex flex-col gap-0.5">
+        <NavLink
+          to="/assistant"
+          className={({ isActive }) =>
+            `flex items-center gap-2 rounded-md px-2.5 py-2 text-small font-medium transition-colors ${
+              isActive
+                ? "bg-accent/15 text-ink ring-1 ring-inset ring-accent/40"
+                : "text-ink-dim hover:bg-accent/10 hover:text-ink"
+            }`
+          }
+        >
+          <span
+            className="flex h-4 w-4 flex-none items-center justify-center rounded-full border border-accent/50"
+            aria-hidden="true"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+          </span>
+          Assistant
+        </NavLink>
         <PersonalNavLink to="/" label="Dashboard" end />
         <PersonalNavLink to="/attention" label="Attention" />
         <PersonalNavLink to="/situations" label="Situations" />
-        <PersonalNavLink to="/assistant" label="AI Assistant" />
       </nav>
 
       {/* Tier 2 - the connected providers feeding Sentinel, grouped by family
@@ -446,8 +467,9 @@ function PersonalNav() {
 
       {/* Tier 3 - utility. Separated so History (and later, more) does not sit
           at the same weight as the intelligence surfaces above. */}
-      <nav className="border-t border-border pt-3">
+      <nav className="flex flex-col border-t border-border pt-3">
         <PersonalNavLink to="/history" label="History" />
+        <PersonalNavLink to="/settings" label="Settings" />
       </nav>
     </>
   );

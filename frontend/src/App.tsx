@@ -3,9 +3,8 @@ import { useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
-import { HierarchyTree } from "./components/HierarchyTree";
 import { MemoryToast } from "./components/MemoryToast";
-import { WorkspaceRail } from "./components/WorkspaceRail";
+import { Sidebar } from "./components/Sidebar";
 import { useAuth } from "./context/AuthContext";
 import { useWorkspace } from "./context/WorkspaceContext";
 import { useOnboarding } from "./context/OnboardingContext";
@@ -35,6 +34,9 @@ import { OnboardingPage } from "./pages/OnboardingPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SituationDetailPage } from "./pages/SituationDetailPage";
 import { SituationsPage } from "./pages/SituationsPage";
+import { MemoryPage } from "./pages/MemoryPage";
+import { GoalsPage } from "./pages/GoalsPage";
+import { FindingsPage } from "./pages/FindingsPage";
 import { SignupPage } from "./pages/SignupPage";
 import { Icon, LoadingBlock } from "./components/ui";
 
@@ -51,42 +53,44 @@ import { Icon, LoadingBlock } from "./components/ui";
  */
 function AppShell({ children }: { children: ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const { refresh, setActiveId } = useWorkspace();
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <div className="hidden md:block">
-        <WorkspaceRail onOpenCreate={() => setCreatingWorkspace(true)} />
-      </div>
-
-      {/* Navigation pane: a drawer below md, a fixed column above it. */}
+    <div className="flex h-screen overflow-hidden bg-ground">
+      {/* One navigation column. It was two - a 56px icon rail beside a 248px
+          tree - which is the main reason the shell never read as a single
+          application. Everything the rail did lives in the sidebar now. */}
       {mobileNavOpen && (
-        <div className="fixed inset-0 z-40 bg-black/70 md:hidden" onClick={() => setMobileNavOpen(false)} aria-hidden="true" />
+        <div
+          className="fixed inset-0 z-40 bg-black/70 md:hidden"
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
+        />
       )}
       <div
-        className={`fixed inset-y-0 left-0 z-50 flex w-[248px] transition-transform duration-200 md:static md:z-auto md:translate-x-0 ${
-          mobileNavOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 border-r border-rule transition-all duration-200 md:static md:z-auto md:translate-x-0 ${
+          collapsed ? "w-[64px]" : "w-[212px]"
+        } ${mobileNavOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
-        <div className="md:hidden">
-          <WorkspaceRail onOpenCreate={() => setCreatingWorkspace(true)} />
-        </div>
-        <div className="min-w-0 flex-1 border-r border-border bg-surface">
-          <HierarchyTree />
-        </div>
+        <Sidebar
+          collapsed={collapsed}
+          onToggle={() => setCollapsed((v) => !v)}
+          onOpenCreate={() => setCreatingWorkspace(true)}
+        />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <button
           onClick={() => setMobileNavOpen(true)}
-          className="flex flex-none items-center gap-2 border-b border-border bg-surface px-4 py-3 text-small text-ink-dim md:hidden"
+          className="flex flex-none items-center gap-2 border-b border-rule bg-surface px-4 py-3 text-small text-ink-dim md:hidden"
         >
-<Icon name="menu" size={16} />
+          <Icon name="menu" size={16} />
           Navigate
         </button>
-        <main className="min-w-0 flex-1 overflow-y-auto px-5 py-8 pb-24 sm:px-8 sm:py-12 md:px-12 lg:px-16">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 pb-16 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-[1400px]">{children}</div>
         </main>
       </div>
 
@@ -149,6 +153,11 @@ export function App() {
       <Route path="/" element={<RequireAuth><BriefPage /></RequireAuth>} />
       <Route path="/attention" element={<RequireAuth><AttentionPage /></RequireAuth>} />
       <Route path="/situations" element={<RequireAuth><SituationsPage /></RequireAuth>} />
+      {/* Both of these were linked from the dashboard, the rail and the
+          Assistant but had no route - every "View memory" 404'd. */}
+      <Route path="/findings" element={<RequireAuth><FindingsPage /></RequireAuth>} />
+      <Route path="/memory" element={<RequireAuth><MemoryPage /></RequireAuth>} />
+      <Route path="/goals" element={<RequireAuth><GoalsPage /></RequireAuth>} />
       <Route path="/situations/:id" element={<RequireAuth><SituationDetailPage /></RequireAuth>} />
       <Route path="/audit/actions" element={<RequireAuth><ActionAuditPage /></RequireAuth>} />
       <Route path="/findings/:id" element={<RequireAuth><FindingDetailPage /></RequireAuth>} />

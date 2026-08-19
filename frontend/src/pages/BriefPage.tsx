@@ -1,94 +1,207 @@
-import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { api } from "../api/client";
-import type { Connection } from "../api/types";
-import { AttentionStrip, CatchMeUpCard } from "../components/AttentionStrip";
-import { ChannelCards } from "../components/ChannelCards";
-import { GroupCards } from "../components/GroupCards";
-import { IntegrationCardGrid } from "../components/IntegrationCardGrid";
+import type { AttentionItem } from "../api/types";
+import {
+  AttentionSection,
+  Composer,
+  ContextRail,
+  Greeting,
+  RecommendedCard,
+  SignalCards,
+  StatChips,
+} from "../components/assistant/CommandCenter";
+import { WorkspaceOverview } from "../components/WorkspaceOverview";
+import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { LoadingBlock } from "../components/ui";
+import { openAttention, useIntelligence } from "../hooks/useIntelligence";
+import { EmptyState, SkeletonRows } from "../components/ui";
 
-const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
-  session_expired: "That connect link expired — try again.",
-  no_refresh_token: "Google didn't grant offline access — try disconnecting in your Google Account settings and reconnecting.",
-};
-
-/** The dashboard. "Today's Brief" used to render here too, but the
- * Attention strip made it redundant (the same agent findings surface as
- * attention items, with lifecycle actions the brief never had) - briefs
- * remain browsable under History, and agents keep running on schedule. */
+/**
+ * The Command Center.
+ *
+ * This page answers one question - "what matters right now, and what should I
+ * do?" - and everything on it is ordered by how directly it answers that.
+ *
+ * It used to open with My Groups and My Channels: org structure, six cards each
+ * saying "1 member · Org Admin", with the entire intelligence product reduced
+ * to a strip above them. That is an admin console wearing a dashboard's name.
+ * Group and channel management now lives where it belongs - the sidebar tree
+ * for org workspaces - and this page is the intelligence.
+ *
+ * The argument, in order:
+ *
+ *   greeting     what state the workspace is in, in one line
+ *   chips        the scale Sentinel is working at
+ *   cards        Critical / Upcoming / Insight - the most synthesised things
+ *   attention    the atomic things needing a person, ranked
+ *   recommended  what to do, from the Decision Engine
+ *   composer     a way in to the Assistant without leaving
+ *   (rail)       what it remembers, what it watches
+ *
+ * The composer here does NOT talk to the Assistant's backend. It hands the
+ * question to /assistant, which owns every capability and every route to the
+ * Action Registry - one brain, in one place, with no duplicated logic.
+ */
 export function BriefPage() {
-  const { workspaces, active, setActiveId } = useWorkspace();
+  const { user } = useAuth();
+  const { active } = useWorkspace();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Re-fetch whenever the active workspace changes (Group/Channel cards
-    // switch it) - previously this only ran once on mount, so switching
-    // workspaces via the sidebar left this page showing stale data.
-    if (!active) {
-      // Clearing the loading flag matters: leaving it set turns any
-      // transient null-active into a permanent "Loading…" screen with no
-      // way out. A real bug did exactly that after creating a workspace.
-      setLoading(false);
-      return;
+  const intel = useIntelligence();
+  const [acting, setActing] = useState<string | null>(null);
+  const [ask, setAsk] = useState("");
+
+  const open = openAttention(intel.attention);
+  const topDecision = intel.decisions.find((d) => d.kind === "recommend") ?? intel.decisions[0];
+
+  async function resolveFinding(item: AttentionItem, state: "done" | "snoozed") {
+    intel.dropAttention(item.id);
+    const body =
+      state === "snoozed"
+        ? { state, snoozed_until: new Date(Date.now() + 24 * 3600 * 1000).toISOString() }
+        : { state };
+    try {
+      await api.patch(`/attention/${item.id}`, body);
+    } catch {
+      intel.restoreAttention(item); // restore on failure
     }
-    setLoading(true);
-    api
-      .get<Connection[]>("/connections")
-      .then(setConnections)
-      .catch(() => setConnections([]))
-      .finally(() => setLoading(false));
-  }, [active?.id]);
+  }
+
+  async function decide(id: string, verb: "confirm" | "dismiss") {
+    setActing(id);
+    try {
+      await api.post(`/decisions/${id}/${verb}`);
+      intel.dropDecision(id);
+    } finally {
+      setActing(null);
+    }
+  }
+
+  /** Hand the question to the Assistant rather than answering it here. */
+  function handOff(question: string) {
+    const q = question.trim();
+    if (!q) return;
+    navigate(`/assistant?q=${encodeURIComponent(q)}`);
+  }
 
   const connectedBanner = searchParams.get("connected");
   const googleError = searchParams.get("google_error");
 
-  if (loading) return <LoadingBlock />;
+  const subtitle = intel.loading
+    ? "Reading your connected services…"
+    : intel.offline
+      ? "I can't reach Sentinel's services right now."
+      : open.length === 0 && intel.situations.length === 0
+        ? "Nothing needs your attention."
+        : "Here's what needs your attention today.";
 
   return (
-    <div>
-      {connectedBanner === "google" && (
-        <Banner tone="good" onDismiss={() => setSearchParams({})}>
-          Google connected — Calendar and Gmail will start syncing on the next run.
-        </Banner>
-      )}
-      {googleError && (
-        <Banner tone="crit" onDismiss={() => setSearchParams({})}>
-          {GOOGLE_ERROR_MESSAGES[googleError] ?? "Couldn't connect Google — try again."}
-        </Banner>
-      )}
+    <div className="flex gap-6">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {connectedBanner === "google" && (
+          <Banner tone="good" onDismiss={() => setSearchParams({})}>
+            Google connected — Calendar and Gmail will start syncing on the next run.
+          </Banner>
+        )}
+        {googleError && (
+          <Banner tone="crit" onDismiss={() => setSearchParams({})}>
+            {GOOGLE_ERROR_MESSAGES[googleError] ?? "Couldn't connect Google — try again."}
+          </Banner>
+        )}
 
-      {active?.is_demo && (
-        <div className="mb-5 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-small text-watch">
-          <b>Sample workspace.</b> Everything here is realistic demo data — no real account is connected, and nothing
-          you do here touches your own mail, calendar or files. Sentinel's detection and AI are genuinely running
-          against it.
+        {active?.is_demo && (
+          <div className="mb-5 rounded-lg border border-warn/40 bg-warn/5 px-4 py-3 text-caption text-warn">
+            <b>Sample workspace.</b> Realistic demo data — no real account is connected. Detection and
+            AI are genuinely running against it.
+          </div>
+        )}
+
+        <div className="flex-1">
+          <Greeting name={user?.name} subtitle={subtitle} />
+          <StatChips intel={intel} />
+
+          {intel.loading ? (
+            <SkeletonRows rows={5} />
+          ) : (
+            <>
+              <SignalCards
+                intel={intel}
+                open={open}
+                onPrepare={() => handOff("Prepare me for my next meeting")}
+              />
+
+              {open.length === 0 ? (
+                <EmptyState
+                  compact
+                  title="You're clear."
+                  description={
+                    intel.connections.length === 0
+                      ? "Connect a service and Sentinel will start telling you what needs you."
+                      : `Sentinel is watching ${intel.connections.length} ${
+                          intel.connections.length === 1 ? "connection" : "connections"
+                        } and nothing needs you right now.`
+                  }
+                />
+              ) : (
+                <AttentionSection
+                  items={open.slice(0, 5)}
+                  total={open.length}
+                  onResolve={resolveFinding}
+                />
+              )}
+
+              <RecommendedCard
+                decision={topDecision}
+                busy={acting === topDecision?.id}
+                onDecide={decide}
+              />
+            </>
+          )}
         </div>
-      )}
 
-      {/* The attention loop leads the dashboard (Phase 2q): what changed
-          while you were away, then what needs you now - everything else
-          comes after. Keyed by workspace so switching re-fetches. */}
-      <CatchMeUpCard key={`catchup-${active?.id}`} />
-      <AttentionStrip key={`attention-${active?.id}`} />
+        {/* Channels and connections: present and one click from anything, but
+            below the intelligence rather than in front of it. */}
+        {!intel.loading && <WorkspaceOverview connections={intel.connections} />}
 
-      <GroupCards workspaces={workspaces} activeId={active?.id ?? null} onSelect={setActiveId} />
-      <ChannelCards onSelectWorkspace={setActiveId} />
+        {/* The way in to the Assistant. Typing here navigates there with the
+            question, so the conversation and every capability behind it stay
+            in one place. */}
+        <Composer
+          value={ask}
+          onChange={setAsk}
+          onSubmit={() => handOff(ask)}
+          busy={false}
+          showSuggestions
+          onSuggest={handOff}
+          sticky={false}
+        />
+      </div>
 
-      <div className="label-sub mb-2.5 text-body font-bold text-ink-dim">My Connections</div>
-      <IntegrationCardGrid connections={connections} />
+      <ContextRail intel={intel} onAsk={handOff} />
     </div>
   );
 }
 
-function Banner({ tone, children, onDismiss }: { tone: "good" | "crit"; children: string; onDismiss: () => void }) {
+const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
+  session_expired: "That connect link expired — try connecting again.",
+  no_refresh_token: "Google didn't return a refresh token — try connecting again.",
+};
+
+function Banner({
+  tone,
+  children,
+  onDismiss,
+}: {
+  tone: "good" | "crit";
+  children: string;
+  onDismiss: () => void;
+}) {
   return (
     <div
-      className={`mb-5 flex items-center justify-between gap-3 rounded-md border px-3.5 py-2.5 text-small ${
+      className={`mb-5 flex items-center justify-between gap-3 rounded-lg border px-3.5 py-2.5 text-caption ${
         tone === "good" ? "border-good/40 bg-good/10 text-good" : "border-crit/40 bg-crit/10 text-crit"
       }`}
     >

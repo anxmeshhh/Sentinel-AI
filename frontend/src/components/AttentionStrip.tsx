@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { AttentionItem, CatchUp } from "../api/types";
+import { Button } from "./ui";
 
 export function attentionIcon(item: AttentionItem): string {
   if (item.origin === "manual") return "📌";
@@ -88,12 +89,12 @@ export function AttentionStrip() {
                 </div>
               </div>
               <div className="flex flex-none items-center gap-2.5 pt-0.5 text-caption">
-                <button onClick={() => act(item, "done")} className="text-ink-faint underline underline-offset-2 hover:text-good">
+                <Button size="sm" variant="secondary" onClick={() => act(item, "done")}>
                   Done
-                </button>
-                <button onClick={() => act(item, "snoozed")} title="Snooze until tomorrow" className="text-ink-faint underline underline-offset-2 hover:text-watch">
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => act(item, "snoozed")} title="Snooze until tomorrow">
                   Snooze
-                </button>
+                </Button>
                 <EvidenceLink item={item} className="font-semibold text-accent-text hover:underline" />
               </div>
             </div>

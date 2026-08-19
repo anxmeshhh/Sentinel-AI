@@ -6,6 +6,7 @@ import { ApiError } from "../api/client";
 import { AuthLayout, ErrorText, FieldLabel, inputClass, primaryButtonClass } from "../components/AuthLayout";
 import { OAuthButtons } from "../components/OAuthButtons";
 import { useAuth } from "../context/AuthContext";
+import { Button } from "../components/ui";
 
 type Mode = "password" | "otp-request" | "otp-verify";
 
@@ -106,13 +107,9 @@ export function LoginPage() {
           <button type="submit" disabled={submitting} className={primaryButtonClass}>
             {submitting ? "Signing in…" : "Sign in"}
           </button>
-          <button
-            type="button"
-            onClick={() => setMode("otp-request")}
-            className="mt-3 w-full text-center text-small text-ink-dim underline underline-offset-2 hover:text-ink"
-          >
+          <Button size="sm" variant="secondary" onClick={() => setMode("otp-request")}>
             Use an email code instead
-          </button>
+          </Button>
         </form>
       )}
 
@@ -132,13 +129,9 @@ export function LoginPage() {
           <button type="submit" disabled={submitting} className={primaryButtonClass}>
             {submitting ? "Sending…" : "Send login code"}
           </button>
-          <button
-            type="button"
-            onClick={() => setMode("password")}
-            className="mt-3 w-full text-center text-small text-ink-dim underline underline-offset-2 hover:text-ink"
-          >
+          <Button size="sm" variant="secondary" onClick={() => setMode("password")}>
             Use a password instead
-          </button>
+          </Button>
         </form>
       )}
 

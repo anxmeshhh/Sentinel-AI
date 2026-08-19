@@ -449,9 +449,9 @@ function MicrosoftWorkspace({ connections, onChanged }: { connections: Connectio
           {connecting ? "Redirecting…" : connectedCount > 0 ? "Reconnect Microsoft 365" : "Connect Microsoft 365"}
         </Button>
         {connectedCount > 0 && (
-          <button onClick={handleDisconnectAll} className="text-caption text-crit underline underline-offset-2">
+          <Button size="sm" variant="danger" onClick={handleDisconnectAll}>
             Disconnect all
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -545,24 +545,24 @@ function GoogleWorkspace({ connections, onChanged }: { connections: Connection[]
           {connecting ? "Redirecting…" : connectedCount > 0 ? "Reconnect Google" : "Connect Google"}
         </Button>
         {gmail && (
-          <button onClick={() => handleDisconnect(gmail.id)} className="text-caption text-ink-faint underline underline-offset-2 hover:text-crit">
+          <Button size="sm" variant="danger" onClick={() => handleDisconnect(gmail.id)}>
             Disconnect Gmail
-          </button>
+          </Button>
         )}
         {googleCalendar && (
-          <button onClick={() => handleDisconnect(googleCalendar.id)} className="text-caption text-ink-faint underline underline-offset-2 hover:text-crit">
+          <Button size="sm" variant="danger" onClick={() => handleDisconnect(googleCalendar.id)}>
             Disconnect Calendar
-          </button>
+          </Button>
         )}
         {googleDrive && (
-          <button onClick={() => handleDisconnect(googleDrive.id)} className="text-caption text-ink-faint underline underline-offset-2 hover:text-crit">
+          <Button size="sm" variant="danger" onClick={() => handleDisconnect(googleDrive.id)}>
             Disconnect Drive
-          </button>
+          </Button>
         )}
         {connectedCount > 0 && (
-          <button onClick={handleDisconnectAll} className="text-caption text-crit underline underline-offset-2">
+          <Button size="sm" variant="danger" onClick={handleDisconnectAll}>
             Disconnect all
-          </button>
+          </Button>
         )}
       </div>
 
@@ -758,15 +758,12 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
           Watching {watching.length} {watching.length === 1 ? "repository" : "repositories"}
         </div>
         <div className="flex items-center gap-3 text-caption">
-          <button
-            onClick={() => (adding ? setAdding(false) : loadAvailable())}
-            className="text-ink-faint underline underline-offset-2 hover:text-ink"
-          >
+          <Button size="sm" variant="secondary" onClick={() => (adding ? setAdding(false) : loadAvailable())}>
             {adding ? "Done adding" : "+ Add repository"}
-          </button>
-          <button onClick={connect} className="text-ink-faint underline underline-offset-2 hover:text-ink">
+          </Button>
+          <Button size="sm" variant="secondary" onClick={connect}>
             Reconnect
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -807,16 +804,16 @@ function GitHubWorkspace({ connections, onChanged }: { connections: Connection[]
                   <option value="archived">Archived</option>
                 </select>
                 {r.state !== "paused" && (
-                  <button onClick={() => repoAction(r.connection_id, "sync")} disabled={busy === r.connection_id} className="text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50">
+                  <Button size="sm" variant="secondary" onClick={() => repoAction(r.connection_id, "sync")} disabled={busy === r.connection_id}>
                     Sync now
-                  </button>
+                  </Button>
                 )}
-                <button onClick={() => repoAction(r.connection_id, r.paused ? "resume" : "pause")} disabled={busy === r.connection_id} className="text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50">
+                <Button size="sm" variant="secondary" onClick={() => repoAction(r.connection_id, r.paused ? "resume" : "pause")} disabled={busy === r.connection_id}>
                   {r.paused ? "Resume" : "Pause"}
-                </button>
-                <button onClick={() => repoAction(r.connection_id, "remove")} disabled={busy === r.connection_id} className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50">
+                </Button>
+                <Button size="sm" variant="danger" onClick={() => repoAction(r.connection_id, "remove")} disabled={busy === r.connection_id}>
                   Remove
-                </button>
+                </Button>
               </div>
             </div>
           );
@@ -991,9 +988,9 @@ function SlackWorkspace({ connections }: { connections: Connection[] }) {
             <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-good" />
             <p className="text-body font-medium text-ink">Connected to {slack.org || "your Slack workspace"}</p>
           </div>
-          <button onClick={connect} className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink">
+          <Button size="sm" variant="secondary" onClick={connect}>
             Reconnect
-          </button>
+          </Button>
         </div>
         <p className="mt-2 max-w-lg text-small leading-relaxed text-ink-dim">
           Each monitored channel is watched independently. Sentinel never mirrors your messages — it reads a
@@ -1007,12 +1004,9 @@ function SlackWorkspace({ connections }: { connections: Connection[] }) {
           <div className="text-body font-semibold text-ink">
             Monitoring {monitored?.length ?? 0} {monitored?.length === 1 ? "channel" : "channels"}
           </div>
-          <button
-            onClick={() => (adding ? setAdding(false) : loadAvailable())}
-            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-          >
+          <Button size="sm" variant="secondary" onClick={() => (adding ? setAdding(false) : loadAvailable())}>
             {adding ? "Done adding" : "+ Add channel"}
-          </button>
+          </Button>
         </div>
 
         {monitored === null ? (
@@ -1062,17 +1056,17 @@ function SlackWorkspace({ connections }: { connections: Connection[] }) {
                       <option value="archived">Archived</option>
                     </select>
                     {ch.paused ? (
-                      <button onClick={() => channelAction(ch.connection_id, "resume")} disabled={busy === ch.connection_id} className="text-ink-faint underline underline-offset-2 hover:text-good disabled:opacity-50">
+                      <Button size="sm" variant="secondary" onClick={() => channelAction(ch.connection_id, "resume")} disabled={busy === ch.connection_id}>
                         Resume
-                      </button>
+                      </Button>
                     ) : (
-                      <button onClick={() => channelAction(ch.connection_id, "pause")} disabled={busy === ch.connection_id} className="text-ink-faint underline underline-offset-2 hover:text-watch disabled:opacity-50">
+                      <Button size="sm" variant="secondary" onClick={() => channelAction(ch.connection_id, "pause")} disabled={busy === ch.connection_id}>
                         Pause
-                      </button>
+                      </Button>
                     )}
-                    <button onClick={() => channelAction(ch.connection_id, "remove")} disabled={busy === ch.connection_id} className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50">
+                    <Button size="sm" variant="danger" onClick={() => channelAction(ch.connection_id, "remove")} disabled={busy === ch.connection_id}>
                       Remove
-                    </button>
+                    </Button>
                   </div>
                 </div>
               );

@@ -109,12 +109,9 @@ export function CommitmentStrip({ scope, teamId }: { scope: "personal" | "channe
             {scope === "personal" ? "🔒 Private to you" : "👥 Shared with this channel"}
           </span>
         </div>
-        <button
-          onClick={() => setAdding((v) => !v)}
-          className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-        >
+        <Button size="sm" variant="ghost" onClick={() => setAdding((v) => !v)}>
           {adding ? "Cancel" : "+ Track something"}
-        </button>
+        </Button>
       </div>
 
       {adding && (
@@ -168,56 +165,30 @@ export function CommitmentStrip({ scope, teamId }: { scope: "personal" | "channe
                   <div className="flex flex-none items-center gap-2.5 text-caption">
                     {c.status === "suggested" ? (
                       <>
-                        <button
-                          onClick={() => act(c.id, "confirm")}
-                          disabled={busy}
-                          className="text-ink-faint underline underline-offset-2 hover:text-good disabled:opacity-50"
-                        >
+                        <Button size="sm" variant="secondary" onClick={() => act(c.id, "confirm")} disabled={busy}>
                           Track this
-                        </button>
-                        <button
-                          onClick={() => act(c.id, "dismiss")}
-                          disabled={busy}
-                          className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
-                        >
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => act(c.id, "dismiss")} disabled={busy}>
                           No thanks
-                        </button>
+                        </Button>
                       </>
                     ) : (
                       <>
-                        <button
-                          onClick={() => investigateFor(c.id)}
-                          disabled={busy || (investigation.loading && investigatingId === c.id)}
-                          className={`underline underline-offset-2 disabled:opacity-50 ${
-                            investigatingId === c.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
-                          }`}
-                        >
+                        <Button size="sm" variant="secondary" onClick={() => investigateFor(c.id)} disabled={busy || (investigation.loading && investigatingId === c.id)}>
                           {investigation.loading && investigatingId === c.id ? "Investigating…" : "Investigate ✨"}
-                        </button>
-                        <button
-                          onClick={() => act(c.id, "resolve")}
-                          disabled={busy}
-                          className="text-ink-faint underline underline-offset-2 hover:text-good disabled:opacity-50"
-                        >
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => act(c.id, "resolve")} disabled={busy}>
                           Done
-                        </button>
-                        <button
-                          onClick={() => act(c.id, "dismiss")}
-                          disabled={busy}
-                          className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
-                        >
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => act(c.id, "dismiss")} disabled={busy}>
                           Dismiss
-                        </button>
+                        </Button>
                       </>
                     )}
                     {(c.status === "resolved" || c.status === "dismissed") && (
-                      <button
-                        onClick={() => act(c.id, "reopen")}
-                        disabled={busy}
-                        className="text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
-                      >
+                      <Button size="sm" variant="secondary" onClick={() => act(c.id, "reopen")} disabled={busy}>
                         Reopen
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { SentinelStatus } from "../api/types";
+import { Button } from "./ui";
 
 /** "11:34 PM" - the only time format that reads at a glance on the header. */
 function clockTime(iso: string | null): string {
@@ -235,12 +236,9 @@ export function ProvidersChecked({ status }: { status: SentinelStatus | null }) 
           {status.signals_analysed.toLocaleString()} signals · {status.findings_count}{" "}
           {status.findings_count === 1 ? "finding" : "findings"}
         </p>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-        >
+        <Button size="sm" variant="ghost" onClick={() => setOpen((v) => !v)}>
           {open ? "Hide" : "Show"}
-        </button>
+        </Button>
       </div>
       {open && (
         <div className="mt-3 [&>div]:justify-start">

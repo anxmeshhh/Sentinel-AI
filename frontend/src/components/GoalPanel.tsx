@@ -176,12 +176,9 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
             {scope === "personal" ? "🔒 Private to you" : "👥 Shared with this channel"}
           </span>
         </div>
-        <button
-          onClick={() => setAdding((v) => !v)}
-          className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-        >
+        <Button size="sm" variant="ghost" onClick={() => setAdding((v) => !v)}>
           {adding ? "Cancel" : "+ Set a goal"}
-        </button>
+        </Button>
       </div>
 
       {adding && (
@@ -269,20 +266,12 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
                                 and is never overwritten by a later pass. */}
                             {r.kind === "situation" && (
                               <div className="flex flex-none gap-2 text-micro">
-                                <button
-                                  onClick={() => classify(g.id, r.id, "blocking")}
-                                  disabled={busy}
-                                  className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
-                                >
+                                <Button size="sm" variant="secondary" onClick={() => classify(g.id, r.id, "blocking")} disabled={busy}>
                                   blocking
-                                </button>
-                                <button
-                                  onClick={() => classify(g.id, r.id, "unrelated")}
-                                  disabled={busy}
-                                  className="text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
-                                >
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => classify(g.id, r.id, "unrelated")} disabled={busy}>
                                   not related
-                                </button>
+                                </Button>
                               </div>
                             )}
                           </div>
@@ -321,13 +310,9 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
                                   className="w-12 rounded border border-border bg-transparent px-1 py-px text-micro text-ink-dim outline-none focus:border-border-strong"
                                 />
                               </label>
-                              <button
-                                onClick={() => unlink(g.id, c.id)}
-                                disabled={busy}
-                                className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
-                              >
+                              <Button size="sm" variant="secondary" onClick={() => unlink(g.id, c.id)} disabled={busy}>
                                 unlink
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         ))
@@ -343,13 +328,9 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
                               <div className="truncate text-caption text-ink-dim">{sg.what}</div>
                               <div className="text-micro text-ink-faint">{sg.reason}</div>
                             </div>
-                            <button
-                              onClick={() => link(g.id, sg.commitment_id)}
-                              disabled={busy}
-                              className="flex-none text-caption text-ink-faint underline underline-offset-2 hover:text-good disabled:opacity-50"
-                            >
+                            <Button size="sm" variant="secondary" onClick={() => link(g.id, sg.commitment_id)} disabled={busy}>
                               Link
-                            </button>
+                            </Button>
                           </div>
                         ))}
                       </Section>
@@ -373,37 +354,19 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
                     )}
 
                     <div className="flex flex-wrap items-center gap-3 text-caption">
-                      <button
-                        onClick={() => investigateFor(g.id)}
-                        disabled={investigation.loading && investigatingId === g.id}
-                        className={`underline underline-offset-2 disabled:opacity-50 ${
-                          investigatingId === g.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
-                        }`}
-                      >
+                      <Button size="sm" variant="secondary" onClick={() => investigateFor(g.id)} disabled={investigation.loading && investigatingId === g.id}>
                         {investigation.loading && investigatingId === g.id ? "Investigating…" : "Investigate This ✨"}
-                      </button>
-                      <button
-                        onClick={() => close(g.id, "achieved")}
-                        disabled={busy}
-                        className="text-ink-faint underline underline-offset-2 hover:text-good disabled:opacity-50"
-                      >
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => close(g.id, "achieved")} disabled={busy}>
                         Achieved
-                      </button>
-                      <button
-                        onClick={() => close(g.id, "abandoned")}
-                        disabled={busy}
-                        className="text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
-                      >
+                      </Button>
+                      <Button size="sm" variant="danger" onClick={() => close(g.id, "abandoned")} disabled={busy}>
                         Abandon
-                      </button>
+                      </Button>
                       {(g.health === "achieved" || g.health === "abandoned") && (
-                        <button
-                          onClick={() => close(g.id, "reopen")}
-                          disabled={busy}
-                          className="text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
-                        >
+                        <Button size="sm" variant="secondary" onClick={() => close(g.id, "reopen")} disabled={busy}>
                           Reopen
-                        </button>
+                        </Button>
                       )}
                     </div>
 

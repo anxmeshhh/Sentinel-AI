@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import type { Connection } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
-import { LoadingBlock } from "../components/ui";
+import { Button, LoadingBlock} from "../components/ui";
 
 interface Meeting {
   id: string;
@@ -169,19 +169,9 @@ export function MeetPage() {
                     </a>
                   )}
                   {m.status === "upcoming" && (
-                    <button
-                      onClick={() => {
-                        setPrepId(m.id);
-                        brief.clear();
-                        void brief.load(`/meetings/${m.id}/prepare`);
-                      }}
-                      disabled={brief.loading && prepId === m.id}
-                      className={`font-mono text-caption underline underline-offset-2 disabled:opacity-50 ${
-                        prepId === m.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
-                      }`}
-                    >
+                    <Button size="sm" variant="secondary" onClick={() => { setPrepId(m.id); brief.clear(); void brief.load(`/meetings/${m.id}/prepare`); }} disabled={brief.loading && prepId === m.id}>
                       {brief.loading && prepId === m.id ? "Preparing…" : "Prepare Me ✨"}
-                    </button>
+                    </Button>
                   )}
                 </div>
 

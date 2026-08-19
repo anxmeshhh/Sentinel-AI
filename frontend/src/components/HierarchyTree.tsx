@@ -6,7 +6,7 @@ import type { TreeClass, TreeGroup } from "../api/types";
 import { useHierarchy } from "../context/HierarchyContext";
 import { InviteModal } from "./InviteModal";
 import { SharedConnectionsModal } from "./SharedConnectionsModal";
-import { Icon } from "./ui";
+import { Button, Icon} from "./ui";
 import { ContextBadge } from "./ContextBar";
 import { workspaceContext } from "./context";
 import { useWorkspace } from "../context/WorkspaceContext";
@@ -53,20 +53,13 @@ export function HierarchyTree() {
           <ContextBadge identity={workspaceContext(active)} />
           <div className="flex flex-none items-center gap-2.5">
             {canManageClasses && (
-              <button
-                onClick={() => setSharingWorkspace(true)}
-                title="Connections shared with the whole workspace"
-                className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-              >
+              <Button size="sm" variant="secondary" onClick={() => setSharingWorkspace(true)} title="Connections shared with the whole workspace">
                 Shared
-              </button>
+              </Button>
             )}
-            <button
-              onClick={() => setInviting(true)}
-              className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-            >
+            <Button size="sm" variant="secondary" onClick={() => setInviting(true)}>
               Invite
-            </button>
+            </Button>
           </div>
         </div>
       </div>

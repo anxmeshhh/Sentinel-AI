@@ -242,16 +242,16 @@ export function CalendarPage() {
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <button onClick={() => stepAnchor(-1)} className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-transparent px-4 py-2.5 text-small font-medium text-ink-dim transition-colors duration-200 hover:border-border-strong hover:text-ink disabled:pointer-events-none disabled:opacity-45">
+            <Button size="sm" variant="secondary" onClick={() => stepAnchor(-1)}>
               &larr;
-            </button>
+            </Button>
             <span className="min-w-[8rem] text-center text-small text-ink-dim">{anchorLabel(view, anchor)}</span>
-            <button onClick={() => stepAnchor(1)} className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-transparent px-4 py-2.5 text-small font-medium text-ink-dim transition-colors duration-200 hover:border-border-strong hover:text-ink disabled:pointer-events-none disabled:opacity-45">
+            <Button size="sm" variant="secondary" onClick={() => stepAnchor(1)}>
               &rarr;
-            </button>
-            <button onClick={() => setAnchor(new Date())} className="ml-1 text-caption text-ink-faint underline underline-offset-2 hover:text-ink">
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setAnchor(new Date())}>
               Today
-            </button>
+            </Button>
           </div>
         )}
       </div>

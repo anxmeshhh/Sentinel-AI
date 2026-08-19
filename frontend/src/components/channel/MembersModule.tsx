@@ -4,7 +4,7 @@ import { api, ApiError } from "../../api/client";
 import type { MemberReadiness, TeamMember, WorkspaceMember } from "../../api/types";
 import { PROVIDER_LABEL } from "../ChannelSetupChecklist";
 import { InviteModal } from "../InviteModal";
-import { useToast } from "../ui";
+import { Button, useToast} from "../ui";
 import { LoadingBlock } from "../ui";
 
 /** Who is in this channel, and - for admins - how far along their setup is.
@@ -52,12 +52,9 @@ export function MembersModule({ teamId, isAdmin, channelName, workspaceId }: { t
         </span>
         <div className="flex items-center gap-3">
           {isAdmin && <AddMemberPicker teamId={teamId} workspaceId={workspaceId} members={members} onAdded={load} />}
-          <button
-            onClick={() => setInviting(true)}
-            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink"
-          >
+          <Button size="sm" variant="secondary" onClick={() => setInviting(true)}>
             Invite to this channel
-          </button>
+          </Button>
         </div>
       </div>
       {inviting && (
@@ -172,17 +169,17 @@ function AddMemberPicker({
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink">
+      <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
         Add member
-      </button>
+      </Button>
     );
   }
 
   return (
     <div className="relative">
-      <button onClick={() => setOpen(false)} className="text-caption text-ink-dim underline underline-offset-2 hover:text-ink">
+      <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
         Close
-      </button>
+      </Button>
       <div className="absolute right-0 top-7 z-20 w-72 rounded-md border border-border bg-surface-2 p-2 shadow-overlay">
         {addable.length === 0 ? (
           <p className="px-2 py-1.5 text-caption text-ink-faint">

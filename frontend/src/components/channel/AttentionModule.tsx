@@ -117,15 +117,9 @@ function ChannelBriefingPanel({ teamId }: { teamId: string }) {
                 <div className="truncate font-semibold text-ink">{item.title}</div>
                 <div className="truncate text-caption text-ink-faint">{item.why}</div>
               </div>
-              <button
-                onClick={() => investigateFor(item.id)}
-                disabled={investigation.loading && investigateItemId === item.id}
-                className={`flex-none text-micro underline underline-offset-2 disabled:opacity-50 ${
-                  investigateItemId === item.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
-                }`}
-              >
+              <Button size="sm" variant="secondary" onClick={() => investigateFor(item.id)} disabled={investigation.loading && investigateItemId === item.id}>
                 {investigation.loading && investigateItemId === item.id ? "Investigating…" : "Investigate ✨"}
-              </button>
+              </Button>
               <EvidenceLink item={item} className="flex-none text-micro font-semibold text-accent-text hover:underline" />
             </div>
 

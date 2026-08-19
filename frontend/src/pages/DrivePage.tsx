@@ -7,7 +7,7 @@ import { BackNav } from "../components/BackNav";
 import { SentinelPanel } from "../components/SentinelPanel";
 import { workspaceContext } from "../components/context";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { LoadingBlock } from "../components/ui";
+import { Button, LoadingBlock} from "../components/ui";
 
 const MIME_FILTERS = [
   { key: "", label: "All" },
@@ -223,14 +223,9 @@ export function DrivePage() {
                     >
                       Open in Drive &rarr;
                     </a>
-                    <button
-                      onClick={() => setSelectedFile(selectedFile?.id === f.id ? null : f)}
-                      className={`font-mono text-caption underline underline-offset-2 ${
-                        selectedFile?.id === f.id ? "text-accent-text" : "text-ink-faint hover:text-ink"
-                      }`}
-                    >
+                    <Button size="sm" variant="secondary" onClick={() => setSelectedFile(selectedFile?.id === f.id ? null : f)}>
                       Ask about this file ✨
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}

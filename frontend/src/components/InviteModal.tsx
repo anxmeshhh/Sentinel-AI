@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ApiError, api } from "../api/client";
 import type { Invite } from "../api/types";
 import { Modal } from "./Modal";
+import { Button } from "./ui";
 
 type InviteScope = { type: "workspace"; id: string } | { type: "team"; id: string };
 
@@ -56,9 +57,9 @@ export function InviteModal({ scope, label, onClose }: { scope: InviteScope; lab
         <>
           <div className="mb-3 flex items-center gap-2 border border-border bg-ground px-3 py-2.5">
             <span className="min-w-0 flex-1 truncate text-small text-ink-dim">{link}</span>
-            <button onClick={copyLink} className="flex-none text-small font-semibold text-ink underline underline-offset-2">
+            <Button size="sm" variant="secondary" onClick={copyLink}>
               {copied ? "Copied" : "Copy"}
-            </button>
+            </Button>
           </div>
           <p className="text-caption text-ink-faint">No expiry, unlimited uses — revoke support coming later.</p>
         </>

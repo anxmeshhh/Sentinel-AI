@@ -548,13 +548,9 @@ function InheritedConnections({ teamId, isAdmin }: { teamId: string; isAdmin: bo
                 from {c.source}
               </span>
               {isAdmin && (
-                <button
-                  onClick={() => exclude(c.connection_id)}
-                  disabled={busy}
-                  className="text-micro text-ink-faint underline underline-offset-2 hover:text-crit disabled:opacity-50"
-                >
+                <Button size="sm" variant="secondary" onClick={() => exclude(c.connection_id)} disabled={busy}>
                   Exclude
-                </button>
+                </Button>
               )}
             </span>
           </div>
@@ -570,13 +566,9 @@ function InheritedConnections({ teamId, isAdmin }: { teamId: string; isAdmin: bo
                 excluded here
               </span>
               {isAdmin && (
-                <button
-                  onClick={() => lift(e.id)}
-                  disabled={busy}
-                  className="text-micro text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
-                >
+                <Button size="sm" variant="secondary" onClick={() => lift(e.id)} disabled={busy}>
                   Restore
-                </button>
+                </Button>
               )}
             </span>
           </div>

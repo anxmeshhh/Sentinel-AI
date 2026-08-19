@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { api, ApiError } from "../api/client";
 import type { Evidence, Investigation } from "../api/types";
+import { Button } from "./ui";
 
 const KIND_ICON: Record<string, string> = {
   email: "📧",
@@ -53,13 +54,9 @@ export function InvestigationPanel({
           <div className="truncate text-body font-semibold text-ink">{investigation.title}</div>
         </div>
         <div className="flex flex-none items-center gap-2">
-          <button
-            onClick={onRefresh}
-            disabled={refreshing}
-            className="text-caption text-ink-faint underline underline-offset-2 hover:text-ink disabled:opacity-50"
-          >
+          <Button size="sm" variant="secondary" onClick={onRefresh} disabled={refreshing}>
             {refreshing ? "Re-investigating…" : "↻ Re-investigate"}
-          </button>
+          </Button>
           <button onClick={onClose} aria-label="Close" className="text-lead text-ink-faint hover:text-ink">
             &times;
           </button>

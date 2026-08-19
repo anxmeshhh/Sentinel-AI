@@ -120,16 +120,12 @@ export function SettingsModule({ team, onChanged }: { team: Team; onChanged: () 
       <div className="mt-2 rounded-md border border-crit/30 p-2.5">
         <div className="label-sub mb-2 text-crit">Danger Zone</div>
         <div className="flex flex-col gap-1.5">
-          <button
-            onClick={toggleArchive}
-            disabled={busy}
-            className="text-left text-caption text-ink-dim underline underline-offset-2 hover:text-watch"
-          >
+          <Button size="sm" variant="secondary" onClick={toggleArchive} disabled={busy}>
             {team.is_archived ? "Unarchive this channel" : "Archive this channel"}
-          </button>
-          <button onClick={deleteChannel} disabled={busy} className="text-left text-caption text-crit underline underline-offset-2">
+          </Button>
+          <Button size="sm" variant="danger" onClick={deleteChannel} disabled={busy}>
             Delete this channel permanently
-          </button>
+          </Button>
         </div>
       </div>
     </div>

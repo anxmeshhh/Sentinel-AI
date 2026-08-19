@@ -14,10 +14,21 @@
  *    selection.
  *  - Spacing between sections is owned by PageHeader/Section, not by
  *    per-page margins.
+ *  - An action is written as `<Action kind="done" />`, never as a bespoke
+ *    button or an underlined word. The catalogue in Action.tsx owns how
+ *    every verb looks, so Done cannot differ between two pages.
+ *  - A list of things is `ItemList` + `ItemRow`. Explanatory prose goes in
+ *    the row's `details` slot and stays collapsed - there is no prop for a
+ *    paragraph, which is what keeps pages scannable.
  */
 export { cn } from "./cn";
 export { Button, ButtonLink } from "./Button";
 export type { ButtonSize, ButtonVariant } from "./Button";
+export { Action, ActionGroup, ActionLink } from "./Action";
+export type { ActionKind } from "./Action";
+export { Meta, MetaCount, MetaWrap } from "./Meta";
+export { ItemList, ItemRow } from "./ItemRow";
+export { FilterChips } from "./Filters";
 export { Card, CardButton, CardGrid, CardHeader, CardLink } from "./Card";
 export { Badge, StatusDot } from "./Badge";
 export type { Tone } from "./Badge";

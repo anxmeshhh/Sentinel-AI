@@ -2,7 +2,19 @@ import type { ReactNode } from "react";
 
 import { cn } from "./cn";
 
-export type Tone = "neutral" | "good" | "warn" | "crit" | "watch" | "outline";
+/** The status vocabulary, one tone per meaning. `high` is orange and `warn`
+ *  amber because the spec separates High from Medium - collapsing them was
+ *  losing a whole priority step. */
+export type Tone =
+  | "neutral"
+  | "good"
+  | "warn"
+  | "crit"
+  | "high"
+  | "watch"
+  | "info"
+  | "accent"
+  | "outline";
 
 /** The audit found 10 distinct badge treatments for 12 badges.
  *
@@ -14,7 +26,10 @@ const TONES: Record<Tone, string> = {
   good: "border-good/30 bg-good/10 text-good",
   warn: "border-warn/30 bg-warn/10 text-warn",
   crit: "border-crit/30 bg-crit/10 text-crit",
+  high: "border-high/30 bg-high/10 text-high",
   watch: "border-watch/30 bg-watch/10 text-watch",
+  info: "border-info/30 bg-info/10 text-info",
+  accent: "border-accent/30 bg-accent/10 text-accent-text",
   outline: "border-border text-ink-faint",
 };
 
@@ -23,7 +38,10 @@ const DOT: Record<Tone, string> = {
   good: "bg-good",
   warn: "bg-warn",
   crit: "bg-crit",
+  high: "bg-high",
   watch: "bg-watch",
+  info: "bg-info",
+  accent: "bg-accent",
   outline: "bg-ink-faint",
 };
 

@@ -11,10 +11,12 @@ export type ButtonSize = "sm" | "md";
  *  These four variants cover every one of them; anything needing a fifth is
  *  a design decision, not a one-off className.
  *
- *  Only `primary` is filled - it is the single high-contrast element on a
- *  screen, so having two of them competing is always a mistake. */
+ *  Only `primary` is filled, and it is filled with Sentinel purple - one per
+ *  screen, marking the action the product is recommending. Two competing
+ *  primaries is always a mistake, and a purple that is not a recommendation
+ *  drains the colour of its meaning. */
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-ink text-ground border border-transparent hover:bg-white",
+  primary: "bg-accent text-accent-ink border border-transparent hover:bg-accent-hover",
   secondary: "bg-transparent text-ink-dim border border-border hover:border-border-strong hover:text-ink",
   ghost: "bg-transparent text-ink-faint border border-transparent hover:text-ink hover:bg-surface/70",
   danger: "bg-transparent text-crit border border-crit/30 hover:border-crit/60 hover:bg-crit/10",

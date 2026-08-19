@@ -18,7 +18,7 @@ export function Card({
   className?: string;
   padded?: boolean;
 }) {
-  return <div className={cn("rounded-md border border-border", padded && "p-6 sm:p-7", className)}>{children}</div>;
+  return <div className={cn("rounded-lg border border-border", padded && "p-6 sm:p-7", className)}>{children}</div>;
 }
 
 export function CardLink({
@@ -36,7 +36,7 @@ export function CardLink({
     <Link
       to={to}
       className={cn(
-        "block rounded-md border p-6 transition-colors duration-200 ease-out sm:p-7",
+        "block rounded-lg border p-6 transition-colors duration-200 ease-out sm:p-7",
         selected ? "border-ink-faint bg-surface/60" : "border-border hover:border-border-strong hover:bg-surface/60",
         className,
       )}

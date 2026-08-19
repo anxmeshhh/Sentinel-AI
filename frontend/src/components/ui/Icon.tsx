@@ -30,6 +30,23 @@ const PATHS = {
   file: "M14 3v5h5M14 3H6v18h12V8z",
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   arrowRight: "M5 12h14M13 6l6 6-6 6",
+  chevronLeft: "M15 6l-6 6 6 6",
+  // Sidebar and card iconography. Same 24px grid and 1.5 stroke as the rest,
+  // so an icon always matches the text beside it.
+  grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
+  activity: "M3 12h4l3 8 4-16 3 8h4",
+  layers: "M12 3l9 5-9 5-9-5 9-5zM3 14l9 5 9-5",
+  target: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
+  brain: "M12 5a3 3 0 0 0-6 0v1a3 3 0 0 0-1 5.8V13a3 3 0 0 0 4 2.8V17a2 2 0 1 0 4 0V5zM12 5a3 3 0 0 1 6 0v1a3 3 0 0 1 1 5.8V13a3 3 0 0 1-4 2.8V17a2 2 0 1 1-4 0",
+  flag: "M5 21V4M5 4h11l-2 4 2 4H5",
+  help: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4v.3M12 17h.01",
+  more: "M12 6h.01M12 12h.01M12 18h.01",
+  mic: "M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zM19 11a7 7 0 0 1-14 0M12 18v3",
+  send: "M4 12l16-8-6 16-2.5-6z",
+  sparkle: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z",
+  video: "M15 8H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1zM16 11l5-3v8l-5-3",
+  square: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z",
+  sliders: "M4 8h10M18 8h2M4 16h4M12 16h8M14 5v6M8 13v6",
 } as const;
 
 export type IconName = keyof typeof PATHS;

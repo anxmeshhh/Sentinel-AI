@@ -48,7 +48,7 @@ def chat(
     workspace_id: uuid.UUID = Depends(get_workspace_id),
     user: User = Depends(get_current_user),
 ) -> ChatResponse:
-    context = _build_context(session, workspace_id, payload.message)
+    context = _build_context(session, workspace_id, user.id, payload.message)
 
     history = [{"role": m.role, "content": m.content} for m in payload.history[-MAX_HISTORY_MESSAGES:]]
     messages = [
@@ -67,7 +67,7 @@ def chat(
     return ChatResponse(reply=reply)
 
 
-def _build_context(session: Session, workspace_id: uuid.UUID, question: str) -> str:
+def _build_context(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID, question: str) -> str:
     sections = [_brief_section(session, workspace_id)]
 
     mail_summary = mail_summary_for_assistant(session, workspace_id)
@@ -78,7 +78,7 @@ def _build_context(session: Session, workspace_id: uuid.UUID, question: str) -> 
     if calendar_summary:
         sections.append(calendar_summary)
 
-    body_section = _maybe_live_email_body(session, workspace_id, question)
+    body_section = _maybe_live_email_body(session, workspace_id, user_id, question)
     if body_section:
         sections.append(body_section)
 
@@ -103,10 +103,16 @@ def _brief_section(session: Session, workspace_id: uuid.UUID) -> str:
     return "\n".join(lines)
 
 
-def _maybe_live_email_body(session: Session, workspace_id: uuid.UUID, question: str) -> str | None:
+def _maybe_live_email_body(
+    session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID, question: str
+) -> str | None:
     """Only fetches a body when the question is confidently about one
     specific email's content - see gmail_client.py's module docstring for
     why this fetch is live and never persisted.
+
+    `user_id` is a parameter because the connection lookup is per-user: this
+    function referenced a `user` that was never passed in, so every question
+    that reached the fetch raised NameError instead of returning the body.
     """
     q_words = {w.strip(".,?!\"'").lower() for w in question.split()}
     if not (q_words & CONTENT_INTENT_WORDS):
@@ -116,7 +122,7 @@ def _maybe_live_email_body(session: Session, workspace_id: uuid.UUID, question: 
     if signal is None:
         return None
 
-    connection = ConnectionRepository(session, workspace_id).get_for_user(user.id, Provider.GMAIL)
+    connection = ConnectionRepository(session, workspace_id).get_for_user(user_id, Provider.GMAIL)
     if connection is None:
         return None
 

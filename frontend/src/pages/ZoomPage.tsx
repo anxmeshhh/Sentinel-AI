@@ -66,7 +66,6 @@ export function ZoomPage() {
       icon={<ZoomIcon />}
       parent={{ label: "Connections", to: "/connections" }}
       refreshKey={refreshKey}
-      assistant={{ contextLabel: "Zoom", endpointBase: "/connections/zoom", placeholder: "Ask about your meetings…" }}
       quickActions={
         <Button size="sm" variant="primary" onClick={() => setScheduling((v) => !v)}>
           {scheduling ? "Close" : "Schedule meeting"}

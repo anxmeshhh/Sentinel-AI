@@ -68,11 +68,6 @@ export function MicrosoftTodoPage() {
       icon={<CalendarIcon />}
       parent={{ label: "Microsoft 365", to: "/connections/microsoft" }}
       refreshKey={refreshKey}
-      assistant={{
-        contextLabel: "Microsoft 365",
-        endpointBase: "/connections/microsoft",
-        placeholder: "Ask about your tasks…",
-      }}
       quickActions={
         <Button size="sm" variant="primary" onClick={() => { setCreating((v) => !v); setEditing(false); }}>
           {creating ? "Close" : "New task"}

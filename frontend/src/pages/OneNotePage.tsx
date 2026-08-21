@@ -69,11 +69,6 @@ export function OneNotePage() {
       icon={<MailIcon />}
       parent={{ label: "Microsoft 365", to: "/connections/microsoft" }}
       refreshKey={refreshKey}
-      assistant={{
-        contextLabel: "Microsoft 365",
-        endpointBase: "/connections/microsoft",
-        placeholder: "Ask about your notes…",
-      }}
       quickActions={
         <button
           onClick={() => setComposing((v) => !v)}

@@ -5,7 +5,6 @@ import { api } from "../api/client";
 import type { AttentionItem } from "../api/types";
 import {
   AttentionSection,
-  Composer,
   ContextRail,
   Greeting,
   RecommendedCard,
@@ -37,12 +36,13 @@ import { EmptyState, SkeletonRows } from "../components/ui";
  *   cards        Critical / Upcoming / Insight - the most synthesised things
  *   attention    the atomic things needing a person, ranked
  *   recommended  what to do, from the Decision Engine
- *   composer     a way in to the Assistant without leaving
  *   (rail)       what it remembers, what it watches
  *
- * The composer here does NOT talk to the Assistant's backend. It hands the
- * question to /assistant, which owns every capability and every route to the
- * Action Registry - one brain, in one place, with no duplicated logic.
+ * There is no composer on this page any more - the floating Assistant button
+ * (mounted once, globally, in App.tsx) is the one way into the one Assistant
+ * from here. The rail's Quick Actions still hand a specific question to
+ * /assistant via `handOff`, same as before; that is a navigation shortcut,
+ * not a second place to type.
  */
 export function BriefPage() {
   const { user } = useAuth();
@@ -52,7 +52,6 @@ export function BriefPage() {
 
   const intel = useIntelligence();
   const [acting, setActing] = useState<string | null>(null);
-  const [ask, setAsk] = useState("");
 
   const open = openAttention(intel.attention);
   const topDecision = intel.decisions.find((d) => d.kind === "recommend") ?? intel.decisions[0];
@@ -165,19 +164,6 @@ export function BriefPage() {
         {/* Channels and connections: present and one click from anything, but
             below the intelligence rather than in front of it. */}
         {!intel.loading && <WorkspaceOverview connections={intel.connections} />}
-
-        {/* The way in to the Assistant. Typing here navigates there with the
-            question, so the conversation and every capability behind it stay
-            in one place. */}
-        <Composer
-          value={ask}
-          onChange={setAsk}
-          onSubmit={() => handOff(ask)}
-          busy={false}
-          showSuggestions
-          onSuggest={handOff}
-          sticky={false}
-        />
       </div>
 
       <ContextRail intel={intel} onAsk={handOff} />

@@ -5,13 +5,9 @@ import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { CalendarEvent, Connection, Holiday, HolidayCategory } from "../api/types";
 import { BackNav } from "../components/BackNav";
-import { SentinelPanel } from "../components/SentinelPanel";
-import { workspaceContext } from "../components/context";
-import { useWorkspace } from "../context/WorkspaceContext";
 import { Button, LoadingBlock } from "../components/ui";
 
 type View = "month" | "week" | "day" | "agenda";
-type ScheduleTab = "ai" | "manual";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -28,7 +24,6 @@ const CATEGORY_META: Record<HolidayCategory, { label: string; dot: string; text:
 };
 
 export function CalendarPage() {
-  const { active } = useWorkspace();
   const [connected, setConnected] = useState<boolean | null>(null);
   const [view, setView] = useState<View>("agenda");
   const [anchor, setAnchor] = useState(() => new Date());
@@ -36,7 +31,6 @@ export function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [scheduleTab, setScheduleTab] = useState<ScheduleTab>("manual");
 
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [holidayState, setHolidayState] = useState("");
@@ -177,37 +171,19 @@ export function CalendarPage() {
         </button>
       </div>
 
+      {/* This used to open on a tab choice between a manual form and a
+          generic "Ask AI" chat scoped to the whole calendar - the second of
+          which duplicated the global Assistant, personal-scoped exactly like
+          this page. Ask the floating Assistant button instead; this stays a
+          plain scheduling form. */}
       {scheduleOpen && (
         <div className="mb-6 card">
-          <div className="flex gap-1.5 border-b border-border p-2.5">
-            {(["manual", "ai"] as ScheduleTab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setScheduleTab(t)}
-                className={`rounded-full border px-3 py-1.5 font-mono text-caption transition-colors ${
-                  scheduleTab === t ? "border-accent bg-accent/15 text-accent-text" : "border-border text-ink-faint hover:text-ink"
-                }`}
-              >
-                {t === "manual" ? "Manual" : "Ask AI"}
-              </button>
-            ))}
-          </div>
-          {scheduleTab === "manual" ? (
-            <NewEventForm
-              onCreated={() => {
-                setScheduleOpen(false);
-                void load();
-              }}
-            />
-          ) : (
-            <div style={{ height: 440 }}>
-              <SentinelPanel
-                contextLabel="Calendar"
-                identity={workspaceContext(active)}
-                suggestions={["What's on my calendar this week?", "Find a free 30-minute slot tomorrow"]}
-              />
-            </div>
-          )}
+          <NewEventForm
+            onCreated={() => {
+              setScheduleOpen(false);
+              void load();
+            }}
+          />
         </div>
       )}
 

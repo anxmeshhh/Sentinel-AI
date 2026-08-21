@@ -18,7 +18,6 @@ import {
   SectionHeader,
   SummaryCard,
 } from "../components/assistant/CommandCenter";
-import { AssistantFab } from "../components/assistant/AssistantFab";
 import { RecentActivity } from "../components/RecentActivity";
 import { ContextRail } from "../components/assistant/CommandCenter";
 import { openAttention, useIntelligence } from "../hooks/useIntelligence";
@@ -643,10 +642,6 @@ export function AttentionPage() {
       </div>
 
       <ContextRail intel={intel} onAsk={handOff} />
-
-      {/* The way in to the Assistant - it owns every capability, so this is a
-          shortcut to it rather than a second surface that duplicates it. */}
-      <AssistantFab />
     </div>
   );
 }

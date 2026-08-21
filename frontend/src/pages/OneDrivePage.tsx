@@ -75,11 +75,6 @@ export function OneDrivePage() {
       icon={<DriveIcon />}
       parent={{ label: "Microsoft 365", to: "/connections/microsoft" }}
       refreshKey={refreshKey}
-      assistant={{
-        contextLabel: "Microsoft 365",
-        endpointBase: "/connections/microsoft",
-        placeholder: "Ask about your files…",
-      }}
       quickActions={
         <>
           <Button size="sm" onClick={() => { setNewFolder((v) => !v); setNewFile(false); }}>

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
+import { AssistantFab } from "./components/assistant/AssistantFab";
 import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
 import { MemoryToast } from "./components/MemoryToast";
 import { Sidebar } from "./components/Sidebar";
@@ -56,6 +57,7 @@ function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const { refresh, setActiveId } = useWorkspace();
+  const { pathname } = useLocation();
 
   return (
     <div className="flex h-screen overflow-hidden bg-ground">
@@ -107,6 +109,12 @@ function AppShell({ children }: { children: ReactNode }) {
         />
       )}
       <MemoryToast />
+
+      {/* One entry point to the one Assistant, mounted here so every
+          authenticated route gets it for free rather than each page wiring
+          its own. Hidden on /assistant itself - a button that navigates to
+          the page you are already on is not a shortcut, it is a decoy. */}
+      {pathname !== "/assistant" && <AssistantFab />}
     </div>
   );
 }

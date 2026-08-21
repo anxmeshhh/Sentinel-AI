@@ -4,25 +4,27 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { ActionResult, ServiceIntelligence } from "../../api/types";
 import { BackNav } from "../BackNav";
-import { SentinelPanel } from "../SentinelPanel";
-import { workspaceContext } from "../context";
-import { useWorkspace } from "../../context/WorkspaceContext";
 import { Action, ActionGroup, Badge, Button, LoadingBlock } from "../ui";
 
 /**
  * The Provider Workspace shell.
  *
  * One layout every provider adopts, so a service page only writes its own work
- * surface and gets identity, health, intelligence and the assistant for free.
- * Nothing in here is Microsoft-specific - `service` is a key the backend maps
- * to providers, so GitHub, Slack and Google pages can adopt it unchanged.
+ * surface and gets identity, health and intelligence for free. Nothing in
+ * here is Microsoft-specific - `service` is a key the backend maps to
+ * providers, so GitHub, Slack and Google pages can adopt it unchanged.
  *
  *   ┌───────────────────────────────────────────────────┐
  *   │ BackNav · ServiceHeader (identity, health, actions)│
  *   ├───────────────────────────┬───────────────────────┤
  *   │ WORK SURFACE (children)   │ IntelligenceRail      │
- *   │                           │ SentinelPanel         │
  *   └───────────────────────────┴───────────────────────┘
+ *
+ * The rail used to end in a provider-scoped SentinelPanel ("Ask about your
+ * Zoom account") - a generic, whole-service chat surface, personal-scoped,
+ * that duplicated exactly what the single global Assistant already does. It
+ * is gone; the floating Assistant button (mounted once, globally) is the one
+ * way to ask Sentinel anything now, on this page as on every other.
  */
 export interface ProviderWorkspaceProps {
   service: string;
@@ -32,8 +34,6 @@ export interface ProviderWorkspaceProps {
   parent: { label: string; to: string };
   /** Buttons that propose Action Registry actions - never direct API writes. */
   quickActions?: ReactNode;
-  /** Assistant wiring; omitted services simply render no panel. */
-  assistant?: { contextLabel: string; endpointBase: string; placeholder?: string };
   /** Bumping this refetches the intelligence rail (after a write completes). */
   refreshKey?: number;
   children: ReactNode;
@@ -45,11 +45,9 @@ export function ProviderWorkspace({
   icon,
   parent,
   quickActions,
-  assistant,
   refreshKey = 0,
   children,
 }: ProviderWorkspaceProps) {
-  const { active } = useWorkspace();
   const [intel, setIntel] = useState<ServiceIntelligence | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -76,18 +74,8 @@ export function ProviderWorkspace({
       </div>
 
       <aside className="w-full flex-none xl:w-[360px]">
-        <div className="flex flex-col gap-4 xl:sticky xl:top-6">
+        <div className="xl:sticky xl:top-6">
           <IntelligenceRail intel={intel} loading={loading} />
-          {assistant && (
-            <div className="card overflow-hidden p-0 sm:p-0" style={{ minHeight: 380 }}>
-              <SentinelPanel
-                contextLabel={assistant.contextLabel}
-                identity={workspaceContext(active)}
-                endpointBase={assistant.endpointBase}
-                placeholder={assistant.placeholder}
-              />
-            </div>
-          )}
         </div>
       </aside>
     </div>

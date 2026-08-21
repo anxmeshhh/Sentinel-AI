@@ -22,7 +22,7 @@
  *    paragraph, which is what keeps pages scannable.
  */
 export { cn } from "./cn";
-export { Button, ButtonLink } from "./Button";
+export { BASE as BUTTON_BASE, Button, ButtonLink, SIZES as BUTTON_SIZES } from "./Button";
 export type { ButtonSize, ButtonVariant } from "./Button";
 export { Action, ActionGroup, ActionLink } from "./Action";
 export type { ActionKind } from "./Action";

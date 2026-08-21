@@ -20,13 +20,17 @@ import { cn } from "./cn";
  *
  * Hierarchy, one rule:
  *   primary    the single recommended next step  (Take action, Confirm)
- *   secondary  the ordinary things  (Done, Snooze, Open, Details)
+ *   secondary  the ordinary things  (Details, Create, Edit)
  *   ghost      the quiet outs  (Dismiss, Cancel)
  *   danger     destructive and irreversible
  *
- * Icons stay monochrome on purpose. The design system reserves colour for
- * status, so a green tick on Done would compete with the severity dot that
- * actually carries meaning in the same row.
+ * Three verbs carry their own colour rather than the neutral secondary tone:
+ * Done (green), Snooze (blue) and Open (purple). That is a deliberate,
+ * explicit exception to "icons stay monochrome" - every other action still
+ * reserves colour for status, but these three are frequent enough, and
+ * different enough in kind, that a person scanning a row benefits from
+ * telling them apart at a glance. The exception lives in exactly one place
+ * (TONE_CLASS below), so it cannot drift into a fourth treatment per page.
  */
 export type ActionKind =
   | "done"
@@ -54,13 +58,24 @@ const CATALOGUE: Record<ActionKind, ActionSpec> = {
   open: { label: "Open", icon: "external", variant: "secondary" },
   details: { label: "Details", variant: "secondary" },
   dismiss: { label: "Dismiss", icon: "close", variant: "ghost" },
-  takeAction: { label: "Take action", variant: "primary" },
+  takeAction: { label: "Take action", icon: "sparkle", variant: "primary" },
   confirm: { label: "Confirm", icon: "check", variant: "primary" },
   cancel: { label: "Cancel", variant: "ghost" },
   undo: { label: "Undo", icon: "refresh", variant: "ghost" },
   create: { label: "Create", icon: "plus", variant: "secondary" },
   edit: { label: "Edit", variant: "secondary" },
   retry: { label: "Try again", icon: "refresh", variant: "secondary" },
+};
+
+/** `!`-prefixed so these reliably win over `secondary`'s own
+ *  `text-ink-dim border-border` - Tailwind resolves same-specificity
+ *  utilities by the order it wrote them into the stylesheet, not by the
+ *  order they appear in a className string, so a plain override is not
+ *  dependable here. The important-marked utility is. */
+const TONE_CLASS: Partial<Record<ActionKind, string>> = {
+  done: "!border-good/35 !text-good hover:!border-good/60 hover:!bg-good/10",
+  snooze: "!border-watch/35 !text-watch hover:!border-watch/60 hover:!bg-watch/10",
+  open: "!border-accent/35 !text-accent-text hover:!border-accent/60 hover:!bg-accent/10",
 };
 
 export function Action({
@@ -88,7 +103,7 @@ export function Action({
       onClick={onClick}
       disabled={disabled}
       loading={loading}
-      className={className}
+      className={cn(TONE_CLASS[kind], className)}
     >
       {spec.icon && !loading && <Icon name={spec.icon} size={13} />}
       {label ?? spec.label}
@@ -116,9 +131,10 @@ export function ActionLink({
       rel={kind === "open" ? "noreferrer" : undefined}
       className={cn(
         "inline-flex items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-caption font-medium transition-colors duration-200 ease-out",
-        spec.variant === "primary"
-          ? "border-transparent bg-ink text-ground hover:bg-white"
-          : "border-border text-ink-dim hover:border-border-strong hover:text-ink",
+        TONE_CLASS[kind] ??
+          (spec.variant === "primary"
+            ? "border-transparent bg-ink text-ground hover:bg-white"
+            : "border-border text-ink-dim hover:border-border-strong hover:text-ink"),
         className,
       )}
     >

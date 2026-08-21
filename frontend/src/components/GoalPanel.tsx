@@ -231,20 +231,26 @@ export function GoalPanel({ scope, teamId }: { scope: "personal" | "channel"; te
                   <span className="flex-none text-micro text-ink-faint">{isOpen ? "hide" : "open"}</span>
                 </button>
 
-                {/* Why Sentinel says what it says - always, not on request. */}
-                {g.health_reasons.length > 0 && (
-                  <ul className="mt-1.5 flex flex-col gap-0.5">
-                    {g.health_reasons.map((r) => (
-                      <li key={r} className="text-caption text-ink-dim">
-                        · {r}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {g.assessment && <p className="mt-2 text-small leading-relaxed text-ink-dim">{g.assessment}</p>}
-                {g.next_step && (
-                  <p className="mt-1 text-small leading-relaxed text-ink-dim">➡️ {g.next_step}</p>
+                {/* Why Sentinel says what it says - available, not printed
+                    on every collapsed row. A goal list scans as title +
+                    health + the two or three numbers that matter; the
+                    reasoning is exactly what "open" is for. */}
+                {isOpen && (
+                  <>
+                    {g.health_reasons.length > 0 && (
+                      <ul className="mt-1.5 flex flex-col gap-0.5">
+                        {g.health_reasons.map((r) => (
+                          <li key={r} className="text-caption text-ink-dim">
+                            · {r}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {g.assessment && <p className="mt-2 text-small leading-relaxed text-ink-dim">{g.assessment}</p>}
+                    {g.next_step && (
+                      <p className="mt-1 text-small leading-relaxed text-ink-dim">➡️ {g.next_step}</p>
+                    )}
+                  </>
                 )}
 
                 {isOpen && detail && detail.id === g.id && (

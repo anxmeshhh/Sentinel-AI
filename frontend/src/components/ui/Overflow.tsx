@@ -10,17 +10,31 @@ import { cn } from "./cn";
  * printed flat. A row should show the one or two things people actually do and
  * keep the rest one click away; the alternative is that every row reads as a
  * paragraph of links and nothing looks primary.
+ *
+ * The default trigger is a fixed 30x30 square - the same box height as an
+ * `Action` button at size="sm" - so a row's "⋯" lines up with its "Done" and
+ * "Open" rather than sitting a few pixels shorter, which is what made rows
+ * read as slightly misaligned everywhere this was used. `trigger` lets a
+ * caller replace the glyph with a labelled button (Snooze's duration menu
+ * uses this) while keeping the same open/close/outside-click machinery.
  */
 export function Overflow({
   children,
   label = "More actions",
   align = "right",
   className,
+  trigger,
+  triggerClassName,
 }: {
   children: ReactNode | ((close: () => void) => ReactNode);
   label?: string;
   align?: "left" | "right";
   className?: string;
+  /** Replaces the default "⋯" glyph inside the trigger button. */
+  trigger?: ReactNode;
+  /** Replaces the trigger button's classes entirely, for a labelled trigger
+   *  that needs to look like an `Action` button rather than an icon well. */
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
@@ -50,14 +64,17 @@ export function Overflow({
         aria-label={label}
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="rounded-sm px-1.5 py-0.5 text-caption leading-none text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
+        className={
+          triggerClassName ??
+          "flex h-[30px] w-[30px] flex-none items-center justify-center rounded-md border border-border text-ink-faint transition-colors hover:border-border-strong hover:text-ink"
+        }
       >
-        &#8943;
+        {trigger ?? <span aria-hidden="true">&#8943;</span>}
       </button>
       {open && (
         <span
           className={cn(
-            "absolute top-6 z-20 flex min-w-[9rem] flex-col rounded-md border border-border bg-surface-2 p-1 shadow-overlay",
+            "absolute top-8 z-20 flex min-w-[9rem] flex-col rounded-md border border-border bg-surface-2 p-1 shadow-overlay",
             align === "right" ? "right-0" : "left-0",
           )}
         >

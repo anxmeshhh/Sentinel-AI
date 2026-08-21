@@ -43,7 +43,7 @@ const RISK_COPY: Record<string, string> = {
  *  now humanises the key instead of printing it, because a user should never
  *  have to read an identifier.
  */
-function actionLabel(a: { preview?: Record<string, unknown>; action_type: string }): string {
+export function actionLabel(a: { preview?: Record<string, unknown>; action_type: string }): string {
   const preview = a.preview ?? {};
   for (const key of ["title", "summary"]) {
     const v = preview[key];
@@ -54,7 +54,24 @@ function actionLabel(a: { preview?: Record<string, unknown>; action_type: string
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; teamId?: string }) {
+export function ActionPanel({
+  scope,
+  teamId,
+  compact = false,
+}: {
+  scope: "personal" | "channel";
+  teamId?: string;
+  /** Used on the redesigned Attention page, where the free-text composer,
+   *  the capability catalogue and the executed-actions history all moved
+   *  elsewhere: the composer's job now belongs to the Assistant (reached via
+   *  the page's floating button), and history is its own "Recent activity"
+   *  section built from the same GET /actions this component already loads.
+   *  Rendering both here too would show the same executed actions twice.
+   *  What stays, compact regardless: actions genuinely awaiting a decision -
+   *  that is still this tab's job. Channel usage is unaffected; only the
+   *  Attention page passes this. */
+  compact?: boolean;
+}) {
   const [actions, setActions] = useState<SentinelAction[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [text, setText] = useState("");
@@ -162,49 +179,57 @@ export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; 
   const pending = actions.filter((a) => a.status === "awaiting_approval");
   const history = actions.filter((a) => a.executed_at !== null).slice(0, 5);
 
+  // Nothing left to show at all: no pending decision, and history/composer
+  // are either empty or intentionally hidden. A heading over an empty panel
+  // is worse than no panel.
+  if (compact && pending.length === 0) return null;
 
   return (
     <div className="mb-4">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="label-sub font-bold text-ink-dim">🤖 Actions</span>
-          <span className="rounded-full border border-border px-1.5 py-px text-micro text-ink-faint">
-            {scope === "personal" ? "🔒 Private to you" : "👥 Shared with this channel"}
-          </span>
-        </div>
-        <button
-          onClick={openCatalog}
-          className="text-caption text-ink-faint transition-colors hover:text-ink"
-        >
-          {showCatalog ? "Hide" : "What can Sentinel do?"}
-        </button>
-      </div>
+      {!compact && (
+        <>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="label-sub font-bold text-ink-dim">🤖 Actions</span>
+              <span className="rounded-full border border-border px-1.5 py-px text-micro text-ink-faint">
+                {scope === "personal" ? "🔒 Private to you" : "👥 Shared with this channel"}
+              </span>
+            </div>
+            <button
+              onClick={openCatalog}
+              className="text-caption text-ink-faint transition-colors hover:text-ink"
+            >
+              {showCatalog ? "Hide" : "What can Sentinel do?"}
+            </button>
+          </div>
 
-      {/* Ask in plain words. Produces a proposal, never an action. */}
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void ask();
-          }}
-          placeholder={
-            scope === "personal"
-              ? "Ask Sentinel to do something — e.g. remind me to review the deck on Friday"
-              : "Ask Sentinel to do something for this channel"
-          }
-          className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-small outline-none focus:border-border-strong"
-        />
-        <Button size="sm" variant="primary" loading={asking} disabled={text.trim().length < 3} onClick={ask}>
-          Propose
-        </Button>
-      </div>
-      <p className="mb-2 text-micro text-ink-faint">
-        Sentinel will show you exactly what it plans to do. Nothing runs until you confirm.
-      </p>
-      {intentError && <p className="mb-2 text-caption text-crit">{intentError}</p>}
+          {/* Ask in plain words. Produces a proposal, never an action. */}
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void ask();
+              }}
+              placeholder={
+                scope === "personal"
+                  ? "Ask Sentinel to do something — e.g. remind me to review the deck on Friday"
+                  : "Ask Sentinel to do something for this channel"
+              }
+              className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-small outline-none focus:border-border-strong"
+            />
+            <Button size="sm" variant="primary" loading={asking} disabled={text.trim().length < 3} onClick={ask}>
+              Propose
+            </Button>
+          </div>
+          <p className="mb-2 text-micro text-ink-faint">
+            Sentinel will show you exactly what it plans to do. Nothing runs until you confirm.
+          </p>
+          {intentError && <p className="mb-2 text-caption text-crit">{intentError}</p>}
+        </>
+      )}
 
-      {showCatalog && (
+      {!compact && showCatalog && (
         <div className="mb-3 flex flex-col gap-1 rounded-md border border-border bg-surface p-3">
           {catalog.map((c) => {
             const policy = policies.find((p) => p.action_type === c.key);
@@ -240,6 +265,13 @@ export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; 
         </div>
       )}
 
+      {compact && pending.length > 0 && (
+        <h3 className="mb-2 flex items-center gap-2 text-small font-semibold text-ink">
+          Needs your approval
+          <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-micro text-ink-dim">{pending.length}</span>
+        </h3>
+      )}
+
       {pending.map((a) => (
         <div key={a.id} className="mb-2 rounded-md border border-watch/40 bg-watch/5 p-3.5">
           <div className="label-sub mb-1 font-bold text-ink-dim">{actionLabel(a)}</div>
@@ -270,7 +302,7 @@ export function ActionPanel({ scope, teamId }: { scope: "personal" | "channel"; 
         </div>
       ))}
 
-      {history.length > 0 && (
+      {!compact && history.length > 0 && (
         <div className="flex flex-col gap-1">
           {history.map((a) => {
             const status = STATUS_COPY[a.status] ?? STATUS_COPY.unknown;

@@ -2,7 +2,7 @@ import type React from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
-import type { AttentionItem, DecisionRow } from "../../api/types";
+import type { AttentionItem, DecisionRow, MemoryRow } from "../../api/types";
 import type { Intelligence } from "../../hooks/useIntelligence";
 import { SituationCard } from "../SituationCard";
 import {
@@ -301,17 +301,72 @@ export function AttentionSection({
 
   return (
     <section className="mb-6">
-      <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-small font-semibold text-ink">
-          Needs your attention
-          <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-micro text-ink-dim">{total}</span>
-        </h2>
-        <Link to="/attention" className="text-caption text-ink-faint transition-colors hover:text-ink">
-          View all →
-        </Link>
-      </div>
+      <SectionHeader title="Needs your attention" count={total} to="/attention" />
       <AttentionRows items={items} onResolve={onResolve} />
     </section>
+  );
+}
+
+/**
+ * A title, a count pill, and an optional "View all" link - the one heading
+ * shape used above every list in the product (findings, activity, insights),
+ * so a page never grows a second way to introduce "here are N things".
+ */
+export function SectionHeader({
+  title,
+  count,
+  to,
+  toLabel = "View all",
+}: {
+  title: string;
+  count?: number;
+  to?: string;
+  toLabel?: string;
+}) {
+  return (
+    <div className="mb-2 flex items-baseline justify-between gap-2">
+      <h2 className="flex items-center gap-2 text-small font-semibold text-ink">
+        {title}
+        {count !== undefined && (
+          <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-micro text-ink-dim">{count}</span>
+        )}
+      </h2>
+      {to && (
+        <Link to={to} className="text-caption text-ink-faint transition-colors hover:text-ink">
+          {toLabel} →
+        </Link>
+      )}
+    </div>
+  );
+}
+
+/** Memory, as a list - the Insights tab's content. Read-only: a memory is
+ *  something Sentinel concluded from recurrence, not something a person
+ *  edits here. Empty state names the mechanism rather than apologising,
+ *  since "none yet" is the correct state for a quiet workspace. */
+export function InsightsList({ memories }: { memories: MemoryRow[] }) {
+  if (memories.length === 0) {
+    return (
+      <p className="text-caption text-ink-faint">
+        Nothing learned yet. A pattern appears here once the same situation happens more than once.
+      </p>
+    );
+  }
+  return (
+    <ItemList>
+      {memories.map((m) => (
+        <ItemRow
+          key={m.id}
+          tone="good"
+          icon="brain"
+          title={m.summary}
+          meta={[
+            `Seen ${m.observation_count} time${m.observation_count === 1 ? "" : "s"}`,
+            m.last_observed_at ? `last ${relativeTime(m.last_observed_at)}` : null,
+          ]}
+        />
+      ))}
+    </ItemList>
   );
 }
 
@@ -527,24 +582,28 @@ export function ContextRail({ intel, onAsk }: { intel: Intelligence; onAsk: (q: 
           </RailPanel>
         )}
 
-        <RailPanel title="Watching" to="/settings">
-          <div className="flex flex-col gap-2.5 p-3">
-            <RailStat
-              tone={errors > 0 ? "crit" : "good"}
-              icon="check"
-              value={`${intel.connections.length} connection${intel.connections.length === 1 ? "" : "s"}`}
-              note={errors > 0 ? `${errors} need attention` : "All healthy"}
-            />
-            {intel.goals.length > 0 && (
+        {/* Only when there is something real to watch - a rail entry for
+            zero connections would just be an empty state wearing a heading. */}
+        {intel.connections.length > 0 && (
+          <RailPanel title="Watching" to="/settings">
+            <div className="flex flex-col gap-2.5 p-3">
               <RailStat
-                tone="good"
-                icon="target"
-                value={`${intel.goals.length} goal${intel.goals.length === 1 ? "" : "s"}`}
-                note={`${onTrack} on track`}
+                tone={errors > 0 ? "crit" : "good"}
+                icon="check"
+                value={`${intel.connections.length} connection${intel.connections.length === 1 ? "" : "s"}`}
+                note={errors > 0 ? `${errors} need attention` : "All healthy"}
               />
-            )}
-          </div>
-        </RailPanel>
+              {intel.goals.length > 0 && (
+                <RailStat
+                  tone="good"
+                  icon="target"
+                  value={`${intel.goals.length} goal${intel.goals.length === 1 ? "" : "s"}`}
+                  note={`${onTrack} on track`}
+                />
+              )}
+            </div>
+          </RailPanel>
+        )}
 
         {/* Each is a real capability, phrased the way the Assistant's router
             recognises it - the buttons and the parser cannot drift apart. */}

@@ -12,14 +12,17 @@ import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPa
 import { InvestigationPanel, useInvestigation } from "../components/InvestigationPanel";
 import { IntelligenceTabs, type TabKey } from "../components/IntelligenceTabs";
 import {
-  Composer,
-  ContextRail,
+  InsightsList,
   MetricChip,
   RecommendedCard,
+  SectionHeader,
   SummaryCard,
 } from "../components/assistant/CommandCenter";
+import { AssistantFab } from "../components/assistant/AssistantFab";
+import { RecentActivity } from "../components/RecentActivity";
+import { ContextRail } from "../components/assistant/CommandCenter";
 import { openAttention, useIntelligence } from "../hooks/useIntelligence";
-import { FindingsEmptyState, ProvidersChecked } from "../components/SentinelStatusPanel";
+import { FindingsEmptyState } from "../components/SentinelStatusPanel";
 import {
   Action,
   ActionGroup,
@@ -27,7 +30,6 @@ import {
   ActionLink,
   Badge,
   Button,
-  FilterChips,
   ItemList,
   ItemRow,
   LoadingBlock,
@@ -69,30 +71,11 @@ function providerLabel(src: string | null): string | null {
   return PROVIDER_LABEL[src] ?? src;
 }
 
-/** SECTION 8: the recommended action, deterministic and free on every card -
- *  a template keyed to the finding's type. It answers "what do I do" without
- *  an LLM call; Investigate deepens it into specifics. Manual reminders are
- *  the user's own notes and carry no recommendation. */
-const RECOMMENDED: Record<string, string> = {
-  important_email: "Reply, or archive if it's handled",
-  upcoming_meeting: "Prepare before it starts",
-  stale_pr: "Review it, or nudge the author",
-  deadline: "Act before it's due",
-  finding: "Review the details, then decide",
-  conversation_mention: "Reply in the thread, or delegate it",
-  conversation_blocker: "Unblock it, or escalate the blocker",
-  conversation_urgent: "Open the channel and triage",
-};
-
-function recommendedAction(item: AttentionItem): string | null {
-  return item.origin === "manual" ? null : RECOMMENDED[item.type] ?? "Review and decide";
-}
-
 /** The tab the page should open on, so the content immediately matches the
  *  narrative verdict: the highest-priority non-empty category. Critical items
- *  live in Now (a critical attention item) or Risks (a critical situation) -
+ *  live in All (a critical attention item) or Risks (a critical situation) -
  *  open where they actually are. Below critical, the order is the intended
- *  Risks -> Commitments -> Goals -> Now, with Now as the quiet default. */
+ *  Risks -> Commitments -> Goals -> All, with All as the quiet default. */
 function pickFocusTab(
   status: SentinelStatus,
   counts: { risks?: number; commitments?: number; goals?: number },
@@ -104,6 +87,40 @@ function pickFocusTab(
   if ((counts.commitments ?? 0) > 0) return "commitments";
   if ((counts.goals ?? 0) > 0) return "goals";
   return "now";
+}
+
+/** The state filter, as a compact dropdown rather than four permanently
+ *  visible chips - it only ever governs the All tab's list, so it sits in
+ *  the tab row rather than repeating itself as a second header above the
+ *  list every time. */
+function FilterMenu({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <Overflow
+      label="Filter findings"
+      align="right"
+      trigger={
+        <>
+          <Icon name="sliders" size={13} /> Filter
+        </>
+      }
+      triggerClassName="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border px-3 text-caption font-medium text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
+    >
+      {(close) =>
+        STATE_FILTERS.map((f) => (
+          <OverflowItem
+            key={f.key}
+            onClick={() => {
+              onChange(f.key);
+              close();
+            }}
+          >
+            {f.key === value ? "✓ " : ""}
+            {f.label}
+          </OverflowItem>
+        ))
+      }
+    </Overflow>
+  );
 }
 
 export function AttentionPage() {
@@ -130,18 +147,16 @@ export function AttentionPage() {
   const [openItems, setOpenItems] = useState<AttentionItem[]>([]);
   const [tabCounts, setTabCounts] = useState<{ risks?: number; commitments?: number; goals?: number }>({});
   const [focusTab, setFocusTab] = useState<TabKey | undefined>(undefined);
-  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const [newTitle, setNewTitle] = useState("");
   const [newDue, setNewDue] = useState("");
 
-  // The rail, the recommendation and the provider count come from the shared
-  // Core hook - the same one the Dashboard and Assistant use, so this page
-  // cannot disagree with them. The page's own item loading below is untouched:
-  // it owns the state filter and the tab content.
+  // The rail, the recommendation, the recent activity and the provider count
+  // come from the shared Core hook - the same one the Dashboard and Assistant
+  // use, so this page cannot disagree with them. The page's own item loading
+  // below is untouched: it owns the state filter and the tab content.
   const intel = useIntelligence();
   const navigate = useNavigate();
-  const [ask, setAsk] = useState("");
 
   function handOff(question: string) {
     const q = question.trim();
@@ -162,8 +177,6 @@ export function AttentionPage() {
   /** Everything the status card, summary, tab badges and opening tab need. All
    *  non-fatal: the findings list stands on its own if any of these fail. */
   async function loadMeta() {
-    // The dismissed list is no longer fetched: it existed only to count a
-    // number for the "Today" row, which is gone. One request less per load.
     const [st, open, r, c, g] = await Promise.all([
       api.get<SentinelStatus>("/attention/status").catch(() => null),
       api.get<AttentionItem[]>("/attention?state=new").catch(() => [] as AttentionItem[]),
@@ -190,10 +203,6 @@ export function AttentionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // SECTION 5: the assistant stays collapsed by default - a quiet "Need help?"
-  // below the findings - so it supports Sentinel's intelligence rather than
-  // competing with it for the eye. The user opens it when they want it; it
-  // never fronts the primary content.
   const findingsCount = status?.findings_count ?? 0;
 
   function investigateFor(item: AttentionItem) {
@@ -276,13 +285,13 @@ export function AttentionPage() {
     void loadMeta();
   }
 
-  // The Now tab holds attention items only - situations live in Risks - so its
-  // badge counts attention items, while the verdict and Today's summary count
+  // The All tab holds attention items only - situations live in Risks - so
+  // its badge counts attention items, while the verdict and summary count
   // the full operational state (attention + situations) from the backend.
   const nowCount = openItems.filter((i) => i.origin === "detected").length;
 
-  // SECTION 3: the all-clear only reassures if the sync genuinely ran. Show it
-  // only for the open filter with nothing detected; other filters get a plain
+  // The all-clear only reassures if the sync genuinely ran. Show it only for
+  // the open filter with nothing detected; other filters get a plain
   // "nothing here" so an empty Done tab doesn't read as an all-clear.
   const showAllClear = stateFilter === "new" && status !== null && findingsCount === 0;
 
@@ -308,18 +317,17 @@ export function AttentionPage() {
               muted={item.state === "done"}
               title={item.title}
               source={src}
+              icon={(ATTENTION_ICON[item.type] as IconName) ?? "alert"}
               // Structured facts, not a sentence. `why` is the sentence and it
-              // now lives behind the row's "Why" toggle - present for anyone
-              // who wants it, not read aloud to everyone who doesn't.
+              // lives behind the row's "Why" toggle - present for anyone who
+              // wants it, not read aloud to everyone who doesn't.
               meta={[
                 ...attentionMeta(item),
                 item.state === "snoozed" && item.snoozed_until
                   ? `snoozed until ${dueLabel(item.snoozed_until)}`
                   : null,
-                item.state === "new" ? recommendedAction(item) : null,
               ]}
               badge={<Badge tone={priorityOf(item).tone}>{priorityOf(item).label}</Badge>}
-              icon={(ATTENTION_ICON[item.type] as IconName) ?? "alert"}
               details={item.why}
               className={askItem?.id === item.id ? "bg-surface/60" : undefined}
               actions={
@@ -327,7 +335,18 @@ export function AttentionPage() {
                   {item.state === "new" ? (
                     <>
                       <Action kind="done" onClick={() => setState(item, "done")} />
-                      <Overflow align="right">
+                      {/* A labelled dropdown, not a bare button - the choice
+                          of duration is real functionality, so it stays one
+                          click away rather than defaulting silently. */}
+                      <Overflow
+                        label="Snooze"
+                        trigger={
+                          <>
+                            <Icon name="clock" size={13} /> Snooze
+                          </>
+                        }
+                        triggerClassName="inline-flex h-[30px] items-center gap-1.5 rounded-md border !border-watch/35 px-3 text-caption font-medium !text-watch transition-colors hover:!border-watch/60 hover:!bg-watch/10"
+                      >
                         {(close) => (
                           <>
                             {SNOOZE_OPTIONS.map((o) => (
@@ -338,9 +357,16 @@ export function AttentionPage() {
                                   close();
                                 }}
                               >
-                                Snooze {o.label.toLowerCase()}
+                                {o.label}
                               </OverflowItem>
                             ))}
+                          </>
+                        )}
+                      </Overflow>
+                      {item.evidence_url && <ActionLink kind="open" to={item.evidence_url} />}
+                      <Overflow label="More actions">
+                        {(close) => (
+                          <>
                             <OverflowItem
                               onClick={() => {
                                 setState(item, "dismissed");
@@ -396,9 +422,11 @@ export function AttentionPage() {
                       </Overflow>
                     </>
                   ) : (
-                    <Action kind="undo" label="Reopen" onClick={() => setState(item, "new")} />
+                    <>
+                      <Action kind="undo" label="Reopen" onClick={() => setState(item, "new")} />
+                      {item.evidence_url && <ActionLink kind="open" to={item.evidence_url} />}
+                    </>
                   )}
-                  {item.evidence_url && <ActionLink kind="open" to={item.evidence_url} />}
                 </ActionGroup>
               }
             >
@@ -455,73 +483,42 @@ export function AttentionPage() {
       </ItemList>
     );
 
-  // SECTION 9: the Now tab reads top-to-bottom as the spec's flow -
-  // findings, then the provider verification that backs them, then the
-  // assistant, then the user's own reminders last.
+  // The All tab reads top to bottom: findings first, then anything genuinely
+  // awaiting a decision, then the user's own reminders last. Providers-
+  // checked and the free-text composer both moved out - the first duplicated
+  // the top metric chips, the second duplicated the Assistant.
   const nowContent = (
     <div className="flex flex-col gap-6">
       <div>
-        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-micro uppercase tracking-wide text-ink-faint">Findings</h3>
-          <FilterChips options={STATE_FILTERS} value={stateFilter} onChange={setStateFilter} />
-        </div>
+        <SectionHeader title="Needs your attention" count={items.length} />
         {findingsList}
       </div>
 
-      {/* SECTION 4 — standalone only when findings are shown; the all-clear
-          state folds providers into its own reassurance instead. */}
-      {!showAllClear && <ProvidersChecked status={status} />}
-
-      {/* SECTION 5 */}
-      <section>
-        <h3 className="mb-2.5 text-micro uppercase tracking-wide text-ink-faint">Sentinel assistant</h3>
-        {assistantOpen ? (
-          <div className="card p-3.5">
-            <SentinelPanel
-              contextLabel="Sentinel"
-              identity={workspaceContext(active)}
-              placeholder="Ask Sentinel about your operations…"
-              suggestions={["What needs my attention?", "Summarise what changed today"]}
-            />
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 rounded-md border border-border px-4 py-3">
-            <span className="text-small text-ink-dim">Need help making sense of something?</span>
-            <button onClick={() => setAssistantOpen(true)} className="text-small font-medium text-accent-text hover:underline">
-              Ask Sentinel
-            </button>
-          </div>
-        )}
-      </section>
-
-      {/* SECTION 6: reminders are the user's own notes - below the operational
-          findings, never above them, and folded away until wanted. A form
-          parked permanently at the bottom of an intelligence feed reads as
-          part of the feed, and it was the last thing on a page whose job is
-          to be scanned. */}
+      {/* Reminders are the user's own notes - below the operational findings,
+          never above them, and folded away until wanted. */}
       <section className="border-t border-rule pt-4">
         {!addingReminder ? (
           <Action kind="create" label="Add a reminder" onClick={() => setAddingReminder(true)} />
         ) : (
-        <form onSubmit={addReminder} className="flex flex-wrap gap-2">
-          <input
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="e.g. Follow up with the design team"
-            className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-border-strong"
-          />
-          <input
-            type="datetime-local"
-            value={newDue}
-            onChange={(e) => setNewDue(e.target.value)}
-            aria-label="Due (optional)"
-            className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink outline-none transition-colors focus:border-border-strong"
-          />
-          <Button size="sm" variant="primary" type="submit" disabled={!newTitle.trim()}>
-            Add
-          </Button>
-          <Action kind="cancel" onClick={() => setAddingReminder(false)} />
-        </form>
+          <form onSubmit={addReminder} className="flex flex-wrap gap-2">
+            <input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="e.g. Follow up with the design team"
+              className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-border-strong"
+            />
+            <input
+              type="datetime-local"
+              value={newDue}
+              onChange={(e) => setNewDue(e.target.value)}
+              aria-label="Due (optional)"
+              className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink outline-none transition-colors focus:border-border-strong"
+            />
+            <Button size="sm" variant="primary" type="submit" disabled={!newTitle.trim()}>
+              Add
+            </Button>
+            <Action kind="cancel" onClick={() => setAddingReminder(false)} />
+          </form>
         )}
       </section>
     </div>
@@ -621,12 +618,17 @@ export function AttentionPage() {
           </div>
         )}
 
-        {/* Tabs carry live counts; zero tabs de-emphasise themselves. */}
+        {/* Tabs carry live counts; zero tabs de-emphasise themselves. The
+            state filter lives in the Filter control at the tab row's right
+            edge rather than as its own permanently-visible chip row. */}
         <IntelligenceTabs
           scope="personal"
-          counts={{ attention: nowCount, ...tabCounts }}
+          counts={{ attention: nowCount, ...tabCounts, insights: intel.memories.length }}
           attention={nowContent}
+          insights={<InsightsList memories={intel.memories} />}
           autoFocus={focusTab}
+          compact
+          filterSlot={<FilterMenu value={stateFilter} onChange={setStateFilter} />}
         />
 
         <RecommendedCard
@@ -637,20 +639,14 @@ export function AttentionPage() {
           }}
         />
 
-        {/* The way in to the Assistant - it owns every capability, so this
-            hands the question over rather than answering it here. */}
-        <Composer
-          value={ask}
-          onChange={setAsk}
-          onSubmit={() => handOff(ask)}
-          busy={false}
-          showSuggestions
-          onSuggest={handOff}
-          sticky={false}
-        />
+        <RecentActivity scope="personal" />
       </div>
 
       <ContextRail intel={intel} onAsk={handOff} />
+
+      {/* The way in to the Assistant - it owns every capability, so this is a
+          shortcut to it rather than a second surface that duplicates it. */}
+      <AssistantFab />
     </div>
   );
 }

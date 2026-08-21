@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Commitment } from "../api/types";
 import { InvestigationPanel, useInvestigation } from "./InvestigationPanel";
-import { Button } from "./ui";
+import { Action, Button } from "./ui";
 
 const STATUS_COPY: Record<string, { label: string; tone: string; border: string }> = {
   // A suggestion is a question, so it is styled as one - quiet, not alarming.
@@ -177,12 +177,8 @@ export function CommitmentStrip({ scope, teamId }: { scope: "personal" | "channe
                         <Button size="sm" variant="secondary" onClick={() => investigateFor(c.id)} disabled={busy || (investigation.loading && investigatingId === c.id)}>
                           {investigation.loading && investigatingId === c.id ? "Investigating…" : "Investigate ✨"}
                         </Button>
-                        <Button size="sm" variant="secondary" onClick={() => act(c.id, "resolve")} disabled={busy}>
-                          Done
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => act(c.id, "dismiss")} disabled={busy}>
-                          Dismiss
-                        </Button>
+                        <Action kind="done" onClick={() => act(c.id, "resolve")} disabled={busy} />
+                        <Action kind="dismiss" onClick={() => act(c.id, "dismiss")} disabled={busy} />
                       </>
                     )}
                     {(c.status === "resolved" || c.status === "dismissed") && (

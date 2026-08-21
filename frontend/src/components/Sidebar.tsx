@@ -50,7 +50,7 @@ const FAMILIES: {
   {
     label: "Google Workspace",
     connects: ["gmail", "google_calendar", "google_drive"],
-    to: "/mail",
+    to: "/connections/google",
     Glyph: GoogleIcon,
   },
   {
@@ -63,7 +63,7 @@ const FAMILIES: {
       "microsoft_onenote",
       "microsoft_teams",
     ],
-    to: "/microsoft/mail",
+    to: "/connections/microsoft",
     Glyph: MicrosoftIcon,
   },
   { label: "GitHub", connects: ["github"], to: "/connections/github", Glyph: GitHubIcon },
@@ -84,11 +84,26 @@ export function Sidebar({
   const { active } = useWorkspace();
   const [providers, setProviders] = useState<Set<string> | null>(null);
 
+  // Connecting a service is a full-page redirect out to the provider and back,
+  // which normally remounts this component fresh anyway - but a browser can
+  // restore the page from cache on that return trip instead of truly
+  // reloading it, so a plain refetch-on-mount can miss the connection that
+  // was just made. Refetching on focus as well means the list is always
+  // current by the time you look at it, without polling while you're away.
   useEffect(() => {
-    api
-      .get<{ provider: string }[]>("/connections")
-      .then((rows) => setProviders(new Set(rows.map((r) => r.provider))))
-      .catch(() => setProviders(new Set()));
+    let cancelled = false;
+    function refetch() {
+      api
+        .get<{ provider: string }[]>("/connections")
+        .then((rows) => !cancelled && setProviders(new Set(rows.map((r) => r.provider))))
+        .catch(() => !cancelled && setProviders(new Set()));
+    }
+    refetch();
+    window.addEventListener("focus", refetch);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", refetch);
+    };
   }, [active?.id]);
 
   const connected = FAMILIES.filter((f) => providers && f.connects.some((p) => providers.has(p)));

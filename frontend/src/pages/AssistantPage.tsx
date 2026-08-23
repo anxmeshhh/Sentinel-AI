@@ -14,7 +14,15 @@ import type {
   SentinelStatus,
   SituationRow,
 } from "../api/types";
-import { classify, isDeterministic, LLM_BUDGET, QUICK_ASKS, type Intent } from "../components/assistant/intent";
+import {
+  classify,
+  isDeterministic,
+  LLM_BUDGET,
+  QUICK_ASKS,
+  resolveRequestOf,
+  type Intent,
+  type ResolveRequest,
+} from "../components/assistant/intent";
 import { AttentionRows, Chip, Composer, ContextRail } from "../components/assistant/CommandCenter";
 import { InvestigationPanel } from "../components/InvestigationPanel";
 import { MeetingBriefPanel } from "../components/MeetingBriefPanel";
@@ -75,6 +83,8 @@ type Block =
   | { kind: "investigation"; investigation: Investigation; path: string }
   | { kind: "choose"; items: AttentionItem[]; subject: string }
   | { kind: "provider"; provider: string; items: AttentionItem[]; rows: SituationRow[] }
+  | { kind: "resolveChoose"; items: AttentionItem[]; request: ResolveRequest }
+  | { kind: "resolved"; item: AttentionItem; request: ResolveRequest }
   | { kind: "notice"; title: string; body: string; to?: string; toLabel?: string }
   | { kind: "pending"; local: boolean };
 
@@ -343,6 +353,29 @@ export function AssistantPage() {
         return;
       }
 
+      case "resolve": {
+        // "this" is whatever the conversation is currently about. Resolved
+        // deterministically from the last block that carried items - never
+        // from the model, and never from a guess when there is more than one
+        // candidate.
+        const targets = lastShownItems();
+        if (targets.length === 0) {
+          say({
+            kind: "notice",
+            title: "Nothing to act on yet",
+            body: "Ask what's urgent or what Sentinel detected first, then say “mark this done”.",
+          });
+          return;
+        }
+        const request = resolveRequestOf(text);
+        if (targets.length > 1) {
+          say({ kind: "resolveChoose", items: targets.slice(0, 6), request });
+          return;
+        }
+        await applyResolve(targets[0]!, request);
+        return;
+      }
+
       case "remember":
         say({
           kind: "notice",
@@ -368,6 +401,48 @@ export function AssistantPage() {
         });
         say({ kind: "text", text: reply });
       }
+    }
+  }
+
+  /** What "this" refers to: the items from the most recent block that showed
+   *  any. Reading backwards means "mark this done" after a list acts on that
+   *  list, not on something five turns ago. */
+  function lastShownItems(): AttentionItem[] {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const b = turns[i]?.block;
+      if (b?.kind === "attention" && b.items.length > 0) return b.items;
+      if (b?.kind === "provider" && b.items.length > 0) return b.items;
+      if (b?.kind === "choose" && b.items.length > 0) return b.items;
+    }
+    return [];
+  }
+
+  /**
+   * Straight to the Action Registry - no model, no second execution path.
+   *
+   * PATCH /attention/{id} is now a thin adapter over propose -> execute, so
+   * this is the same audited, verified, undoable action the attention list
+   * itself performs. The optimistic drop matches every other surface.
+   */
+  async function applyResolve(item: AttentionItem, request: ResolveRequest) {
+    intel.dropAttention(item.id);
+    const body =
+      request.state === "snoozed"
+        ? {
+            state: "snoozed",
+            snoozed_until: new Date(Date.now() + (request.hours ?? 24) * 3600 * 1000).toISOString(),
+          }
+        : { state: request.state };
+    try {
+      await api.patch(`/attention/${item.id}`, body);
+      say({ kind: "resolved", item, request });
+    } catch (e) {
+      intel.restoreAttention(item);
+      say({
+        kind: "notice",
+        title: "That didn't go through",
+        body: e instanceof Error ? e.message : "Sentinel couldn't apply that change.",
+      });
     }
   }
 
@@ -419,6 +494,7 @@ export function AssistantPage() {
                   onResolve={resolve}
                   onAsk={(q) => void submit(q)}
                   onInvestigate={(item) => void runInvestigation(item)}
+                  onApplyResolve={(item, request) => void applyResolve(item, request)}
                 />
               ))}
             </div>
@@ -533,11 +609,13 @@ function TurnView({
   onResolve,
   onAsk,
   onInvestigate,
+  onApplyResolve,
 }: {
   turn: Turn;
   onResolve: (i: AttentionItem, s: "done" | "snoozed") => void;
   onAsk: (q: string) => void;
   onInvestigate: (item: AttentionItem) => void;
+  onApplyResolve: (item: AttentionItem, request: ResolveRequest) => void;
 }) {
   if (turn.role === "user") {
     return (
@@ -651,6 +729,48 @@ function TurnView({
 
         {b.kind === "investigation" && <InvestigationBlock initial={b.investigation} path={b.path} />}
 
+        {b.kind === "resolveChoose" && (
+          <>
+            <p className="mb-2 text-small text-ink-dim">
+              {b.items.length} things are open. Which one should I {RESOLVE_VERB[b.request.state]}?
+            </p>
+            <ul className="flex flex-col gap-1.5">
+              {b.items.map((i) => (
+                <li key={i.id}>
+                  <button
+                    type="button"
+                    onClick={() => onApplyResolve(i, b.request)}
+                    className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-surface px-3.5 py-2.5 text-left transition-colors hover:border-border-strong"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-small text-ink">{i.title}</span>
+                      <span className="block truncate text-micro text-ink-faint">{i.why}</span>
+                    </span>
+                    <Icon name="check" size={13} className="flex-none text-ink-faint" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {/* Report: what was done, to what, and where the record is. */}
+        {b.kind === "resolved" && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="good">
+              {b.request.state === "snoozed"
+                ? `Snoozed ${SNOOZE_LABEL[b.request.hours ?? 24] ?? "for a while"}`
+                : b.request.state === "dismissed"
+                  ? "Dismissed"
+                  : "Marked done"}
+            </Badge>
+            <span className="min-w-0 truncate text-small text-ink-dim">{b.item.title}</span>
+            <Link to="/history" className="text-caption text-accent-text hover:underline">
+              View activity →
+            </Link>
+          </div>
+        )}
+
         {b.kind === "provider" && (
           <ProviderBlock
             provider={b.provider}
@@ -753,6 +873,18 @@ function TurnView({
 }
 
 /* ------------------------------------------------------------- blocks -- */
+
+const RESOLVE_VERB: Record<ResolveRequest["state"], string> = {
+  done: "mark done",
+  dismissed: "dismiss",
+  snoozed: "snooze",
+};
+
+const SNOOZE_LABEL: Record<number, string> = {
+  3: "for a few hours",
+  24: "until tomorrow",
+  [24 * 7]: "until next week",
+};
 
 const GOAL_LABEL: Record<Goal["health"], string> = {
   on_track: "On track",

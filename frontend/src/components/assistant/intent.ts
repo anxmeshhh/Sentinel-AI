@@ -32,6 +32,7 @@ export type Intent =
   | "memory" // "what do you remember"             -> /memory
   | "search" // "find everything about X"          -> across what Sentinel holds
   | "provider" // "anything from GitHub?"            -> Core data, filtered
+  | "resolve" // "mark this done" / "snooze this"   -> Action Registry, 0 LLM
   | "ask"; // anything else                      -> grounded chat
 
 export interface Classified {
@@ -70,6 +71,33 @@ const PROVIDER_ALIASES: { id: string; patterns: RegExp[] }[] = [
   { id: "mail", patterns: [/\b(e-?mail|inbox)\b/i] },
 ];
 
+/** Which lifecycle change "mark this done" is asking for.
+ *
+ *  Deterministic, and it maps onto the three Action Registry keys rather than
+ *  onto free text - `attention.done`, `attention.dismiss`, `attention.snooze`.
+ *  Snooze also carries a duration, read from the same words people actually
+ *  use; anything unrecognised defaults to tomorrow rather than guessing wide. */
+export interface ResolveRequest {
+  state: "done" | "dismissed" | "snoozed";
+  /** Hours, for snooze only. */
+  hours?: number;
+}
+
+const SNOOZE_DURATIONS: { hours: number; pattern: RegExp }[] = [
+  { hours: 3, pattern: /\b(a few hours|3 hours|this afternoon|later today)\b/i },
+  { hours: 24, pattern: /\b(tomorrow|a day|24 hours)\b/i },
+  { hours: 24 * 7, pattern: /\b(next week|a week|7 days)\b/i },
+];
+
+export function resolveRequestOf(text: string): ResolveRequest {
+  if (/\bdismiss|hide|ignore\b/i.test(text)) return { state: "dismissed" };
+  if (/\bsnooze|remind me|later|tomorrow|next week\b/i.test(text)) {
+    const match = SNOOZE_DURATIONS.find((d) => d.pattern.test(text));
+    return { state: "snoozed", hours: match?.hours ?? 24 };
+  }
+  return { state: "done" };
+}
+
 /** The provider named in the text, or undefined. First match wins, and the
  *  list is ordered specific-before-generic for exactly that reason. */
 export function providerOf(text: string): string | undefined {
@@ -80,6 +108,24 @@ export function providerOf(text: string): string | undefined {
 }
 
 const RULES: { intent: Intent; patterns: RegExp[] }[] = [
+  {
+    // Resolving something already on screen. Above `action` because "mark
+    // this done" is a request to act on a KNOWN target, and a known target
+    // needs no model to interpret: the item id comes from the conversation,
+    // the action key is fixed, and the Action Registry does the rest. This is
+    // the difference between an agent that operates the product and a chatbot
+    // that describes it - and it costs nothing to run.
+    intent: "resolve",
+    patterns: [
+      /\b(mark|set)\b.*\b(as )?(done|complete|completed|resolved|handled)\b/i,
+      /\b(done|handled|sorted|resolved) (with )?(this|that|it)\b/i,
+      /^(done|dismiss|snooze)\b/i,
+      /\bdismiss (this|that|it)\b/i,
+      /\b(hide|ignore) (this|that|it)\b/i,
+      /\bsnooze (this|that|it)\b/i,
+      /\bremind me (about )?(this|that|it) (later|tomorrow|next week)\b/i,
+    ],
+  },
   {
     intent: "action",
     patterns: [
@@ -304,6 +350,11 @@ export const LLM_BUDGET: Record<Intent, 0 | 1> = {
   // multi-step by design (MAX_STEPS = 10) and wrapping it here would quietly
   // break this table's promise. Live provider questions get a link instead.
   provider: 0,
+  // Acting on a target already on screen. The action key is fixed and the id
+  // comes from the conversation, so nothing needs interpreting - it goes
+  // straight to the Action Registry, which still validates, authorizes,
+  // executes, verifies and audits exactly as it would for any other caller.
+  resolve: 0,
 
   // One call each, server-side, and each already change-gated or cached.
   catchup: 1, // /attention/catchup narrates the delta (only past a 12h gap)

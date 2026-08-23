@@ -4,15 +4,17 @@ attention" feed. Detection itself lives in services/attention_engine.py
 actions (done/snooze/dismiss), manual reminders, and an on-demand refresh.
 """
 
+import math
 import uuid
 from collections import Counter
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, get_workspace_id
+from app.models.action import ActionStatus
 from app.models.attention_item import AttentionItem, AttentionOrigin, AttentionState, AttentionType
 from app.models.connection import Connection, Provider
 from app.models.signal import Signal, SignalType
@@ -32,6 +34,8 @@ from app.schemas.attention import (
     ProviderStatusOut,
     SentinelStatusOut,
 )
+from app.services.action_registry import ActionRejected
+from app.services.actions import execute_action, propose_action
 from app.services.attention_engine import list_attention, owns_attention_item, refresh_attention
 from app.services.catchup import build_catchup
 
@@ -423,14 +427,58 @@ def update_state(
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid state: {payload.state}")
 
-    if new_state == AttentionState.SNOOZED:
-        if payload.snoozed_until is None:
-            raise HTTPException(status_code=400, detail="snoozed_until is required when snoozing")
-        item.snoozed_until = payload.snoozed_until
-    else:
-        item.snoozed_until = None
+    if new_state == AttentionState.SNOOZED and payload.snoozed_until is None:
+        raise HTTPException(status_code=400, detail="snoozed_until is required when snoozing")
 
-    item.state = new_state
-    session.commit()
+    # This route no longer writes the state itself. Done, Dismissed and
+    # Snoozed are Action Registry actions, so every lifecycle change - however
+    # it was triggered - is proposed, executed, verified by reading the row
+    # back, and recorded as an auditable Action with an undo. Before this, the
+    # most frequent operations in the product were the only ones with none of
+    # that.
+    #
+    # NEW is the one transition with no action behind it: it is not a decision
+    # a person makes, it is what snooze expiry and un-resolving do, so it stays
+    # a plain write rather than an audited claim about work.
+    if new_state is AttentionState.NEW:
+        item.state = AttentionState.NEW
+        item.snoozed_until = None
+        session.commit()
+        session.refresh(item)
+        return _to_out(item)
+
+    if new_state is AttentionState.SNOOZED:
+        # The registry takes a duration; the API has always taken a timestamp.
+        # Converted here, rounded up, so an existing caller's contract is
+        # unchanged and the action still records a real duration.
+        delta = payload.snoozed_until - datetime.now(timezone.utc)
+        hours = max(1, min(24 * 30, math.ceil(delta.total_seconds() / 3600)))
+        action_type, params = "attention.snooze", {"item_id": str(item_id), "hours": hours}
+    else:
+        action_type = "attention.done" if new_state is AttentionState.DONE else "attention.dismiss"
+        params = {"item_id": str(item_id)}
+
+    try:
+        action = propose_action(
+            session,
+            workspace_id=workspace_id,
+            scope_key=f"personal:{user.id}",
+            action_type=action_type,
+            params=params,
+            user_id=user.id,
+            reason=f"Set to {new_state.value} from the attention list",
+            source_kind="attention_item",
+            source_id=item_id,
+        )
+        # LOW-risk internal actions are APPROVED on proposal (see
+        # ActionSpec.needs_approval_for), so this is the same single gesture
+        # the user always made - not a new confirmation step.
+        action = execute_action(session, action, user.id)
+    except ActionRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if action.status is ActionStatus.FAILED:
+        raise HTTPException(status_code=400, detail=action.error or "That change could not be applied")
+
     session.refresh(item)
     return _to_out(item)

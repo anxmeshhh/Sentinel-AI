@@ -112,6 +112,17 @@ class SnoozeAttentionParams(BaseModel):
     hours: int = Field(ge=1, le=24 * 30)
 
 
+class ResolveAttentionParams(BaseModel):
+    """Done and Dismiss take nothing but the item - the state is the action.
+
+    Shared by both rather than one model with a `state` field, so a caller
+    cannot flip which lifecycle transition happens by editing a parameter
+    after the preview was shown.
+    """
+
+    item_id: uuid.UUID
+
+
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -249,6 +260,22 @@ def _preview_snooze(params: SnoozeAttentionParams) -> dict:
     }
 
 
+def _preview_done(params: ResolveAttentionParams) -> dict:
+    return {
+        "title": "Mark this done",
+        "fields": {},
+        "effect": "Clears it from your attention list. Reversible.",
+    }
+
+
+def _preview_dismiss(params: ResolveAttentionParams) -> dict:
+    return {
+        "title": "Dismiss this",
+        "fields": {},
+        "effect": "Removes it without marking it done. Reversible.",
+    }
+
+
 def _risk_for_calendar(params: CreateCalendarEventParams) -> ActionRisk:
     """An event for yourself is a private write. The same event with
     attendees sends each of them an invitation, which is an outbound message
@@ -380,6 +407,59 @@ def _execute_snooze_attention(session: Session, action) -> dict:
     item.snoozed_until = datetime.now(timezone.utc) + timedelta(hours=params.hours)
     session.commit()
     return {"item_id": str(item.id), "snoozed_until": item.snoozed_until.isoformat()}
+
+
+def _set_attention_state(session: Session, action, state) -> dict:
+    """Done and Dismiss differ only in the state they land on.
+
+    One implementation so the ownership check, the missing-item behaviour and
+    the recorded result cannot drift between two transitions that are
+    otherwise identical.
+    """
+    from app.models.attention_item import AttentionItem
+
+    params = ResolveAttentionParams(**action.params)
+    item = session.get(AttentionItem, params.item_id)
+    if item is None:
+        raise ActionRejected("That item no longer exists")
+
+    # An attention item has no scope_key; its owner is the connection's owner.
+    # The same guard snooze uses, so a lifecycle change cannot be aimed at
+    # somebody else's item.
+    _assert_personal_item(session, action, item)
+
+    previous = item.state.value
+    item.state = state
+    item.snoozed_until = None
+    session.commit()
+    # `previous` is what makes compensation honest: undo returns the item to
+    # the state it was actually in, not to an assumed NEW.
+    return {"item_id": str(item.id), "state": state.value, "previous_state": previous}
+
+
+def _execute_done_attention(session: Session, action) -> dict:
+    from app.models.attention_item import AttentionState
+
+    return _set_attention_state(session, action, AttentionState.DONE)
+
+
+def _execute_dismiss_attention(session: Session, action) -> dict:
+    from app.models.attention_item import AttentionState
+
+    return _set_attention_state(session, action, AttentionState.DISMISSED)
+
+
+def _verify_attention_state(session: Session, action, result: dict) -> tuple[bool, str]:
+    """Execution is not completion: read the row back and confirm it landed."""
+    from app.models.attention_item import AttentionItem, AttentionState
+
+    item = session.get(AttentionItem, uuid.UUID(result["item_id"]))
+    if item is None:
+        return False, "The item no longer exists"
+    expected = AttentionState(result["state"])
+    if item.state is not expected:
+        return False, f"The item is {item.state.value}, not {expected.value}"
+    return True, f"Read back as {expected.value}"
 
 
 def _assert_personal_item(session: Session, action, item) -> None:
@@ -526,6 +606,23 @@ def _compensate_create_goal(session: Session, action) -> str:
         return "It was already gone"
     close_goal(session, goal, achieved=False)
     return "The goal was abandoned"
+
+
+def _compensate_attention_state(session: Session, action) -> str:
+    """Put the item back where it was.
+
+    Restores `previous_state` rather than assuming NEW: undoing a Done on an
+    item that had been snoozed should not quietly resurface it early.
+    """
+    from app.models.attention_item import AttentionItem, AttentionState
+
+    item = session.get(AttentionItem, uuid.UUID(action.result["item_id"]))
+    if item is None:
+        return "It was already gone"
+    previous = action.result.get("previous_state") or AttentionState.NEW.value
+    item.state = AttentionState(previous)
+    session.commit()
+    return f"The item is back in your attention list as {previous}"
 
 
 def _compensate_snooze(session: Session, action) -> str:
@@ -2303,6 +2400,40 @@ REGISTRY: dict[str, ActionSpec] = {
             reversibility=Reversibility.REVERSIBLE,
             compensate=_compensate_snooze,
             autonomy_eligible=True,
+        ),
+        # Done and Dismiss were the only attention lifecycle transitions with
+        # no registry entry: they were direct writes through PATCH, so the
+        # most frequent operations in the product produced no audit row, ran
+        # no verification and offered no undo. Snooze already lived here; this
+        # makes the set complete.
+        #
+        # Neither is autonomy_eligible, unlike snooze. Deferring something
+        # unattended is a scheduling decision; declaring it *done* or waving
+        # it away is a judgement about whether work happened, and software
+        # should not make that claim on its own.
+        ActionSpec(
+            key="attention.done",
+            label="Mark an attention item done",
+            risk=ActionRisk.LOW,
+            params_model=ResolveAttentionParams,
+            scopes=("personal",),  # attention is personal by construction
+            preview=_preview_done,
+            execute=_execute_done_attention,
+            verify=_verify_attention_state,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_attention_state,
+        ),
+        ActionSpec(
+            key="attention.dismiss",
+            label="Dismiss an attention item",
+            risk=ActionRisk.LOW,
+            params_model=ResolveAttentionParams,
+            scopes=("personal",),
+            preview=_preview_dismiss,
+            execute=_execute_dismiss_attention,
+            verify=_verify_attention_state,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_attention_state,
         ),
         ActionSpec(
             key="calendar.create_event",

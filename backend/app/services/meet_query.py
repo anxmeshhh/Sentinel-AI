@@ -10,6 +10,7 @@ from Google's own event.status, upcoming/past from comparing the scheduled
 time to now.
 """
 
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -21,16 +22,29 @@ MEETING_RANGES = {"upcoming", "past"}
 
 
 def list_meetings(
-    session: Session, workspace_id, *, meeting_range: str, search: str | None = None, limit: int = 50
+    session: Session,
+    workspace_id,
+    *,
+    meeting_range: str,
+    search: str | None = None,
+    limit: int = 50,
+    connection_ids: set[uuid.UUID] | None = None,
 ) -> list[Signal]:
+    """`connection_ids` narrows the read to one Scope's connections - see
+    calendar_query's module docstring. A meeting carries its title, attendees
+    and a joinable link, so a workspace-wide read is a disclosure."""
     if meeting_range not in MEETING_RANGES:
         raise ValueError(f"unknown meeting range: {meeting_range!r}")
 
     now = datetime.now(timezone.utc)
     if meeting_range == "upcoming":
-        signals = list_calendar_range(session, workspace_id, since=now, until=datetime.max, limit=300)
+        signals = list_calendar_range(
+            session, workspace_id, since=now, until=datetime.max, limit=300, connection_ids=connection_ids
+        )
     else:
-        signals = list_calendar_range(session, workspace_id, since=datetime.min, until=now, limit=300)
+        signals = list_calendar_range(
+            session, workspace_id, since=datetime.min, until=now, limit=300, connection_ids=connection_ids
+        )
         signals = list(reversed(signals))  # most recent past meeting first
 
     meetings = [s for s in signals if s.payload.get("has_meeting_link")]

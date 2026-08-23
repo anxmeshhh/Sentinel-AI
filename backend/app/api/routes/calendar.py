@@ -16,6 +16,7 @@ from app.schemas.calendar import CalendarEventOut, CreateEventOut, CreateEventRe
 from app.schemas.holiday import HolidayOut
 from app.services.calendar_query import CALENDAR_RANGES, list_calendar, list_calendar_month, list_calendar_range
 from app.services.holiday_query import list_indian_holidays
+from app.services.investigation import personal_scope
 from app.services.ingestion import ingest_connection
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
@@ -32,19 +33,30 @@ def get_calendar(
     user: User = Depends(get_current_user),
 ) -> list[CalendarEventOut]:
     """Either an explicit since/until date range (used by the Week/Day
-    views), or the simple upcoming/past split (used by Agenda)."""
+    views), or the simple upcoming/past split (used by Agenda).
+
+    Scoped to the caller's own connections. A calendar event belongs to
+    whoever connected the account it came from, so a workspace-wide read
+    showed one member another's meeting titles and attendees.
+    """
+    mine = personal_scope(session, workspace_id, user.id).connection_ids
     if since or until:
         try:
             since_dt = datetime.fromisoformat(since) if since else datetime.min
             until_dt = datetime.fromisoformat(until) if until else datetime.max
         except ValueError:
             raise HTTPException(status_code=400, detail="since/until must be ISO datetimes")
-        signals = list_calendar_range(session, workspace_id, since=since_dt, until=until_dt, limit=min(limit, 100))
+        signals = list_calendar_range(
+            session, workspace_id, since=since_dt, until=until_dt, limit=min(limit, 100),
+            connection_ids=mine,
+        )
         return [_to_item(s) for s in signals]
 
     if range not in CALENDAR_RANGES:
         raise HTTPException(status_code=400, detail=f"Unknown range. Use one of: {sorted(CALENDAR_RANGES)}")
-    signals = list_calendar(session, workspace_id, calendar_range=range, limit=min(limit, 100))
+    signals = list_calendar(
+        session, workspace_id, calendar_range=range, limit=min(limit, 100), connection_ids=mine
+    )
     return [_to_item(s) for s in signals]
 
 
@@ -58,7 +70,10 @@ def get_calendar_month(
 ) -> list[CalendarEventOut]:
     if not (1 <= month <= 12):
         raise HTTPException(status_code=400, detail="month must be 1-12")
-    signals = list_calendar_month(session, workspace_id, year=year, month=month)
+    signals = list_calendar_month(
+        session, workspace_id, year=year, month=month,
+        connection_ids=personal_scope(session, workspace_id, user.id).connection_ids,
+    )
     return [_to_item(s) for s in signals]
 
 

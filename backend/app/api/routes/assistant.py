@@ -101,7 +101,12 @@ def _build_context(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID
     if mail_summary:
         sections.append(mail_summary)
 
-    calendar_summary = calendar_summary_for_assistant(session, workspace_id)
+    # Scoped to the caller's own connections, like every other read here: an
+    # assistant answering for one person must not be handed another member's
+    # meetings as background context.
+    calendar_summary = calendar_summary_for_assistant(
+        session, workspace_id, connection_ids=scope.connection_ids
+    )
     if calendar_summary:
         sections.append(calendar_summary)
 

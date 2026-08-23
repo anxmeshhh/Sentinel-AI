@@ -714,6 +714,31 @@ def _execute_demo_read_tool(session: Session, workspace_id: uuid.UUID, name: str
     return None
 
 
+def _scope_connection_ids(
+    session: Session, workspace_id: uuid.UUID, team_id: uuid.UUID | None, user_id: uuid.UUID | None
+) -> set[uuid.UUID]:
+    """Whose ingested Signals this request may read.
+
+    Tools backed by a live provider call already resolve one Connection
+    through `_get_connection`, which fails closed. Tools that read *ingested*
+    Signals - calendar, meeting history, free slots - had no such gate and
+    queried the whole workspace, so in a shared workspace they returned other
+    members' meeting titles and attendees.
+
+    Reuses the same Scope constructors the Intelligence Core uses rather than
+    inventing a second notion of "whose data this is": a channel gets exactly
+    what it is authorized for, a person gets their own connections, and no
+    acting user means an empty set - nothing, not everything.
+    """
+    from app.services.investigation import channel_scope, personal_scope
+
+    if team_id is not None:
+        return channel_scope(session, team_id).connection_ids
+    if user_id is None:
+        return set()
+    return personal_scope(session, workspace_id, user_id).connection_ids
+
+
 def _execute_read_tool(
     session: Session, workspace_id: uuid.UUID, name: str, args: dict, *, team_id: uuid.UUID | None = None, user_id: uuid.UUID | None = None
 ) -> dict | list:
@@ -764,15 +789,23 @@ def _execute_read_tool(
         return {"body": (body or "")[:4000]}
 
     if name == "list_calendar_events":
+        # Scoped to this context's connections - a calendar event belongs to
+        # whoever connected the account it came from.
+        scoped = _scope_connection_ids(session, workspace_id, team_id, user_id)
         if args.get("since") or args.get("until"):
             try:
                 since = datetime.fromisoformat(args["since"]) if args.get("since") else datetime.min.replace(tzinfo=timezone.utc)
                 until = datetime.fromisoformat(args["until"]) if args.get("until") else datetime.max.replace(tzinfo=timezone.utc)
             except ValueError:
                 return {"error": "invalid since/until - use ISO datetimes"}
-            events = list_calendar_range(session, workspace_id, since=since, until=until, limit=50)
+            events = list_calendar_range(
+                session, workspace_id, since=since, until=until, limit=50, connection_ids=scoped
+            )
         else:
-            events = list_calendar(session, workspace_id, calendar_range=args.get("range", "upcoming"), limit=20)
+            events = list_calendar(
+                session, workspace_id, calendar_range=args.get("range", "upcoming"), limit=20,
+                connection_ids=scoped,
+            )
         return [
             {
                 "id": str(e.id),
@@ -832,7 +865,10 @@ def _execute_read_tool(
     if name == "list_meeting_history":
         meeting_range = args.get("range", "upcoming")
         try:
-            signals = list_meetings(session, workspace_id, meeting_range=meeting_range, search=args.get("search"), limit=30)
+            signals = list_meetings(
+                session, workspace_id, meeting_range=meeting_range, search=args.get("search"), limit=30,
+                connection_ids=_scope_connection_ids(session, workspace_id, team_id, user_id),
+            )
         except ValueError as exc:
             return {"error": str(exc)}
         return [
@@ -857,6 +893,7 @@ def _execute_read_tool(
             start_hour=int(args.get("start_hour", 9)),
             end_hour=int(args.get("end_hour", 18)),
             duration_minutes=int(args.get("duration_minutes", 30)),
+            connection_ids=_scope_connection_ids(session, workspace_id, team_id, user_id),
         )
         return {"free_slots": gaps} if gaps else {"free_slots": [], "note": "no gap of the requested length found in that window"}
 

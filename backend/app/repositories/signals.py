@@ -163,8 +163,25 @@ class SignalRepository(WorkspaceScopedRepository[Signal]):
         until: datetime | None = None,
         ascending: bool = True,
         limit: int = 30,
+        connection_ids: set[uuid.UUID] | None = None,
     ) -> list[Signal]:
+        """`connection_ids` narrows the read to one Scope's connections.
+
+        A workspace's calendar signals belong to whichever member connected
+        the account they came from, so a workspace-wide read hands one
+        person's meeting titles to another. Callers that represent a human
+        pass their Scope's connection set; omitting it keeps the historical
+        workspace-wide behaviour for internal callers that legitimately span
+        members (see calendar_query.free_slots_for_availability).
+
+        An EMPTY set means "no authorized connections" and returns nothing -
+        distinct from None, which means "do not filter". Fail-closed.
+        """
         query = self._scoped().where(Signal.type == SignalType.CALENDAR_EVENT)
+        if connection_ids is not None:
+            if not connection_ids:
+                return []
+            query = query.where(Signal.connection_id.in_(connection_ids))
         if since is not None:
             query = query.where(Signal.occurred_at >= since)
         if until is not None:

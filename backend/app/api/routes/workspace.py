@@ -52,6 +52,7 @@ SERVICE_PROVIDERS: dict[str, tuple[Provider, ...]] = {
     "microsoft_teams": (Provider.MICROSOFT_TEAMS,),
     "gmail": (Provider.GMAIL,),
     "google_calendar": (Provider.GOOGLE_CALENDAR,),
+    "google_drive": (Provider.GOOGLE_DRIVE,),
     "github": (Provider.GITHUB,),
     "slack": (Provider.SLACK,),
     "zoom": (Provider.ZOOM,),

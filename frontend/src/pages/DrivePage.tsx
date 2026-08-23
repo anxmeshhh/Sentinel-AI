@@ -3,10 +3,12 @@ import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { Connection, DriveAnalytics, DriveFile } from "../api/types";
-import { BackNav } from "../components/BackNav";
+import { DriveIcon } from "../components/ProviderIcons";
 import { SentinelPanel } from "../components/SentinelPanel";
 import { workspaceContext } from "../components/context";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { GOOGLE_ASSISTANT } from "../components/workspace/assistantConfigs";
+import { ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
 import { Button, LoadingBlock} from "../components/ui";
 
 const MIME_FILTERS = [
@@ -65,25 +67,31 @@ export function DrivePage() {
 
   if (connected === false) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
-        <BackNav
-          back={{ to: "/connections/google", label: "Google Workspace" }}
-          crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Drive" }]}
-        />
-        <p className="mb-3 text-lead">Google Drive isn't connected yet.</p>
-        <Link to="/connections/google" className="text-body font-semibold text-accent-text hover:underline">
-          Connect Drive &rarr;
-        </Link>
-      </div>
+      <ProviderWorkspace
+        service="google_drive"
+        title="Drive"
+        icon={<DriveIcon />}
+        parent={{ label: "Google Workspace", to: "/connections/google" }}
+      >
+        <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
+          <p className="mb-3 text-lead">Google Drive isn't connected yet.</p>
+          <Link to="/connections/google" className="text-body font-semibold text-accent-text hover:underline">
+            Connect Drive &rarr;
+          </Link>
+        </div>
+      </ProviderWorkspace>
     );
   }
 
   return (
-    <div className="max-w-6xl">
-      <BackNav
-        back={{ to: "/connections/google", label: "Google Workspace" }}
-        crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Drive" }]}
-      />
+    <ProviderWorkspace
+      service="google_drive"
+      title="Drive"
+      icon={<DriveIcon />}
+      parent={{ label: "Google Workspace", to: "/connections/google" }}
+      assistant={GOOGLE_ASSISTANT}
+      activitySources={[]}
+    >
       <p className="eyebrow mb-2.5">Personal</p>
       <div className="section-head">
         <h1>Drive</h1>
@@ -275,7 +283,7 @@ export function DrivePage() {
           </div>
         )}
       </div>
-    </div>
+    </ProviderWorkspace>
   );
 }
 

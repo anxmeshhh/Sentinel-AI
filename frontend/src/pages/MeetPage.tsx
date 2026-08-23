@@ -3,8 +3,10 @@ import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { Connection } from "../api/types";
-import { BackNav } from "../components/BackNav";
+import { MeetIcon } from "../components/ProviderIcons";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
+import { GOOGLE_ASSISTANT } from "../components/workspace/assistantConfigs";
+import { ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
 import { Button, LoadingBlock} from "../components/ui";
 
 interface Meeting {
@@ -66,25 +68,36 @@ export function MeetPage() {
 
   if (connected === false) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
-        <BackNav
-          back={{ to: "/connections/google", label: "Google Workspace" }}
-          crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Meet" }]}
-        />
-        <p className="mb-3 text-lead">Google Calendar isn't connected yet.</p>
-        <Link to="/connections/google" className="text-body font-semibold text-accent-text hover:underline">
-          Connect Google &rarr;
-        </Link>
-      </div>
+      <ProviderWorkspace
+        service="google_calendar"
+        title="Meet"
+        icon={<MeetIcon />}
+        parent={{ label: "Google Workspace", to: "/connections/google" }}
+      >
+        <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
+          <p className="mb-3 text-lead">Google Calendar isn't connected yet.</p>
+          <Link to="/connections/google" className="text-body font-semibold text-accent-text hover:underline">
+            Connect Google &rarr;
+          </Link>
+        </div>
+      </ProviderWorkspace>
     );
   }
 
+  // Meet has no connection of its own - it rides on Calendar events that
+  // carry a meeting link (the same fact meetHealth() in ConnectionWorkspacePage
+  // encodes), so this page's shell is scoped to "google_calendar" throughout:
+  // real Calendar connection status, real Calendar Sync Now, real Calendar
+  // activity - never a fabricated "Meet" connection that doesn't exist.
   return (
-    <div className="max-w-3xl">
-      <BackNav
-        back={{ to: "/connections/google", label: "Google Workspace" }}
-        crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Meet" }]}
-      />
+    <ProviderWorkspace
+      service="google_calendar"
+      title="Meet"
+      icon={<MeetIcon />}
+      parent={{ label: "Google Workspace", to: "/connections/google" }}
+      assistant={GOOGLE_ASSISTANT}
+      activitySources={["Google Calendar"]}
+    >
       <p className="eyebrow mb-2.5">Personal</p>
       <div className="section-head">
         <h1>Meet</h1>
@@ -197,7 +210,7 @@ export function MeetPage() {
           })}
         </div>
       )}
-    </div>
+    </ProviderWorkspace>
   );
 }
 

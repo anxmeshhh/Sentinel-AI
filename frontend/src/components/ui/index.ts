@@ -37,6 +37,8 @@ export { EmptyState } from "./EmptyState";
 export { Divider, PageHeader, Section } from "./Layout";
 export { Tabs } from "./Tabs";
 export type { TabItem } from "./Tabs";
+export { TabBar } from "./TabBar";
+export type { TabBarItem } from "./TabBar";
 export { Rows, TableWrap, Td, Th, Tr } from "./Table";
 export { Icon } from "./Icon";
 export { Overflow, OverflowItem } from "./Overflow";

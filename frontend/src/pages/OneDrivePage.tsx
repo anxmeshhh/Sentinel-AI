@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { DriveBrowse, DriveItem } from "../api/types";
 import { DriveIcon } from "../components/ProviderIcons";
+import { MICROSOFT_ASSISTANT } from "../components/workspace/assistantConfigs";
 import { ActionButton, ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
 import { Button, Icon, LoadingBlock } from "../components/ui";
 
@@ -75,6 +76,8 @@ export function OneDrivePage() {
       icon={<DriveIcon />}
       parent={{ label: "Microsoft 365", to: "/connections/microsoft" }}
       refreshKey={refreshKey}
+      assistant={MICROSOFT_ASSISTANT}
+      activitySources={["OneDrive"]}
       quickActions={
         <>
           <Button size="sm" onClick={() => { setNewFolder((v) => !v); setNewFile(false); }}>

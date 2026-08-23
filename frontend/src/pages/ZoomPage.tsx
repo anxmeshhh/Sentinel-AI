@@ -64,8 +64,9 @@ export function ZoomPage() {
       service="zoom"
       title="Zoom"
       icon={<ZoomIcon />}
-      parent={{ label: "Connections", to: "/connections" }}
+      parent={{ label: "Dashboard", to: "/" }}
       refreshKey={refreshKey}
+      activitySources={["Zoom"]}
       quickActions={
         <Button size="sm" variant="primary" onClick={() => setScheduling((v) => !v)}>
           {scheduling ? "Close" : "Schedule meeting"}

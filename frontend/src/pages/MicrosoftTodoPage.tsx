@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { TodoBoard, TodoTask } from "../api/types";
 import { CalendarIcon } from "../components/ProviderIcons";
+import { MICROSOFT_ASSISTANT } from "../components/workspace/assistantConfigs";
 import { ActionButton, ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
 import { Button, LoadingBlock } from "../components/ui";
 
@@ -68,6 +69,8 @@ export function MicrosoftTodoPage() {
       icon={<CalendarIcon />}
       parent={{ label: "Microsoft 365", to: "/connections/microsoft" }}
       refreshKey={refreshKey}
+      assistant={MICROSOFT_ASSISTANT}
+      activitySources={["Microsoft To Do"]}
       quickActions={
         <Button size="sm" variant="primary" onClick={() => { setCreating((v) => !v); setEditing(false); }}>
           {creating ? "Close" : "New task"}

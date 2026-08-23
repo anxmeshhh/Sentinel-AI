@@ -4,7 +4,9 @@ import { Link } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
 import type { CalendarEvent, Connection, Holiday, HolidayCategory } from "../api/types";
-import { BackNav } from "../components/BackNav";
+import { CalendarIcon } from "../components/ProviderIcons";
+import { GOOGLE_ASSISTANT } from "../components/workspace/assistantConfigs";
+import { ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
 import { Button, LoadingBlock } from "../components/ui";
 
 type View = "month" | "week" | "day" | "agenda";
@@ -134,27 +136,33 @@ export function CalendarPage() {
 
   if (connected === false) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
-        <BackNav
-          back={{ to: "/connections/google", label: "Google Workspace" }}
-          crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Calendar" }]}
-        />
-        <p className="mb-3 text-lead">Google Calendar isn't connected yet.</p>
-        <Link to="/settings" className="text-body font-semibold text-accent-text hover:underline">
-          Connect Calendar &rarr;
-        </Link>
-      </div>
+      <ProviderWorkspace
+        service="google_calendar"
+        title="Calendar"
+        icon={<CalendarIcon />}
+        parent={{ label: "Google Workspace", to: "/connections/google" }}
+      >
+        <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
+          <p className="mb-3 text-lead">Google Calendar isn't connected yet.</p>
+          <Link to="/settings" className="text-body font-semibold text-accent-text hover:underline">
+            Connect Calendar &rarr;
+          </Link>
+        </div>
+      </ProviderWorkspace>
     );
   }
 
   const rangeHolidays = holidaysInRange(visibleHolidays, view, agendaRange, anchor);
 
   return (
-    <div className="max-w-3xl">
-      <BackNav
-        back={{ to: "/connections/google", label: "Google Workspace" }}
-        crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Calendar" }]}
-      />
+    <ProviderWorkspace
+      service="google_calendar"
+      title="Calendar"
+      icon={<CalendarIcon />}
+      parent={{ label: "Google Workspace", to: "/connections/google" }}
+      assistant={GOOGLE_ASSISTANT}
+      activitySources={["Google Calendar"]}
+    >
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <p className="eyebrow mb-2.5">Personal</p>
@@ -270,7 +278,7 @@ export function CalendarPage() {
       ) : (
         <AgendaList events={events} holidays={rangeHolidays} emptyLabel={view === "agenda" ? `No ${agendaRange} events.` : "No events."} />
       )}
-    </div>
+    </ProviderWorkspace>
   );
 }
 

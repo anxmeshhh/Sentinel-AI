@@ -24,10 +24,16 @@ export function RecentActivity({
   scope,
   teamId,
   limit = 5,
+  sources,
 }: {
   scope: "personal" | "channel";
   teamId?: string;
   limit?: number;
+  /** Narrows to the given ACTION_META source labels (e.g. ["Gmail"]) - a
+   *  provider page's own activity, from the same GET /actions every other
+   *  caller reads, filtered client-side on the real action_type -> source
+   *  mapping below rather than a second, provider-scoped endpoint. */
+  sources?: string[];
 }) {
   const [actions, setActions] = useState<SentinelAction[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -56,7 +62,10 @@ export function RecentActivity({
     }
   }
 
-  const history = (actions ?? []).filter((a) => a.executed_at !== null).slice(0, limit);
+  const history = (actions ?? [])
+    .filter((a) => a.executed_at !== null)
+    .filter((a) => !sources || sources.includes((ACTION_META[a.action_type] ?? ACTION_META._default).source))
+    .slice(0, limit);
   if (history.length === 0) return null;
 
   return (

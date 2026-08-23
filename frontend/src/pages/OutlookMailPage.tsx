@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { OutlookMailBody, OutlookMailItem } from "../api/types";
 import { MailIcon } from "../components/ProviderIcons";
+import { MICROSOFT_ASSISTANT } from "../components/workspace/assistantConfigs";
 import { ActionButton, ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
 import { Button, Icon, LoadingBlock } from "../components/ui";
 
@@ -81,6 +82,8 @@ export function OutlookMailPage() {
       icon={<MailIcon />}
       parent={{ label: "Microsoft 365", to: "/connections/microsoft" }}
       refreshKey={refreshKey}
+      assistant={MICROSOFT_ASSISTANT}
+      activitySources={["Outlook Mail"]}
       quickActions={
         <Button size="sm" variant="primary" onClick={() => setComposing((v) => !v)}>
           {composing ? "Close" : "New draft"}

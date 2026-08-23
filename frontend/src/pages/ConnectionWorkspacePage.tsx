@@ -3,14 +3,29 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
-import type { Connection, GitHubRepo, GitHubRepository, MicrosoftCapabilities, MicrosoftService, SlackChannel, SlackChannelResource } from "../api/types";
+import type {
+  Connection,
+  GitHubRepo,
+  GitHubRepository,
+  MicrosoftCapabilities,
+  MicrosoftService,
+  ProviderKey,
+  ServiceIntelligence,
+  SlackChannel,
+  SlackChannelResource,
+} from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { ConnectScopeDialog } from "../components/ConnectScopeDialog";
+import { RecentActivity } from "../components/RecentActivity";
 import { ScopeNotice, scopeOf } from "../components/ScopeBadge";
+import { SentinelPanel } from "../components/SentinelPanel";
+import { SyncButton } from "../components/SyncButton";
+import { workspaceContext } from "../components/context";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { CalendarIcon, DriveIcon, GitHubIcon, GoogleIcon, MailIcon, MeetIcon, MicrosoftIcon, NotionIcon, SlackIcon, ZoomIcon } from "../components/ProviderIcons";
 import { ServiceCard } from "../components/ServiceCard";
-import { Button, LoadingBlock } from "../components/ui";
+import { GITHUB_ASSISTANT, GOOGLE_ASSISTANT, MICROSOFT_ASSISTANT, type ProviderAssistantConfig } from "../components/workspace/assistantConfigs";
+import { Badge, Button, LoadingBlock, TabBar, type TabBarItem } from "../components/ui";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -23,11 +38,98 @@ const PROVIDER_META: Record<string, { label: string; icon: ReactNode }> = {
   notion: { label: "Notion", icon: <NotionIcon /> },
 };
 
+/** The four families with a real, built workspace below (not
+ *  ComingSoonWorkspace) - only these get the Overview/Services/Insights/
+ *  Activity/Settings tab shell. A family with nothing real behind it keeps
+ *  the plain "coming soon" page rather than tabs with nothing to show. */
+const REAL_FAMILIES = new Set(["google", "microsoft", "github", "slack"]);
+
+/** This family's own connections, by ProviderKey - for the header's
+ *  aggregate status and the Settings tab's connection list. */
+const FAMILY_PROVIDERS: Record<string, ProviderKey[]> = {
+  google: ["gmail", "google_calendar", "google_drive"],
+  microsoft: [
+    "microsoft_outlook_mail", "microsoft_outlook_calendar", "microsoft_todo",
+    "microsoft_onedrive", "microsoft_onenote", "microsoft_teams",
+  ],
+  github: ["github"],
+  slack: ["slack"],
+};
+
+/** This family's /workspace/{service}/intelligence keys - workspace.py's own
+ *  SERVICE_PROVIDERS vocabulary, which is deliberately not identical to
+ *  ProviderKey, so mapped separately rather than assumed to match. */
+const FAMILY_SERVICES: Record<string, string[]> = {
+  google: ["gmail", "google_calendar", "google_drive"],
+  microsoft: ["microsoft_mail", "microsoft_calendar", "microsoft_todo", "microsoft_onedrive", "microsoft_onenote"],
+  github: ["github"],
+  slack: ["slack"],
+};
+
+/** RecentActivity's `sources` filter for this family - real ACTION_META
+ *  labels only. Slack has none yet (no Slack action type exists), so its
+ *  Activity tab honestly shows nothing rather than everyone's history. */
+const FAMILY_ACTIVITY_SOURCES: Record<string, string[]> = {
+  google: ["Gmail", "Google Calendar"],
+  microsoft: ["Outlook Mail", "Outlook Calendar", "Microsoft To Do", "OneDrive", "OneNote"],
+  github: ["GitHub"],
+  slack: [],
+};
+
+/** Only set for a family with a real, already-built scoped chat endpoint. */
+const FAMILY_ASSISTANT: Record<string, ProviderAssistantConfig | undefined> = {
+  google: GOOGLE_ASSISTANT,
+  microsoft: MICROSOFT_ASSISTANT,
+  github: GITHUB_ASSISTANT,
+  slack: undefined,
+};
+
+/** Merges findings and de-duplicates situations across every service in a
+ *  family - the same /workspace/{service}/intelligence each leaf page reads
+ *  on its own, fetched once per service here and combined, since a family
+ *  overview is "everything across Gmail, Calendar and Drive", not any one
+ *  of them. A cross-provider situation surfacing under two services is
+ *  de-duped by id rather than shown twice. */
+function useFamilyIntelligence(services: string[]) {
+  const [data, setData] = useState<{ findings: ServiceIntelligence["findings"]; situations: ServiceIntelligence["situations"] } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all(services.map((s) => api.get<ServiceIntelligence>(`/workspace/${s}/intelligence`).catch(() => null)))
+      .then((results) => {
+        if (cancelled) return;
+        const findings = results.flatMap((r) => r?.findings ?? []);
+        const situationsById = new Map<string, ServiceIntelligence["situations"][number]>();
+        for (const r of results) for (const s of r?.situations ?? []) situationsById.set(s.id, s);
+        setData({ findings, situations: [...situationsById.values()] });
+      })
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [services.join(",")]);
+
+  return { data, loading };
+}
+
+type FamilyTabKey = "overview" | "services" | "insights" | "activity" | "settings";
+const FAMILY_TABS: TabBarItem<FamilyTabKey>[] = [
+  { key: "overview", label: "Overview" },
+  { key: "services", label: "Services" },
+  { key: "insights", label: "Insights" },
+  { key: "activity", label: "Activity" },
+  { key: "settings", label: "Settings" },
+];
+
 export function ConnectionWorkspacePage() {
   const { provider = "" } = useParams<{ provider: string }>();
   const { active } = useWorkspace();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<FamilyTabKey>("overview");
 
   function load() {
     setLoading(true);
@@ -40,43 +142,246 @@ export function ConnectionWorkspacePage() {
   useEffect(load, []);
 
   const meta = PROVIDER_META[provider];
+  const isRealFamily = REAL_FAMILIES.has(provider);
+  const familyProviders = FAMILY_PROVIDERS[provider] ?? [];
+  const familyConnections = connections.filter((c) => familyProviders.includes(c.provider));
+  const familyServices = FAMILY_SERVICES[provider] ?? [];
+  const assistant = FAMILY_ASSISTANT[provider];
+  const { data: familyIntel, loading: intelLoading } = useFamilyIntelligence(isRealFamily ? familyServices : []);
+
+  const connectedCount = familyConnections.filter((c) => serviceHealth(c).healthy).length;
+  const lastSyncedAt = familyConnections.reduce<string | null>(
+    (max, c) => (c.last_synced_at && (!max || c.last_synced_at > max) ? c.last_synced_at : max),
+    null,
+  );
 
   return (
-    <div className="flex flex-col gap-6 xl:flex-row">
-      <div className="min-w-0 max-w-3xl flex-1">
-        <BackNav back={{ to: "/", label: "Dashboard" }} crumbs={meta ? [{ label: "Dashboard", to: "/" }, { label: "Connections", to: "/" }, { label: meta.label }] : undefined} />
+    <div>
+      <BackNav back={{ to: "/", label: "Dashboard" }} crumbs={meta ? [{ label: "Dashboard", to: "/" }, { label: "Connections", to: "/" }, { label: meta.label }] : undefined} />
 
-        {!meta ? (
-          <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
-            Unknown connection.
-          </div>
-        ) : (
-          <>
-            <div className="mb-4 flex items-center gap-3">
+      {!meta ? (
+        <div className="rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
+          Unknown connection.
+        </div>
+      ) : (
+        <>
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-md bg-surface-2">{meta.icon}</div>
-              <h1 className="text-h2 font-medium text-balance">{meta.label}</h1>
+              <div>
+                <h1 className="text-h2 font-medium text-balance">{meta.label}</h1>
+                {isRealFamily && !loading && familyProviders.length > 0 && (
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-caption text-ink-faint">
+                    <span className={`font-semibold ${connectedCount > 0 ? "text-good" : "text-ink-faint"}`}>
+                      {connectedCount} of {familyProviders.length} services connected
+                    </span>
+                    {lastSyncedAt && (
+                      <span>
+                        · synced {new Date(lastSyncedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
+            {isRealFamily && connectedCount > 0 && <SyncButton onSynced={load} />}
+          </div>
 
-            {/* Who can use anything connected here - stated up front, not
-                hidden behind settings or a tooltip. */}
-            <ScopeNotice scope={scopeOf(active)} workspaceName={active?.name} />
+          {/* Who can use anything connected here - stated up front, not
+              hidden behind settings or a tooltip. */}
+          <ScopeNotice scope={scopeOf(active)} workspaceName={active?.name} />
 
-            {loading ? (
-              <LoadingBlock />
-            ) : provider === "google" ? (
-              <GoogleWorkspace connections={connections} onChanged={load} />
-            ) : provider === "microsoft" ? (
-              <MicrosoftWorkspace connections={connections} onChanged={load} />
-            ) : provider === "github" ? (
-              <GitHubWorkspace connections={connections} onChanged={load} />
-            ) : provider === "slack" ? (
-              <SlackWorkspace connections={connections} />
-            ) : (
-              <ComingSoonWorkspace label={meta.label} />
-            )}
-          </>
+          {!isRealFamily ? (
+            loading ? <LoadingBlock /> : <ComingSoonWorkspace label={meta.label} />
+          ) : (
+            <>
+              <div className="mt-5">
+                <TabBar items={FAMILY_TABS} value={tab} onChange={setTab} />
+              </div>
+
+              {tab === "overview" && (
+                <div className="flex flex-col gap-6 xl:flex-row">
+                  <div className="min-w-0 flex-1">
+                    <FamilyIntelligenceCard data={familyIntel} loading={intelLoading} limit={3} onViewAll={() => setTab("insights")} />
+                    <div className="mt-4">
+                      <RecentActivity scope="personal" limit={5} sources={FAMILY_ACTIVITY_SOURCES[provider]} />
+                    </div>
+                  </div>
+                  {assistant && (
+                    <aside className="w-full flex-none xl:w-[360px]">
+                      <div className="card h-[440px] overflow-hidden p-0 sm:p-0 xl:sticky xl:top-6">
+                        <SentinelPanel
+                          contextLabel={assistant.contextLabel}
+                          identity={workspaceContext(active)}
+                          endpointBase={assistant.endpointBase}
+                          placeholder={assistant.placeholder}
+                          suggestions={assistant.suggestions}
+                          suggestionGroups={assistant.suggestionGroups}
+                        />
+                      </div>
+                    </aside>
+                  )}
+                </div>
+              )}
+
+              {tab === "services" &&
+                (loading ? (
+                  <LoadingBlock />
+                ) : provider === "google" ? (
+                  <GoogleWorkspace connections={connections} onChanged={load} />
+                ) : provider === "microsoft" ? (
+                  <MicrosoftWorkspace connections={connections} onChanged={load} />
+                ) : provider === "github" ? (
+                  <GitHubWorkspace connections={connections} onChanged={load} />
+                ) : (
+                  <SlackWorkspace connections={connections} />
+                ))}
+
+              {tab === "insights" && <FamilyIntelligenceCard data={familyIntel} loading={intelLoading} />}
+
+              {tab === "activity" && (
+                <RecentActivity scope="personal" limit={20} sources={FAMILY_ACTIVITY_SOURCES[provider]} />
+              )}
+
+              {tab === "settings" && (
+                <FamilySettingsTab label={meta.label} connections={familyConnections} onManage={() => setTab("services")} />
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The family's merged findings/situations - same shape and rendering as
+ *  ProviderWorkspace's own IntelligenceCard, so a leaf page and its family
+ *  hub read identically. `limit` truncates for Overview; omitted, the
+ *  Insights tab shows everything. */
+function FamilyIntelligenceCard({
+  data,
+  loading,
+  limit,
+  onViewAll,
+}: {
+  data: { findings: ServiceIntelligence["findings"]; situations: ServiceIntelligence["situations"] } | null;
+  loading: boolean;
+  limit?: number;
+  onViewAll?: () => void;
+}) {
+  if (loading && !data) return <LoadingBlock />;
+  if (!data) return null;
+
+  const findings = limit ? data.findings.slice(0, limit) : data.findings;
+  const situations = limit ? data.situations.slice(0, limit) : data.situations;
+  const quiet = data.findings.length === 0 && data.situations.length === 0;
+  const more = limit && data.findings.length + data.situations.length > limit;
+
+  return (
+    <div className="card">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="relative h-[13px] w-[13px] flex-none rounded-full border border-ink" aria-hidden="true">
+            <span className="absolute inset-[4px] rounded-full bg-brand" />
+          </span>
+          <span className="text-small font-semibold text-ink">Insights</span>
+        </div>
+        {more && onViewAll && (
+          <button type="button" onClick={onViewAll} className="text-caption text-ink-faint hover:text-ink">
+            View all →
+          </button>
         )}
       </div>
+
+      {quiet ? (
+        <p className="text-caption leading-relaxed text-ink-faint">
+          Nothing needs your attention across these services right now.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {situations.length > 0 && (
+            <section>
+              <div className="mb-1.5 text-caption font-semibold uppercase tracking-wide text-ink-faint">Situations</div>
+              <ul className="flex flex-col gap-2">
+                {situations.map((s) => (
+                  <li key={s.id} className="rounded-md border border-border px-3 py-2">
+                    <div className="text-small font-medium text-ink">{s.title}</div>
+                    {s.explanation && <p className="mt-1 text-caption leading-relaxed text-ink-dim">{s.explanation}</p>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {findings.length > 0 && (
+            <section>
+              <div className="mb-1.5 text-caption font-semibold uppercase tracking-wide text-ink-faint">Findings</div>
+              <ul className="flex flex-col gap-2">
+                {findings.map((f) => (
+                  <li key={f.id} className="flex items-start gap-2">
+                    <span
+                      className={`mt-1.5 h-1.5 w-1.5 flex-none rounded-full ${
+                        f.tier === "critical" ? "bg-crit" : f.tier === "review" ? "bg-warn" : "bg-ink-faint"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <div className="min-w-0">
+                      <div className="truncate text-small text-ink">{f.title}</div>
+                      <div className="truncate text-caption text-ink-faint">{f.why}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A read-only list of this family's connections - the real
+ *  connect/reconnect/disconnect flow (OAuth, consent) stays on the Services
+ *  tab, where it's already built; this tab just states what's connected. */
+function FamilySettingsTab({
+  label,
+  connections,
+  onManage,
+}: {
+  label: string;
+  connections: Connection[];
+  onManage: () => void;
+}) {
+  if (connections.length === 0) {
+    return (
+      <p className="text-caption text-ink-faint">
+        Nothing connected yet.{" "}
+        <button type="button" onClick={onManage} className="text-accent-text hover:underline">
+          Connect a {label} service →
+        </button>
+      </p>
+    );
+  }
+  return (
+    <div className="card max-w-lg">
+      <ul className="flex flex-col gap-3">
+        {connections.map((c) => {
+          const h = serviceHealth(c);
+          return (
+            <li key={c.id} className="flex items-center justify-between gap-3 border-b border-rule pb-3 last:border-0 last:pb-0">
+              <div className="min-w-0">
+                <div className="truncate text-small text-ink">{c.org || c.provider}</div>
+                <div className="text-caption text-ink-faint">
+                  {c.last_synced_at ? `Synced ${new Date(c.last_synced_at).toLocaleString()}` : "Never synced"}
+                </div>
+              </div>
+              <Badge tone={h.tone === "muted" ? "neutral" : h.tone}>{h.status}</Badge>
+            </li>
+          );
+        })}
+      </ul>
+      <button type="button" onClick={onManage} className="mt-4 text-caption text-accent-text hover:underline">
+        Manage connections →
+      </button>
     </div>
   );
 }

@@ -1,30 +1,41 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { api } from "../../api/client";
 import type { ActionResult, ServiceIntelligence } from "../../api/types";
+import { useWorkspace } from "../../context/WorkspaceContext";
 import { BackNav } from "../BackNav";
-import { Action, ActionGroup, Badge, Button, LoadingBlock } from "../ui";
+import { workspaceContext } from "../context";
+import { RecentActivity } from "../RecentActivity";
+import { SentinelPanel, type SuggestionGroup } from "../SentinelPanel";
+import { ServiceCard } from "../ServiceCard";
+import { SyncButton } from "../SyncButton";
+import { Action, ActionGroup, Badge, Button, LoadingBlock, TabBar, type TabBarItem } from "../ui";
 
 /**
  * The Provider Workspace shell.
  *
- * One layout every provider adopts, so a service page only writes its own work
- * surface and gets identity, health and intelligence for free. Nothing in
- * here is Microsoft-specific - `service` is a key the backend maps to
- * providers, so GitHub, Slack and Google pages can adopt it unchanged.
+ * One layout every leaf service page adopts, so a service page only writes
+ * its own work surface and gets identity, health, intelligence, activity and
+ * (where a real one exists) an AI panel for free.
  *
- *   ┌───────────────────────────────────────────────────┐
- *   │ BackNav · ServiceHeader (identity, health, actions)│
- *   ├───────────────────────────┬───────────────────────┤
- *   │ WORK SURFACE (children)   │ IntelligenceRail      │
- *   └───────────────────────────┴───────────────────────┘
+ *   ┌──────────────────────────────────────────────────────────┐
+ *   │ BackNav · Header (identity, health, Sync Now, actions)     │
+ *   │ Overview · Services · Insights · Activity · Settings       │
+ *   ├──────────────────────────────────────────────────────────┤
+ *   │ Overview: work surface (children) · insights · AI · activity│
+ *   └──────────────────────────────────────────────────────────┘
  *
- * The rail used to end in a provider-scoped SentinelPanel ("Ask about your
- * Zoom account") - a generic, whole-service chat surface, personal-scoped,
- * that duplicated exactly what the single global Assistant already does. It
- * is gone; the floating Assistant button (mounted once, globally) is the one
- * way to ask Sentinel anything now, on this page as on every other.
+ * The floating Assistant button (mounted once, globally) is still the one
+ * general way to ask Sentinel anything on this page. The AI panel here is a
+ * different thing: it exists only where a real, already-built, provider-
+ * SCOPED backend endpoint exists (SentinelPanel + /connections/{provider}
+ * /command/stream - Google, GitHub, Microsoft today), because "the Gmail
+ * assistant understands emails specifically" is a genuine capability those
+ * endpoints have and the general Assistant does not. A provider with no such
+ * endpoint (Zoom, Slack) gets no AI panel here rather than a relabelled
+ * general assistant pretending to be scoped.
  */
 export interface ProviderWorkspaceProps {
   service: string;
@@ -37,7 +48,29 @@ export interface ProviderWorkspaceProps {
   /** Bumping this refetches the intelligence rail (after a write completes). */
   refreshKey?: number;
   children: ReactNode;
+  /** Only set for a provider with a real scoped chat endpoint. */
+  assistant?: {
+    endpointBase: string;
+    contextLabel: string;
+    placeholder?: string;
+    suggestions?: string[];
+    suggestionGroups?: SuggestionGroup[];
+  };
+  /** RecentActivity's `sources` filter - the ACTION_META labels that belong
+   *  to this service (e.g. ["Gmail"]). Omitted, Activity shows nothing
+   *  rather than every provider's history. */
+  activitySources?: string[];
 }
+
+type TabKey = "overview" | "services" | "insights" | "activity" | "settings";
+
+const TABS: TabBarItem<TabKey>[] = [
+  { key: "overview", label: "Overview" },
+  { key: "services", label: "Services" },
+  { key: "insights", label: "Insights" },
+  { key: "activity", label: "Activity" },
+  { key: "settings", label: "Settings" },
+];
 
 export function ProviderWorkspace({
   service,
@@ -47,9 +80,13 @@ export function ProviderWorkspace({
   quickActions,
   refreshKey = 0,
   children,
+  assistant,
+  activitySources,
 }: ProviderWorkspaceProps) {
+  const { active } = useWorkspace();
   const [intel, setIntel] = useState<ServiceIntelligence | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<TabKey>("overview");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -62,22 +99,85 @@ export function ProviderWorkspace({
 
   useEffect(load, [load, refreshKey]);
 
-  return (
-    <div className="flex flex-col gap-6 xl:flex-row">
-      <div className="min-w-0 flex-1">
-        <BackNav
-          back={{ to: parent.to, label: parent.label }}
-          crumbs={[{ label: "Dashboard", to: "/" }, { label: parent.label, to: parent.to }, { label: title }]}
-        />
-        <ServiceHeader title={title} icon={icon} intel={intel} loading={loading} quickActions={quickActions} />
-        <div className="mt-5">{children}</div>
-      </div>
+  const insightCount = (intel?.findings.length ?? 0) + (intel?.situations.length ?? 0);
 
-      <aside className="w-full flex-none xl:w-[360px]">
-        <div className="xl:sticky xl:top-6">
-          <IntelligenceRail intel={intel} loading={loading} />
+  return (
+    <div>
+      <BackNav
+        back={{ to: parent.to, label: parent.label }}
+        crumbs={[{ label: "Dashboard", to: "/" }, { label: parent.label, to: parent.to }, { label: title }]}
+      />
+      <ServiceHeader
+        title={title}
+        icon={icon}
+        intel={intel}
+        loading={loading}
+        quickActions={
+          <>
+            {quickActions}
+            <SyncButton service={service} onSynced={load} />
+          </>
+        }
+      />
+
+      <TabBar
+        items={TABS.map((t) => (t.key === "insights" ? { ...t, count: insightCount } : t))}
+        value={tab}
+        onChange={setTab}
+      />
+
+      {tab === "overview" && (
+        <div className="flex flex-col gap-6 xl:flex-row">
+          <div className="min-w-0 flex-1">
+            <div>{children}</div>
+
+            <div className="mt-6 grid gap-4 lg:grid-cols-2">
+              <IntelligenceCard title="Insights" intel={intel} loading={loading} limit={3} to={() => setTab("insights")} />
+              <div className="flex flex-col gap-4">
+                <RecentActivity scope="personal" limit={5} sources={activitySources} />
+              </div>
+            </div>
+          </div>
+
+          {assistant && (
+            <aside className="w-full flex-none xl:w-[360px]">
+              <div className="card h-[440px] overflow-hidden p-0 sm:p-0 xl:sticky xl:top-6">
+                <SentinelPanel
+                  contextLabel={assistant.contextLabel}
+                  identity={workspaceContext(active)}
+                  endpointBase={assistant.endpointBase}
+                  placeholder={assistant.placeholder}
+                  suggestions={assistant.suggestions}
+                  suggestionGroups={assistant.suggestionGroups}
+                />
+              </div>
+            </aside>
+          )}
         </div>
-      </aside>
+      )}
+
+      {tab === "services" && (
+        <div className="max-w-sm">
+          <ServiceCard
+            icon={icon}
+            name={title}
+            status={!intel?.connected ? "Not connected" : "Connected"}
+            desc={intel?.account ?? "This service on its own - see every connected service under one family."}
+            connected={Boolean(intel?.connected)}
+          />
+          <Link to={parent.to} className="mt-3 inline-block text-caption text-accent-text hover:underline">
+            View all {parent.label} services →
+          </Link>
+        </div>
+      )}
+
+      {tab === "insights" && <IntelligenceCard title="Insights" intel={intel} loading={loading} to={undefined} />}
+
+      {tab === "activity" && (
+        <RecentActivity scope="personal" limit={20} sources={activitySources} />
+      )}
+
+      {tab === "settings" && <SettingsTab title={title} parent={parent} intel={intel} loading={loading} />}
     </div>
   );
 }
@@ -114,7 +214,7 @@ function ServiceHeader({
           : "Connected";
 
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-md bg-surface-2">{icon}</div>
         <div>
@@ -137,20 +237,44 @@ function ServiceHeader({
 }
 
 /** Findings, situations and recommendations for THIS service.
- *  Provider-agnostic: it renders whatever the generic endpoint returns. */
-function IntelligenceRail({ intel, loading }: { intel: ServiceIntelligence | null; loading: boolean }) {
+ *  Provider-agnostic: it renders whatever the generic endpoint returns.
+ *  `limit` truncates for the Overview card; omitted, the Insights tab shows
+ *  everything. */
+function IntelligenceCard({
+  title,
+  intel,
+  loading,
+  limit,
+  to,
+}: {
+  title: string;
+  intel: ServiceIntelligence | null;
+  loading: boolean;
+  limit?: number;
+  to?: () => void;
+}) {
   if (loading && !intel) return <LoadingBlock />;
   if (!intel) return null;
 
+  const findings = limit ? intel.findings.slice(0, limit) : intel.findings;
+  const situations = limit ? intel.situations.slice(0, limit) : intel.situations;
   const quiet = intel.findings.length === 0 && intel.situations.length === 0;
+  const more = limit && (intel.findings.length + intel.situations.length) > limit;
 
   return (
     <div className="card">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="relative h-[13px] w-[13px] flex-none rounded-full border border-ink" aria-hidden="true">
-          <span className="absolute inset-[4px] rounded-full bg-brand" />
-        </span>
-        <span className="text-small font-semibold text-ink">What Sentinel sees here</span>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="relative h-[13px] w-[13px] flex-none rounded-full border border-ink" aria-hidden="true">
+            <span className="absolute inset-[4px] rounded-full bg-brand" />
+          </span>
+          <span className="text-small font-semibold text-ink">{title}</span>
+        </div>
+        {more && to && (
+          <button type="button" onClick={to} className="text-caption text-ink-faint hover:text-ink">
+            View all →
+          </button>
+        )}
       </div>
 
       {quiet ? (
@@ -159,13 +283,13 @@ function IntelligenceRail({ intel, loading }: { intel: ServiceIntelligence | nul
         </p>
       ) : (
         <div className="flex flex-col gap-4">
-          {intel.situations.length > 0 && (
+          {situations.length > 0 && (
             <section>
               <div className="mb-1.5 text-caption font-semibold uppercase tracking-wide text-ink-faint">
                 Situations
               </div>
               <ul className="flex flex-col gap-2">
-                {intel.situations.map((s) => (
+                {situations.map((s) => (
                   <li key={s.id} className="rounded-md border border-border px-3 py-2">
                     <div className="text-small font-medium text-ink">{s.title}</div>
                     {s.explanation && (
@@ -186,13 +310,13 @@ function IntelligenceRail({ intel, loading }: { intel: ServiceIntelligence | nul
             </section>
           )}
 
-          {intel.findings.length > 0 && (
+          {findings.length > 0 && (
             <section>
               <div className="mb-1.5 text-caption font-semibold uppercase tracking-wide text-ink-faint">
                 Findings
               </div>
               <ul className="flex flex-col gap-2">
-                {intel.findings.slice(0, 8).map((f) => (
+                {findings.map((f) => (
                   <li key={f.id} className="flex items-start gap-2">
                     <span
                       className={`mt-1.5 h-1.5 w-1.5 flex-none rounded-full ${
@@ -211,6 +335,50 @@ function IntelligenceRail({ intel, loading }: { intel: ServiceIntelligence | nul
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Connection facts, read-only - the actual connect/reconnect/disconnect
+ *  flow (OAuth, consent) lives once, on the family hub page, not
+ *  re-implemented per leaf page. */
+function SettingsTab({
+  title,
+  parent,
+  intel,
+  loading,
+}: {
+  title: string;
+  parent: { label: string; to: string };
+  intel: ServiceIntelligence | null;
+  loading: boolean;
+}) {
+  if (loading) return <LoadingBlock />;
+  return (
+    <div className="card max-w-md">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span className="text-small font-semibold text-ink">Connection</span>
+        <Badge tone={intel?.connected ? "good" : "neutral"}>{intel?.connected ? "Connected" : "Not connected"}</Badge>
+      </div>
+      <dl className="flex flex-col gap-2 text-caption">
+        {intel?.account && (
+          <div className="flex gap-2">
+            <dt className="w-28 flex-none text-ink-faint">Account</dt>
+            <dd className="text-ink-dim">{intel.account}</dd>
+          </div>
+        )}
+        <div className="flex gap-2">
+          <dt className="w-28 flex-none text-ink-faint">Last synced</dt>
+          <dd className="text-ink-dim">{intel?.last_synced_at ? new Date(intel.last_synced_at).toLocaleString() : "Never"}</dd>
+        </div>
+      </dl>
+      <p className="mt-4 text-caption text-ink-faint">
+        Reconnecting or disconnecting {title} is managed from{" "}
+        <Link to={parent.to} className="text-accent-text hover:underline">
+          {parent.label}
+        </Link>
+        , alongside every other service in that family.
+      </p>
     </div>
   );
 }

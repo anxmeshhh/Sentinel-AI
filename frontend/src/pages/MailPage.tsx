@@ -3,8 +3,10 @@ import { Link } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
 import type { Connection, MailAskResult, MailBody, MailItem, MailSummary } from "../api/types";
-import { BackNav } from "../components/BackNav";
+import { MailIcon } from "../components/ProviderIcons";
 import { Markdown } from "../components/Markdown";
+import { GOOGLE_ASSISTANT } from "../components/workspace/assistantConfigs";
+import { ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
 import { Button, LoadingBlock } from "../components/ui";
 
 type Tab = { key: string; label: string; filter: string; category?: string };
@@ -189,22 +191,31 @@ export function MailPage() {
 
   if (connected === false) {
     return (
-      <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
-        <BackNav back={{ to: "/connections/google", label: "Google Workspace" }} crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Gmail" }]} />
-        <p className="mb-3 text-lead">Gmail isn't connected yet.</p>
-        <Link to="/settings" className="text-body font-semibold text-accent-text hover:underline">
-          Connect Gmail &rarr;
-        </Link>
-      </div>
+      <ProviderWorkspace
+        service="gmail"
+        title="Gmail"
+        icon={<MailIcon />}
+        parent={{ label: "Google Workspace", to: "/connections/google" }}
+      >
+        <div className="max-w-lg rounded-md border border-dashed border-border px-6 py-16 text-center text-body text-ink-dim">
+          <p className="mb-3 text-lead">Gmail isn't connected yet.</p>
+          <Link to="/settings" className="text-body font-semibold text-accent-text hover:underline">
+            Connect Gmail &rarr;
+          </Link>
+        </div>
+      </ProviderWorkspace>
     );
   }
 
   return (
-    <div>
-      <BackNav
-        back={{ to: "/connections/google", label: "Google Workspace" }}
-        crumbs={[{ label: "Dashboard", to: "/" }, { label: "Google", to: "/connections/google" }, { label: "Gmail" }]}
-      />
+    <ProviderWorkspace
+      service="gmail"
+      title="Gmail"
+      icon={<MailIcon />}
+      parent={{ label: "Google Workspace", to: "/connections/google" }}
+      assistant={GOOGLE_ASSISTANT}
+      activitySources={["Gmail"]}
+    >
       <p className="eyebrow mb-2.5">Personal</p>
       <div className="section-head flex items-start justify-between gap-3">
         <div>
@@ -332,7 +343,7 @@ export function MailPage() {
           )}
         </div>
       </div>
-    </div>
+    </ProviderWorkspace>
   );
 }
 

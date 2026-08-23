@@ -38,6 +38,7 @@ from a teammate's view. That question deserves a real answer before a shared
 lifecycle is built, not a default.
 """
 
+import hashlib
 import uuid
 
 import structlog
@@ -50,6 +51,12 @@ from app.services.attention_engine import list_attention
 from app.services.channel_authorization import resolve_channel_scope
 
 logger = structlog.get_logger("sentinel.channel_briefing")
+
+# team_id -> (fingerprint of what was narrated, the narrative). See _narrate.
+# Process-local and intentionally not persisted: it is a spend optimisation,
+# never a source of truth, so losing it on restart costs one LLM call and
+# nothing else.
+_NARRATIVE_CACHE: dict[uuid.UUID, tuple[str, str]] = {}
 
 # Items carry their own `source_provider`, so the resource-gating decision
 # keys off that rather than off the item type - a DEADLINE can come from
@@ -75,7 +82,7 @@ def build_channel_briefing(session: Session, team_id: uuid.UUID, workspace_id: u
 
     return {
         "items": visible,
-        "narrative": _narrate(visible, scope["labels"]),
+        "narrative": _narrate(visible, scope["labels"], team_id),
         "connection_labels": scope["labels"],
         "no_connections": False,
     }
@@ -125,9 +132,41 @@ def _resource_is_allowed(item: AttentionItem, scope: dict) -> bool:
     return False
 
 
-def _narrate(items: list[AttentionItem], labels: list[str]) -> str | None:
+def _fingerprint(items: list[AttentionItem], labels: list[str]) -> str:
+    """What the narrative is actually derived from.
+
+    Only the inputs `_narrate` reads: which items are visible, their titles
+    and due dates, and the connection labels. Two briefings with the same
+    fingerprint would produce the same three sentences, so the second one
+    does not need to be written again.
+    """
+    parts = [f"{i.id}:{i.type.value}:{i.title}:{i.due_at.isoformat() if i.due_at else ''}" for i in items]
+    raw = "|".join(sorted(parts)) + "||" + "|".join(sorted(labels))
+    return hashlib.sha256(raw.encode()).hexdigest()[:64]
+
+
+def _narrate(items: list[AttentionItem], labels: list[str], team_id: uuid.UUID) -> str | None:
+    """One LLM call per *material change*, not per request.
+
+    This is the same rule proactive (`evidence_fingerprint`), reasoning
+    (changed situations only) and goals (`state_fingerprint`) already follow;
+    the channel briefing was the last narration in the codebase still paying
+    for a fresh call on every GET, re-writing an identical summary for a
+    channel whose attention list had not moved.
+
+    The cache is process-local and unbounded only by the number of channels,
+    which is small; it deliberately avoids a schema change, and a cold worker
+    simply pays for one narration and then stops. Nothing is served stale:
+    any change to the visible items or their labels changes the fingerprint
+    and forces a fresh call.
+    """
     if not items:
         return None
+
+    fingerprint = _fingerprint(items, labels)
+    cached = _NARRATIVE_CACHE.get(team_id)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
 
     facts = {
         "total": len(items),
@@ -149,12 +188,16 @@ def _narrate(items: list[AttentionItem], labels: list[str]) -> str | None:
         )
         narrative = (result.get("narrative") or "").strip()
         if narrative:
+            _NARRATIVE_CACHE[team_id] = (fingerprint, narrative)
             return narrative
     except LLMError:
         logger.warning("channel_briefing_llm_unavailable_using_fallback")
 
     # Deterministic fallback - the briefing degrades in charm, never in
-    # correctness (same discipline as Catch Me Up).
+    # correctness (same discipline as Catch Me Up). Deliberately NOT cached:
+    # caching it against this fingerprint would mean a single rate-limited
+    # moment permanently pinned the plain sentence in place of the real
+    # narrative for an unchanged channel.
     parts = [f"{count} {label.replace('_', ' ')}" for label, count in facts["by_type"].items()]
     return f"{facts['total']} items need this channel's attention: " + ", ".join(parts) + "."
 

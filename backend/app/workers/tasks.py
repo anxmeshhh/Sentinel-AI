@@ -89,7 +89,7 @@ def ingest_connection(self, connection_id: str, triggered_by: str = TriggeredBy.
         if connection is None:
             logger.warning("ingest_connection_missing", connection_id=connection_id)
             return
-        ingestion.ingest_connection(session, connection)
+        ingested = ingestion.ingest_connection(session, connection)
         # Attention detection rides every sync (Phase 2p) - fresh signals in,
         # fresh attention items out, no separate schedule to keep aligned.
         # Deterministic and cheap (no LLM), so running it per-connection-sync
@@ -137,7 +137,38 @@ def ingest_connection(self, connection_id: str, triggered_by: str = TriggeredBy.
             )
         except Exception:
             logger.exception("goal_reassess_failed", workspace_id=str(connection.workspace_id))
-        run_agents_for_connection.delay(str(connection.id), triggered_by)
+        # The legacy LangGraph agent/Brief pipeline is the one part of this
+        # cycle that is NOT change-gated internally, so it is gated here.
+        #
+        # Its specialist detectors run over a 30-day signal window, so a
+        # *persistent* condition (a stale flagged email, a review bottleneck,
+        # a crowded calendar) produced a candidate on every single run - and
+        # each run then spent an LLM call narrating it and wrote a fresh
+        # immutable AgentFinding row. On Slack's 5-minute poll that is ~288
+        # re-narrations a day of facts that had not changed, plus a duplicate
+        # attention item per run (`_detect_findings` keys on `finding:{id}`,
+        # and every run mints new ids).
+        #
+        # Nothing is skipped that would otherwise be found: if no new signal
+        # arrived, the agents would re-read the identical window and reach the
+        # identical conclusions they already recorded. Every other engine in
+        # this task already works this way - proactive gates on
+        # `evidence_fingerprint`, reasoning on changed situations, goals on
+        # `state_fingerprint`. This brings the oldest pipeline in line with
+        # them rather than inventing a new rule for it.
+        #
+        # A MANUAL trigger is never gated: "Re-run now" (POST /runs) is an
+        # explicit request for a fresh agent pass, and answering it with
+        # silence because the provider had nothing new would be a regression
+        # in a user-facing action, not a saving.
+        if ingested > 0 or triggered_by == TriggeredBy.MANUAL.value:
+            run_agents_for_connection.delay(str(connection.id), triggered_by)
+        else:
+            logger.info(
+                "agent_run_skipped_no_new_signals",
+                connection_id=connection_id,
+                workspace_id=str(connection.workspace_id),
+            )
     finally:
         session.close()
 

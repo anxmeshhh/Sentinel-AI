@@ -12,16 +12,20 @@ from sqlalchemy.orm import Session
 
 from app.agents.llm import LLMClient, LLMError
 from app.api.deps import get_current_user, get_db, get_workspace_id
+from app.domain.finding import FindingStatus
 from app.integrations.gmail_client import GmailClient
 from app.integrations.google_auth import get_valid_access_token
 from app.models.connection import Provider
 from app.models.user import User
-from app.repositories.briefs import BriefRepository
 from app.repositories.connections import ConnectionRepository
-from app.repositories.findings import AgentFindingRepository
 from app.schemas.assistant import ChatRequest, ChatResponse
 from app.services.calendar_query import calendar_summary_for_assistant
+from app.services.decision_engine import list_decisions
+from app.services.findings import list_findings
+from app.services.investigation import personal_scope
 from app.services.mail_query import find_best_matching_email, mail_summary_for_assistant
+from app.services.memory_engine import list_memories
+from app.services.situation_engine import list_situations
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
@@ -33,12 +37,22 @@ MAX_HISTORY_MESSAGES = 12
 CONTENT_INTENT_WORDS = {"say", "said", "about", "content", "read", "summarize", "summarise", "mean", "means"}
 
 SYSTEM_PROMPT = """You are Sentinel's personal AI assistant. You answer questions about the \
-user's own workspace using ONLY the context below (their latest brief and its findings, plus \
-structured summaries of their recent/starred email and upcoming calendar - and, when relevant, the \
-live-fetched content of one specific email) plus the ongoing conversation. If the answer isn't in \
-the context, say plainly that you don't have that information yet rather than guessing - never \
-invent a finding, a number, an email, or a root cause that isn't in the context. Be concise and \
-direct."""
+user's own workspace using ONLY the context below (what the Intelligence Core has already \
+concluded - open findings, correlated situations, learned memory and proposed decisions - plus \
+structured summaries of their recent/starred email and upcoming calendar, and, when relevant, the \
+live-fetched content of one specific email) plus the ongoing conversation. Everything in the \
+context was computed deterministically before you were called: report it, never recompute, \
+re-rank or second-guess it. If the answer isn't in the context, say plainly that you don't have \
+that information yet rather than guessing - never invent a finding, a number, an email, or a root \
+cause that isn't in the context. Be concise and direct."""
+
+# Context caps. The Core can hold hundreds of rows; a chat answer never needs
+# more than the top of each list, and every token past that is spend for no
+# added accuracy. Kept small deliberately - see _build_context.
+MAX_FINDINGS = 8
+MAX_SITUATIONS = 5
+MAX_MEMORIES = 5
+MAX_DECISIONS = 3
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -68,7 +82,20 @@ def chat(
 
 
 def _build_context(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID, question: str) -> str:
-    sections = [_brief_section(session, workspace_id)]
+    """Assemble what the Core already knows. Purely deterministic - every
+    line below is a read of an already-computed row, so building the context
+    for a chat answer costs zero LLM calls and the reply itself is the only
+    one the request makes.
+
+    This used to read the legacy agent Brief and its AgentFindings, which
+    meant the Assistant could only discuss whatever the LangGraph pipeline
+    last narrated - a narrower and staler view than the Core the rest of the
+    product reads. It now reads the same canonical findings, correlated
+    situations, memory and decisions the Attention, Situations and Memory
+    pages display, so the Assistant and the UI can no longer disagree.
+    """
+    scope = personal_scope(session, workspace_id, user_id)
+    sections = [_core_section(session, workspace_id, scope)]
 
     mail_summary = mail_summary_for_assistant(session, workspace_id)
     if mail_summary:
@@ -85,21 +112,50 @@ def _build_context(session: Session, workspace_id: uuid.UUID, user_id: uuid.UUID
     return "\n\n".join(sections)
 
 
-def _brief_section(session: Session, workspace_id: uuid.UUID) -> str:
-    brief = BriefRepository(session, workspace_id).latest()
-    if brief is None:
-        return "No brief has been generated for this workspace yet - no findings to discuss."
+def _core_section(session: Session, workspace_id: uuid.UUID, scope) -> str:
+    """The Intelligence Core's own output, rendered as compact facts.
 
-    findings = AgentFindingRepository(session, workspace_id).for_run(brief.run_id)
-    lines = [f"Latest brief ({brief.generated_at.isoformat()}): {brief.narrative}", "", "Findings:"]
-    for f in findings:
-        lines.append(
-            f"- [{f.agent}] {f.summary} (severity={f.severity:.2f}, confidence={f.confidence:.2f})\n"
-            f"  root_cause: {f.root_cause}\n"
-            f"  suggested_action: {f.suggested_action}"
-        )
-    if not findings:
-        lines.append("(none above the confidence threshold)")
+    Deliberately terse: the model's job here is to answer a question *about*
+    these conclusions, not to re-derive them, so each row contributes one
+    short line rather than a paragraph. Truncation is by the Core's own
+    ordering (findings are already critical-first, decisions already sorted
+    by priority score), never by a judgement made here.
+    """
+    lines: list[str] = []
+
+    findings = [f for f in list_findings(session, scope) if f.status is FindingStatus.OPEN]
+    if findings:
+        lines.append(f"Open findings ({len(findings)} total, {MAX_FINDINGS} shown at most, most severe first):")
+        for f in findings[:MAX_FINDINGS]:
+            provider = f" · {f.provider}" if f.provider else ""
+            lines.append(f"- [{f.tier.value}] {f.title}{provider}")
+            if f.narrative:
+                lines.append(f"  why: {f.narrative}")
+    else:
+        lines.append("Open findings: none.")
+
+    situations = list_situations(session, workspace_id, scope.key)
+    if situations:
+        lines.append("")
+        lines.append(f"Correlated situations ({len(situations)} open, most severe first):")
+        for s in situations[:MAX_SITUATIONS]:
+            spread = " · spans multiple services" if s.cross_provider else ""
+            lines.append(f"- [{s.severity}] {s.title} ({s.member_count} related findings){spread}")
+
+    memories = list_memories(session, scope)
+    if memories:
+        lines.append("")
+        lines.append("What Sentinel has learned (patterns seen more than once):")
+        for m in memories[:MAX_MEMORIES]:
+            lines.append(f"- {m.summary}")
+
+    decisions = list_decisions(session, scope)
+    if decisions:
+        lines.append("")
+        lines.append("Proposed next actions (awaiting the user's confirmation - never already done):")
+        for d in decisions[:MAX_DECISIONS]:
+            lines.append(f"- {d.action} — {d.rationale}")
+
     return "\n".join(lines)
 
 

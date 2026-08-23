@@ -505,6 +505,35 @@ def list_attention(
     return result
 
 
+def owns_attention_item(
+    session: Session, item: AttentionItem, workspace_id: uuid.UUID, user_id: uuid.UUID
+) -> bool:
+    """Whether this attention item is the caller's own.
+
+    The same rule `list_attention(viewer_user_id=...)` applies to reads, stated
+    here so a WRITE can never be authorized more loosely than the read that
+    revealed the item. It was: `PATCH /attention/{id}` checked only that the
+    item was in the caller's workspace, so any member of a shared workspace
+    could resolve, snooze or dismiss an item detected from a teammate's
+    mailbox - an item they could not themselves see, because reads have always
+    been narrowed by viewer.
+
+    Fail-closed on both sides, exactly as the read filter does: a detected item
+    with no connection recorded belongs to nobody, and a manual item belongs to
+    its author alone.
+    """
+    if item.workspace_id != workspace_id:
+        return False
+    if item.origin == AttentionOrigin.MANUAL:
+        return item.created_by_user_id == user_id
+    if item.connection_id is None:
+        return False
+    owner_id = session.execute(
+        select(Connection.user_id).where(Connection.id == item.connection_id)
+    ).scalar_one_or_none()
+    return owner_id == user_id
+
+
 def _age_days(now: datetime, then: datetime) -> int:
     return max(0, int((now - then).total_seconds() // 86400))
 

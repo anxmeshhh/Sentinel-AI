@@ -36,7 +36,7 @@ from app.models.signal import Signal, SignalType
 from app.models.team import ChannelRole, Team, TeamMembership
 from app.models.user import User
 from app.models.workspace import Membership, Role, Workspace, WorkspaceKind
-from app.services.attention_engine import list_attention
+from app.services.attention_engine import list_attention, owns_attention_item
 from app.services.channel_briefing import build_channel_briefing, channel_pending_count
 
 NOW = datetime.now(timezone.utc)
@@ -276,3 +276,68 @@ def test_sharing_is_the_only_thing_that_moves_data_into_a_channel(session, env):
 
     titles = [i.title for i in build_channel_briefing(session, env["team"].id, env["workspace"].id)["items"]]
     assert titles == [TEAM]
+
+
+# --- reading it was gated; changing it was not ----------------------------
+#
+# The read filter above has been right since Phase 3. The WRITE beside it was
+# not: PATCH /attention/{id} checked only that the item was in the caller's
+# workspace, so a member could resolve, snooze or dismiss an item detected
+# from a teammate's mailbox - one they could never see themselves. These
+# assert the write is now gated by the same rule as the read.
+
+
+def test_a_member_cannot_resolve_an_item_from_another_members_mailbox(session, env):
+    """The write-side leak, in one test."""
+    private = session.query(AttentionItem).filter_by(title=PRIVATE).one()
+    team_item = session.query(AttentionItem).filter_by(title=TEAM).one()
+
+    # The admin owns the shared mailbox, but not the member's private one -
+    # and being a workspace admin does not change that.
+    assert owns_attention_item(session, private, env["workspace"].id, env["admin"].id) is False
+    # ...and the member cannot touch the admin's either.
+    assert owns_attention_item(session, team_item, env["workspace"].id, env["member"].id) is False
+
+
+def test_the_owner_can_still_change_their_own_item(session, env):
+    """The fix must not cost anyone their own attention list."""
+    private = session.query(AttentionItem).filter_by(title=PRIVATE).one()
+    team_item = session.query(AttentionItem).filter_by(title=TEAM).one()
+
+    assert owns_attention_item(session, private, env["workspace"].id, env["member"].id) is True
+    assert owns_attention_item(session, team_item, env["workspace"].id, env["admin"].id) is True
+
+
+def test_a_manual_reminder_belongs_to_its_author_alone(session, env):
+    """A manual item has no connection to authorize against, so authorship is
+    the whole rule - matching how the read filter treats it."""
+    note = AttentionItem(
+        workspace_id=env["workspace"].id, connection_id=None, type=AttentionType.IMPORTANT_EMAIL,
+        origin=AttentionOrigin.MANUAL, state=AttentionState.NEW, source_provider=None,
+        dedupe_key="manual:note-1", title="Call the accountant", why="manual", priority=0.5,
+        created_by_user_id=env["member"].id,
+    )
+    session.add(note)
+    session.commit()
+
+    assert owns_attention_item(session, note, env["workspace"].id, env["member"].id) is True
+    assert owns_attention_item(session, note, env["workspace"].id, env["admin"].id) is False
+
+
+def test_an_item_with_no_recorded_connection_is_writable_by_nobody(session, env):
+    """Fail-closed on the write side too: provenance we cannot establish is
+    not provenance we assume."""
+    orphan = _item(env["workspace"], env["admin_gmail"], "email:orphan-write", "Unattributable")
+    orphan.connection_id = None
+    session.add(orphan)
+    session.commit()
+
+    assert owns_attention_item(session, orphan, env["workspace"].id, env["admin"].id) is False
+    assert owns_attention_item(session, orphan, env["workspace"].id, env["member"].id) is False
+
+
+def test_an_item_in_another_workspace_is_never_writable(session, env):
+    """workspace_id remains a hard gate - the new owner rule is added to it,
+    not substituted for it."""
+    private = session.query(AttentionItem).filter_by(title=PRIVATE).one()
+    assert owns_attention_item(session, private, uuid.uuid4(), env["member"].id) is False

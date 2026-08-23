@@ -32,7 +32,7 @@ from app.schemas.attention import (
     ProviderStatusOut,
     SentinelStatusOut,
 )
-from app.services.attention_engine import list_attention, refresh_attention
+from app.services.attention_engine import list_attention, owns_attention_item, refresh_attention
 from app.services.catchup import build_catchup
 
 router = APIRouter(prefix="/attention", tags=["attention"])
@@ -400,9 +400,17 @@ def update_state(
     payload: AttentionStateUpdate,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> AttentionItemOut:
+    """An item's lifecycle belongs to the person whose attention it is.
+
+    `owns_attention_item` is the same rule reads are narrowed by, so this
+    write cannot be authorized more loosely than the read that showed the
+    item. 404 rather than 403: someone who may not touch an item should not
+    learn that it exists.
+    """
     item = session.get(AttentionItem, item_id)
-    if item is None or item.workspace_id != workspace_id:
+    if item is None or not owns_attention_item(session, item, workspace_id, user.id):
         raise HTTPException(status_code=404, detail="Attention item not found")
 
     try:

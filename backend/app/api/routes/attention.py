@@ -374,6 +374,7 @@ def build_calendar_plan(
     item_id: uuid.UUID,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> CalendarPlanOut:
     """Phase 2t: turn a dated item into a *proposed* calendar event.
 
@@ -381,9 +382,13 @@ def build_calendar_plan(
     item, so what the user confirms is exactly what they already saw. This
     endpoint writes nothing; the client sends the returned plan to
     /connections/google/command/execute after the user confirms.
+
+    Writing nothing is not the same as disclosing nothing: the response
+    echoes the item's title and due date, so it is gated by the same
+    ownership rule as the list that would have shown them.
     """
     item = session.get(AttentionItem, item_id)
-    if item is None or item.workspace_id != workspace_id:
+    if item is None or not owns_attention_item(session, item, workspace_id, user.id):
         raise HTTPException(status_code=404, detail="Attention item not found")
     if item.due_at is None:
         raise HTTPException(status_code=400, detail="This item has no date, so there's nothing to put on a calendar")

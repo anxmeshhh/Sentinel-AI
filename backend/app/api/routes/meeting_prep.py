@@ -12,11 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_workspace_id
+from app.api.deps import get_current_user, get_db, get_workspace_id
 from app.models.attention_item import AttentionItem, AttentionType
 from app.models.meeting_brief import MeetingBrief
 from app.models.signal import Signal, SignalType
+from app.models.user import User
 from app.schemas.meeting_prep import BriefSourceOut, MeetingBriefOut
+from app.services.attention_engine import owns_attention_item
 from app.services.meeting_prep import get_cached_brief, prepare_meeting
 
 router = APIRouter(tags=["meeting-prep"])
@@ -57,11 +59,17 @@ def prepare_from_attention_item(
     refresh: bool = False,
     session: Session = Depends(get_db),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
+    user: User = Depends(get_current_user),
 ) -> MeetingBriefOut:
     """The main entry point: your next meeting is already sitting in the
-    attention list, so preparing for it should be one click from there."""
+    attention list, so preparing for it should be one click from there.
+
+    Gated by the same ownership rule as the attention list itself: a brief
+    built from someone else's meeting would disclose its title, attendees and
+    related documents to a person the list never showed it to.
+    """
     item = session.get(AttentionItem, item_id)
-    if item is None or item.workspace_id != workspace_id:
+    if item is None or not owns_attention_item(session, item, workspace_id, user.id):
         raise HTTPException(status_code=404, detail="Attention item not found")
     if item.type != AttentionType.UPCOMING_MEETING:
         raise HTTPException(status_code=400, detail="Only meetings can be prepared for")

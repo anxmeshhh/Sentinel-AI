@@ -341,3 +341,68 @@ def test_an_item_in_another_workspace_is_never_writable(session, env):
     not substituted for it."""
     private = session.query(AttentionItem).filter_by(title=PRIVATE).one()
     assert owns_attention_item(session, private, uuid.uuid4(), env["member"].id) is False
+
+
+# --- the read paths beside the write --------------------------------------
+#
+# Writing nothing is not the same as disclosing nothing. Two endpoints echoed
+# an item back to anyone in the workspace: calendar-plan returns its title and
+# due date, and prepare builds a whole brief from it. Both now use the same
+# ownership rule as the list that would have shown the item.
+
+
+def _dated_item(env, connection, dedupe_key, title):
+    item = _item(env["workspace"], connection, dedupe_key, title)
+    item.due_at = NOW + timedelta(days=1)
+    return item
+
+
+def test_calendar_plan_does_not_echo_another_members_item(session, env):
+    """It writes nothing, but the response carries the title and the date."""
+    from fastapi import HTTPException
+
+    from app.api.routes.attention import build_calendar_plan
+
+    private = _dated_item(env, env["member_gmail"], "email:private-dated", PRIVATE)
+    session.add(private)
+    session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        build_calendar_plan(private.id, session=session, workspace_id=env["workspace"].id, user=env["admin"])
+    assert exc.value.status_code == 404
+
+    # The owner still gets their plan - the fix costs them nothing.
+    plan = build_calendar_plan(
+        private.id, session=session, workspace_id=env["workspace"].id, user=env["member"]
+    )
+    assert plan.title == PRIVATE
+    assert plan.end - plan.start == timedelta(minutes=30)
+
+
+def test_prepare_does_not_build_a_brief_from_another_members_meeting(session, env):
+    """A brief carries the meeting's title, attendees and related documents,
+    so the item it is built from must belong to the caller.
+
+    The owner is asserted to reach the *next* gate (400, wrong item type)
+    rather than the auth gate (404) - which is what proves authorization
+    passed without this test needing to run the brief pipeline itself.
+    """
+    from fastapi import HTTPException
+
+    from app.api.routes.meeting_prep import prepare_from_attention_item
+
+    private = _item(env["workspace"], env["member_gmail"], "email:private-meeting", PRIVATE)
+    session.add(private)
+    session.commit()
+
+    with pytest.raises(HTTPException) as attacker:
+        prepare_from_attention_item(
+            private.id, session=session, workspace_id=env["workspace"].id, user=env["admin"]
+        )
+    assert attacker.value.status_code == 404
+
+    with pytest.raises(HTTPException) as owner:
+        prepare_from_attention_item(
+            private.id, session=session, workspace_id=env["workspace"].id, user=env["member"]
+        )
+    assert owner.value.status_code == 400  # got past auth, stopped on item type

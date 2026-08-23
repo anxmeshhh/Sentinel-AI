@@ -18,9 +18,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, get_workspace_id, require_channel_role
+from app.models.action import ActionStatus
 from app.models.memory import Memory
 from app.models.team import ChannelRole
 from app.models.user import User
+from app.services.action_registry import ActionRejected
+from app.services.actions import execute_action, propose_action
 from app.services.investigation import channel_scope, personal_scope
 from app.services.memory_engine import forget_memory, list_memories, pending_announcements
 
@@ -99,10 +102,29 @@ def forget(
     workspace_id: uuid.UUID = Depends(get_workspace_id),
     user: User = Depends(get_current_user),
 ) -> dict:
+    """Forgetting leaves through the Action Registry, so it is verified,
+    audited and undoable like every other write - the route still decides who
+    may reach it, and the memory row itself is never hard-deleted."""
     scope = personal_scope(session, workspace_id, user.id)
     mem = session.get(Memory, memory_id)
     if mem is None or mem.scope_key != scope.key:
         raise HTTPException(status_code=404, detail="Memory not found")
-    forget_memory(session, memory_id)
-    session.commit()
+
+    try:
+        action = propose_action(
+            session,
+            workspace_id=workspace_id,
+            scope_key=scope.key,
+            action_type="memory.forget",
+            params={"memory_id": str(memory_id)},
+            user_id=user.id,
+            reason="Forgotten from the memory surface",
+            source_kind="memory",
+            source_id=memory_id,
+        )
+        action = execute_action(session, action, user.id)
+    except ActionRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if action.status is ActionStatus.FAILED:
+        raise HTTPException(status_code=400, detail=action.error or "That could not be forgotten")
     return {"id": str(memory_id), "status": "forgotten"}

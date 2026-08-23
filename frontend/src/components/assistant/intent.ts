@@ -33,6 +33,7 @@ export type Intent =
   | "search" // "find everything about X"          -> across what Sentinel holds
   | "provider" // "anything from GitHub?"            -> Core data, filtered
   | "resolve" // "mark this done" / "snooze this"   -> Action Registry, 0 LLM
+  | "bulk" // "snooze all low-priority items"    -> preview, confirm, 0 LLM
   | "ask"; // anything else                      -> grounded chat
 
 export interface Classified {
@@ -108,6 +109,19 @@ export function providerOf(text: string): string | undefined {
 }
 
 const RULES: { intent: Intent; patterns: RegExp[] }[] = [
+  {
+    // Acting on a SET. Above `resolve` because "snooze all low-priority
+    // items" is both, and the plural reading is the correct one. A bulk
+    // request is never executed on sight: it previews the exact affected
+    // items and waits, because the cost of a wrong bulk action is the whole
+    // list rather than one row.
+    intent: "bulk",
+    patterns: [
+      /\b(snooze|dismiss|complete|resolve|mark)\b.*\b(all|every|everything|these|those)\b/i,
+      /\b(all|every|everything|these|those)\b.*\b(items?|findings?|tasks?)\b.*\b(snooze|dismiss|done|complete)\b/i,
+      /\b(dismiss|snooze|complete) (these|those|all)\b/i,
+    ],
+  },
   {
     // Resolving something already on screen. Above `action` because "mark
     // this done" is a request to act on a KNOWN target, and a known target
@@ -256,17 +270,32 @@ const RULES: { intent: Intent; patterns: RegExp[] }[] = [
 /** Pulls the thing being asked about out of the sentence, so "what's happening
  *  with heartbeat-harmony" can be matched against real entity names. Returns
  *  undefined rather than guessing when there is no clear subject. */
+/** Words that refer to whatever is in focus rather than naming a thing.
+ *  Extracted as a subject they would send target resolution looking for an
+ *  item literally titled "this". */
+const PRONOUNS = new Set(["this", "that", "it", "these", "those", "them"]);
+
 function subjectOf(text: string): string | undefined {
   const m =
+    // Questions about a thing...
     /\b(?:happening (?:with|on|to)|status of|state of|tell me about|everything (?:about|on)|search for|updates? on|related to)\s+(.+)$/i.exec(
+      text,
+    ) ??
+    // ...and requests to act on one. "mark the deployment issue as done"
+    // names its target between the verb and the state; without this the
+    // Assistant could only ever act on "this".
+    /\b(?:mark|snooze|dismiss|complete|resolve)\s+(?:the\s+)?(.+?)(?:\s+(?:as\s+)?(?:done|complete|completed|resolved|handled|dismissed)\b|\s+(?:until|for|till)\b|$)/i.exec(
       text,
     );
   if (!m) return undefined;
-  return m[1]
+
+  const subject = m[1]
     .replace(/[?.!,]+$/, "")
     .replace(/\b(please|for me|thanks)\b/gi, "")
     .trim()
-    .slice(0, 80) || undefined;
+    .slice(0, 80);
+  if (!subject || PRONOUNS.has(subject.toLowerCase())) return undefined;
+  return subject;
 }
 
 /**
@@ -355,6 +384,9 @@ export const LLM_BUDGET: Record<Intent, 0 | 1> = {
   // straight to the Action Registry, which still validates, authorizes,
   // executes, verifies and audits exactly as it would for any other caller.
   resolve: 0,
+  // Same, over a set the user named with a closed vocabulary. The preview and
+  // the per-item results are assembled from real action rows.
+  bulk: 0,
 
   // One call each, server-side, and each already change-gated or cached.
   catchup: 1, // /attention/catchup narrates the delta (only past a 12h gap)

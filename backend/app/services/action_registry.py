@@ -123,6 +123,21 @@ class ResolveAttentionParams(BaseModel):
     item_id: uuid.UUID
 
 
+# The same reasoning for the other scoped records: the action key IS the
+# transition, so there is no state field a caller could repoint after a
+# preview was shown and approved.
+class GoalActionParams(BaseModel):
+    goal_id: uuid.UUID
+
+
+class MemoryActionParams(BaseModel):
+    memory_id: uuid.UUID
+
+
+class DecisionActionParams(BaseModel):
+    decision_id: uuid.UUID
+
+
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -460,6 +475,221 @@ def _verify_attention_state(session: Session, action, result: dict) -> tuple[boo
     if item.state is not expected:
         return False, f"The item is {item.state.value}, not {expected.value}"
     return True, f"Read back as {expected.value}"
+
+
+# --- goal / memory / decision lifecycle ------------------------------------
+#
+# These were direct writes on their own routes: no audit row, no verification,
+# no undo, and no single place recording that a person - rather than Sentinel -
+# closed a goal or forgot a pattern. They are LOW and internal, so they still
+# execute in one gesture exactly as before; what is new is that the gesture
+# leaves a record.
+#
+# Every one asserts the record's OWN scope_key matches the action's. A goal
+# carries the scope that created it, so this is the same boundary the read
+# routes enforce - restated at the point of writing rather than trusted from
+# the caller.
+
+
+def _scoped_record(session: Session, action, model, record_id, label: str):
+    record = session.get(model, record_id)
+    if record is None:
+        raise ActionRejected(f"That {label} no longer exists")
+    if record.scope_key != action.scope_key:
+        raise ActionRejected(f"That {label} does not belong to this context")
+    return record
+
+
+def _execute_goal_transition(session: Session, action, *, achieved: bool | None) -> dict:
+    """achieved=True/False closes the goal; None reopens it.
+
+    Delegates to the existing services rather than writing health itself -
+    the Goal engine still owns what a closed or reassessed goal looks like.
+    """
+    from app.models.goal import Goal
+    from app.services.goals import close_goal, reopen_goal
+
+    params = GoalActionParams(**action.params)
+    goal = _scoped_record(session, action, Goal, params.goal_id, "goal")
+    previous = {"health": goal.health.value, "closed": goal.closed_at is not None}
+
+    if achieved is None:
+        reopen_goal(session, goal)
+    else:
+        close_goal(session, goal, achieved=achieved)
+
+    return {
+        "goal_id": str(goal.id),
+        "title": goal.title,
+        "health": goal.health.value,
+        "previous_health": previous["health"],
+        "was_closed": previous["closed"],
+    }
+
+
+def _execute_goal_achieve(session: Session, action) -> dict:
+    return _execute_goal_transition(session, action, achieved=True)
+
+
+def _execute_goal_abandon(session: Session, action) -> dict:
+    return _execute_goal_transition(session, action, achieved=False)
+
+
+def _execute_goal_reopen(session: Session, action) -> dict:
+    return _execute_goal_transition(session, action, achieved=None)
+
+
+def _verify_goal_transition(session: Session, action, result: dict) -> tuple[bool, str]:
+    from app.models.goal import Goal
+
+    goal = session.get(Goal, uuid.UUID(result["goal_id"]))
+    if goal is None:
+        return False, "The goal no longer exists"
+    if goal.health.value != result["health"]:
+        return False, f"The goal is {goal.health.value}, not {result['health']}"
+    return True, f"Read back as {goal.health.value}"
+
+
+def _compensate_goal_transition(session: Session, action) -> str:
+    """Reopen undoes a close; a close undoes a reopen. Restores the recorded
+    previous health rather than assuming one."""
+    from app.models.goal import Goal, GoalHealth
+    from app.services.goals import close_goal, reopen_goal
+
+    goal = session.get(Goal, uuid.UUID(action.result["goal_id"]))
+    if goal is None:
+        return "It was already gone"
+
+    previous = GoalHealth(action.result["previous_health"])
+    if action.result.get("was_closed") and previous in (GoalHealth.ACHIEVED, GoalHealth.ABANDONED):
+        close_goal(session, goal, achieved=previous is GoalHealth.ACHIEVED)
+        return f"The goal is back to {previous.value}"
+
+    # The same service the reopen route uses, so undo and reopen cannot
+    # disagree about what an open goal looks like. Whether health is
+    # re-derived is the Goal engine's business, not this module's.
+    reopen_goal(session, goal)
+    return "The goal is open again"
+
+
+def _execute_memory_forget(session: Session, action) -> dict:
+    from app.models.memory import Memory
+    from app.services.memory_engine import forget_memory
+
+    params = MemoryActionParams(**action.params)
+    memory = _scoped_record(session, action, Memory, params.memory_id, "memory")
+    summary = memory.summary
+    forget_memory(session, memory.id)
+    session.commit()
+    return {"memory_id": str(memory.id), "summary": summary}
+
+
+def _verify_memory_forget(session: Session, action, result: dict) -> tuple[bool, str]:
+    from app.models.memory import Memory, MemoryStatus
+
+    memory = session.get(Memory, uuid.UUID(result["memory_id"]))
+    if memory is None:
+        return False, "The memory no longer exists"
+    if memory.status is not MemoryStatus.FORGOTTEN:
+        return False, "The memory is still active"
+    return True, "Read back as forgotten"
+
+
+def _compensate_memory_forget(session: Session, action) -> str:
+    """Forgetting is a soft state - the row stays, auditable - so restoring it
+    is genuinely an undo rather than a re-learn."""
+    from app.models.memory import Memory, MemoryStatus
+
+    memory = session.get(Memory, uuid.UUID(action.result["memory_id"]))
+    if memory is None:
+        return "It was already gone"
+    memory.status = MemoryStatus.ACTIVE
+    memory.forgotten_at = None
+    session.commit()
+    return "Sentinel remembers that again"
+
+
+def _execute_decision_transition(session: Session, action, *, status) -> dict:
+    from app.models.decision import Decision
+    from app.services.decision_engine import set_decision_status
+
+    params = DecisionActionParams(**action.params)
+    decision = _scoped_record(session, action, Decision, params.decision_id, "decision")
+    previous = decision.status.value
+    set_decision_status(session, decision.id, status)
+    session.commit()
+    return {
+        "decision_id": str(decision.id),
+        "action": decision.action,
+        "status": status.value,
+        "previous_status": previous,
+    }
+
+
+def _execute_decision_confirm(session: Session, action) -> dict:
+    from app.models.decision import DecisionStatus
+
+    return _execute_decision_transition(session, action, status=DecisionStatus.CONFIRMED)
+
+
+def _execute_decision_dismiss(session: Session, action) -> dict:
+    from app.models.decision import DecisionStatus
+
+    return _execute_decision_transition(session, action, status=DecisionStatus.DISMISSED)
+
+
+def _verify_decision_transition(session: Session, action, result: dict) -> tuple[bool, str]:
+    from app.models.decision import Decision
+
+    decision = session.get(Decision, uuid.UUID(result["decision_id"]))
+    if decision is None:
+        return False, "The decision no longer exists"
+    if decision.status.value != result["status"]:
+        return False, f"The decision is {decision.status.value}, not {result['status']}"
+    return True, f"Read back as {decision.status.value}"
+
+
+def _compensate_decision_transition(session: Session, action) -> str:
+    from app.models.decision import Decision, DecisionStatus
+
+    decision = session.get(Decision, uuid.UUID(action.result["decision_id"]))
+    if decision is None:
+        return "It was already gone"
+    decision.status = DecisionStatus(action.result["previous_status"])
+    session.commit()
+    return f"The proposal is back to {decision.status.value}"
+
+
+def _preview_goal_achieve(params: GoalActionParams) -> dict:
+    return {"title": "Mark this goal achieved", "fields": {}, "effect": "Closes the goal. Reversible."}
+
+
+def _preview_goal_abandon(params: GoalActionParams) -> dict:
+    return {"title": "Abandon this goal", "fields": {}, "effect": "Closes it without claiming success. Reversible."}
+
+
+def _preview_goal_reopen(params: GoalActionParams) -> dict:
+    return {"title": "Reopen this goal", "fields": {}, "effect": "Returns it to the open list and reassesses it."}
+
+
+def _preview_memory_forget(params: MemoryActionParams) -> dict:
+    return {
+        "title": "Forget this",
+        "fields": {},
+        "effect": "Stops it raising the priority of matching findings. Reversible.",
+    }
+
+
+def _preview_decision_confirm(params: DecisionActionParams) -> dict:
+    return {
+        "title": "Confirm this proposal",
+        "fields": {},
+        "effect": "Records that you agree. Nothing is executed by this - the action itself still needs approving.",
+    }
+
+
+def _preview_decision_dismiss(params: DecisionActionParams) -> dict:
+    return {"title": "Dismiss this proposal", "fields": {}, "effect": "Removes it from your proposals. Reversible."}
 
 
 def _assert_personal_item(session: Session, action, item) -> None:
@@ -2434,6 +2664,84 @@ REGISTRY: dict[str, ActionSpec] = {
             verify=_verify_attention_state,
             reversibility=Reversibility.REVERSIBLE,
             compensate=_compensate_attention_state,
+        ),
+        # Goal lifecycle. Channel goals require an admin, matching the routes
+        # exactly: declaring a team's objective achieved or abandoned is a
+        # statement about everyone's work, not just the clicker's.
+        ActionSpec(
+            key="goal.achieve",
+            label="Mark a goal achieved",
+            risk=ActionRisk.LOW,
+            params_model=GoalActionParams,
+            required_role=ChannelRole.CHANNEL_ADMIN,
+            preview=_preview_goal_achieve,
+            execute=_execute_goal_achieve,
+            verify=_verify_goal_transition,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_goal_transition,
+        ),
+        ActionSpec(
+            key="goal.abandon",
+            label="Abandon a goal",
+            risk=ActionRisk.LOW,
+            params_model=GoalActionParams,
+            required_role=ChannelRole.CHANNEL_ADMIN,
+            preview=_preview_goal_abandon,
+            execute=_execute_goal_abandon,
+            verify=_verify_goal_transition,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_goal_transition,
+        ),
+        ActionSpec(
+            key="goal.reopen",
+            label="Reopen a goal",
+            risk=ActionRisk.LOW,
+            params_model=GoalActionParams,
+            required_role=ChannelRole.CHANNEL_ADMIN,
+            preview=_preview_goal_reopen,
+            execute=_execute_goal_reopen,
+            verify=_verify_goal_transition,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_goal_transition,
+        ),
+        # Memory and decisions stay personal-only, matching their routes. A
+        # channel's memory is shared state and who may retire it is a separate
+        # decision from who may read it; that question is not settled here.
+        ActionSpec(
+            key="memory.forget",
+            label="Forget a learned pattern",
+            risk=ActionRisk.LOW,
+            params_model=MemoryActionParams,
+            scopes=("personal",),
+            preview=_preview_memory_forget,
+            execute=_execute_memory_forget,
+            verify=_verify_memory_forget,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_memory_forget,
+        ),
+        ActionSpec(
+            key="decision.confirm",
+            label="Confirm a proposal",
+            risk=ActionRisk.LOW,
+            params_model=DecisionActionParams,
+            scopes=("personal",),
+            preview=_preview_decision_confirm,
+            execute=_execute_decision_confirm,
+            verify=_verify_decision_transition,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_decision_transition,
+        ),
+        ActionSpec(
+            key="decision.dismiss",
+            label="Dismiss a proposal",
+            risk=ActionRisk.LOW,
+            params_model=DecisionActionParams,
+            scopes=("personal",),
+            preview=_preview_decision_dismiss,
+            execute=_execute_decision_dismiss,
+            verify=_verify_decision_transition,
+            reversibility=Reversibility.REVERSIBLE,
+            compensate=_compensate_decision_transition,
         ),
         ActionSpec(
             key="calendar.create_event",

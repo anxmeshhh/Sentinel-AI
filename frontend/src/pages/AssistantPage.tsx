@@ -24,9 +24,18 @@ import {
   type ResolveRequest,
 } from "../components/assistant/intent";
 import { AttentionRows, Chip, Composer, ContextRail } from "../components/assistant/CommandCenter";
+import {
+  attentionText,
+  bulkSelectorFor,
+  describe,
+  execute as executeAction,
+  propose,
+  resolveTarget,
+  type Outcome,
+} from "../components/assistant/dispatch";
 import { InvestigationPanel } from "../components/InvestigationPanel";
 import { MeetingBriefPanel } from "../components/MeetingBriefPanel";
-import { PROVIDER_LABEL, relativeTime, severityOf } from "../components/situations";
+import { PROVIDER_LABEL, priorityOf, relativeTime, severityOf } from "../components/situations";
 import {
   openAttention,
   useIntelligence,
@@ -84,7 +93,13 @@ type Block =
   | { kind: "choose"; items: AttentionItem[]; subject: string }
   | { kind: "provider"; provider: string; items: AttentionItem[]; rows: SituationRow[] }
   | { kind: "resolveChoose"; items: AttentionItem[]; request: ResolveRequest }
-  | { kind: "resolved"; item: AttentionItem; request: ResolveRequest }
+  | { kind: "resolved"; item: AttentionItem; request: ResolveRequest; outcome: Outcome }
+  /** P6: the exact set, shown in full and waiting. Never pre-executed. */
+  | { kind: "bulkPreview"; items: AttentionItem[]; request: ResolveRequest; label: string }
+  /** P5/P6: one line per item, from its own action row. */
+  | { kind: "bulkResult"; results: { item: AttentionItem; outcome: Outcome }[]; request: ResolveRequest }
+  /** P4: one question, for one missing field, keeping what was already said. */
+  | { kind: "needField"; field: string; originalText: string }
   | { kind: "notice"; title: string; body: string; to?: string; toLabel?: string }
   | { kind: "pending"; local: boolean };
 
@@ -126,6 +141,25 @@ function providerIds(provider: string): string[] {
 
 function providerLabel(provider: string): string {
   return PROVIDER_LABEL[provider] ?? provider.replace(/_/g, " ");
+}
+
+/**
+ * P4: which field did the registry say was missing?
+ *
+ * Read out of the server's own validation error rather than guessed from a
+ * schema the client would have to duplicate - so the question asked is always
+ * about a field the backend actually requires. Returns undefined when the
+ * failure was something else, in which case the error is surfaced as-is
+ * rather than turned into a misleading question.
+ */
+function missingFieldFrom(error: unknown): string | undefined {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  // Pydantic's message names the field, e.g. "start\n  Field required".
+  const required = /(\w+)\s*\n?\s*Field required/i.exec(message);
+  if (required) return required[1]!.replace(/_/g, " ");
+  const missing = /missing (?:required )?(?:field|parameter)s?[:\s]+([\w, ]+)/i.exec(message);
+  if (missing) return missing[1]!.split(",")[0]!.trim().replace(/_/g, " ");
+  return undefined;
 }
 
 export function AssistantPage() {
@@ -182,14 +216,23 @@ export function AssistantPage() {
   }
 
   async function submit(raw: string) {
-    const text = raw.trim();
-    if (!text || busy) return;
+    const answer = raw.trim();
+    if (!answer || busy) return;
+
+    // P4: if Sentinel just asked for one missing field, this reply is that
+    // field. The ORIGINAL request is carried forward and the answer appended,
+    // so everything already supplied survives - the interpreter sees the whole
+    // request again rather than a fragment, and it is still one model call.
+    const pending = turns[turns.length - 1]?.block;
+    const text =
+      pending?.kind === "needField" ? `${pending.originalText} (${pending.field}: ${answer})` : answer;
 
     const { intent, subject, provider } = classify(text);
 
     setTurns((prev) => [
       ...prev,
-      { id: nextId(), role: "user", text },
+      // Show what they actually typed, not the request it was folded into.
+      { id: nextId(), role: "user", text: answer },
       { id: nextId(), role: "sentinel", block: { kind: "pending", local: isDeterministic(intent) } },
     ]);
     setInput("");
@@ -334,12 +377,26 @@ export function AssistantPage() {
       }
 
       case "action": {
-        // Straight into the Action Registry. The model may only fill in a key
-        // that already exists there, and this path has no route to execution -
-        // the card below is a proposal a person still has to confirm.
+        // The one path that reads intent out of prose - ONE model call, and
+        // the model may only name a key that already exists in the registry.
+        // This path has no route to execution: the card is a proposal a
+        // person still has to confirm.
         const path = teamId ? `/teams/${teamId}/actions/from-text` : "/actions/from-text";
-        const res = await api.post<{ action: SentinelAction; interpretation: string }>(path, { text });
-        say({ kind: "proposal", action: res.action, interpretation: res.interpretation });
+        try {
+          const res = await api.post<{ action: SentinelAction; interpretation: string }>(path, { text });
+          say({ kind: "proposal", action: res.action, interpretation: res.interpretation });
+        } catch (e) {
+          // P4: a rejection usually means a required field was missing, and
+          // the registry's own validation error names it. Ask for that one
+          // field rather than restarting - the original text is kept, so
+          // everything already supplied survives.
+          const missing = missingFieldFrom(e);
+          if (missing) {
+            say({ kind: "needField", field: missing, originalText: text });
+            return;
+          }
+          throw e;
+        }
         return;
       }
 
@@ -354,25 +411,56 @@ export function AssistantPage() {
       }
 
       case "resolve": {
-        // "this" is whatever the conversation is currently about. Resolved
-        // deterministically from the last block that carried items - never
-        // from the model, and never from a guess when there is more than one
-        // candidate.
-        const targets = lastShownItems();
-        if (targets.length === 0) {
+        // P2: "this" is whatever the conversation is about; "the deployment
+        // issue" is matched against what is already on screen. Never the
+        // model - the answer is in the context - and never a guess.
+        const candidates = lastShownItems().length > 0 ? lastShownItems() : open;
+        const request = resolveRequestOf(text);
+        const found = resolveTarget(subject, candidates, attentionText);
+
+        if (found.kind === "none") {
           say({
             kind: "notice",
-            title: "Nothing to act on yet",
-            body: "Ask what's urgent or what Sentinel detected first, then say “mark this done”.",
+            title: subject ? `Nothing open matching “${subject}”` : "Nothing to act on yet",
+            body: subject
+              ? "Sentinel matches against what it has already shown you. Try asking what's urgent first."
+              : "Ask what's urgent or what Sentinel detected first, then say “mark this done”.",
           });
           return;
         }
-        const request = resolveRequestOf(text);
-        if (targets.length > 1) {
-          say({ kind: "resolveChoose", items: targets.slice(0, 6), request });
+        if (found.kind === "many") {
+          say({ kind: "resolveChoose", items: found.items.slice(0, 6), request });
           return;
         }
-        await applyResolve(targets[0]!, request);
+        await applyResolve(found.item, request);
+        return;
+      }
+
+      case "bulk": {
+        // P6: resolve the set deterministically, then STOP. A bulk action is
+        // previewed in full and confirmed before anything runs - the cost of
+        // getting it wrong is the whole list rather than one row.
+        const selector = bulkSelectorFor(text);
+        const pool = lastShownItems().length > 0 ? lastShownItems() : open;
+        const items = selector ? pool.filter(selector.match) : pool;
+        const request = resolveRequestOf(text);
+
+        if (items.length === 0) {
+          say({
+            kind: "notice",
+            title: "Nothing matches that",
+            body: selector
+              ? `Nothing open counts as ${selector.label} right now.`
+              : "There is nothing open to act on.",
+          });
+          return;
+        }
+        say({
+          kind: "bulkPreview",
+          items,
+          request,
+          label: selector?.label ?? "these items",
+        });
         return;
       }
 
@@ -417,25 +505,53 @@ export function AssistantPage() {
     return [];
   }
 
+  /** The registry key and parameters for one attention lifecycle change. */
+  function attentionAction(item: AttentionItem, request: ResolveRequest): [string, Record<string, unknown>] {
+    if (request.state === "snoozed") {
+      return ["attention.snooze", { item_id: item.id, hours: request.hours ?? 24 }];
+    }
+    return [
+      request.state === "dismissed" ? "attention.dismiss" : "attention.done",
+      { item_id: item.id },
+    ];
+  }
+
   /**
-   * Straight to the Action Registry - no model, no second execution path.
+   * P1: known target + known action -> Action Registry, no model involved.
    *
-   * PATCH /attention/{id} is now a thin adapter over propose -> execute, so
-   * this is the same audited, verified, undoable action the attention list
-   * itself performs. The optimistic drop matches every other surface.
+   * Not a shortcut past the registry - a shortcut past the *interpreter*.
+   * `propose` still validates parameters, re-checks authorization and decides
+   * whether a confirmation is required; `execute` still runs, verifies and
+   * audits. The only thing skipped is asking a model what the user meant,
+   * because the item id and the verb are already known.
    */
+  async function runAction(
+    actionType: string,
+    params: Record<string, unknown>,
+    reason: string,
+  ): Promise<SentinelAction | null> {
+    const proposed = await propose(actionType, params, { teamId, reason });
+    if (proposed.kind === "needs_confirmation") {
+      // The server said this needs a person. Show the card and stop - the
+      // client never decides that a confirmation can be skipped.
+      say({ kind: "proposal", action: proposed.action, interpretation: reason });
+      return null;
+    }
+    return executeAction(proposed.action);
+  }
+
   async function applyResolve(item: AttentionItem, request: ResolveRequest) {
+    const [actionType, params] = attentionAction(item, request);
     intel.dropAttention(item.id);
-    const body =
-      request.state === "snoozed"
-        ? {
-            state: "snoozed",
-            snoozed_until: new Date(Date.now() + (request.hours ?? 24) * 3600 * 1000).toISOString(),
-          }
-        : { state: request.state };
     try {
-      await api.patch(`/attention/${item.id}`, body);
-      say({ kind: "resolved", item, request });
+      const done = await runAction(actionType, params, `${actionType} on “${item.title}”`);
+      if (done === null) {
+        intel.restoreAttention(item); // awaiting confirmation, not applied
+        return;
+      }
+      const outcome = describe(done);
+      if (!outcome.ok) intel.restoreAttention(item);
+      say({ kind: "resolved", item, request, outcome });
     } catch (e) {
       intel.restoreAttention(item);
       say({
@@ -443,6 +559,59 @@ export function AssistantPage() {
         title: "That didn't go through",
         body: e instanceof Error ? e.message : "Sentinel couldn't apply that change.",
       });
+    }
+  }
+
+  /**
+   * P6: execute a confirmed set, one Action Registry call per item.
+   *
+   * Sequential and individually reported. Nothing is batched into a single
+   * write, so a failure part-way through is a fact about one item rather than
+   * an ambiguous half-applied operation - and the report says exactly which
+   * ones landed. Never partially executes silently.
+   */
+  async function applyBulk(items: AttentionItem[], request: ResolveRequest) {
+    setBusy(true);
+    const results: { item: AttentionItem; outcome: Outcome }[] = [];
+    try {
+      for (const item of items) {
+        const [actionType, params] = attentionAction(item, request);
+        try {
+          const proposed = await propose(actionType, params, {
+            teamId,
+            reason: `bulk ${actionType} on “${item.title}”`,
+          });
+          if (proposed.kind === "needs_confirmation") {
+            results.push({
+              item,
+              outcome: {
+                ok: false,
+                headline: "Needs its own confirmation — skipped here.",
+                verification: null,
+                uncertain: false,
+              },
+            });
+            continue;
+          }
+          const done = await executeAction(proposed.action);
+          const outcome = describe(done);
+          if (outcome.ok) intel.dropAttention(item.id);
+          results.push({ item, outcome });
+        } catch (e) {
+          results.push({
+            item,
+            outcome: {
+              ok: false,
+              headline: e instanceof Error ? e.message : "Failed.",
+              verification: null,
+              uncertain: false,
+            },
+          });
+        }
+      }
+      say({ kind: "bulkResult", results, request }, false);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -495,6 +664,7 @@ export function AssistantPage() {
                   onAsk={(q) => void submit(q)}
                   onInvestigate={(item) => void runInvestigation(item)}
                   onApplyResolve={(item, request) => void applyResolve(item, request)}
+                  onApplyBulk={(items, request) => void applyBulk(items, request)}
                 />
               ))}
             </div>
@@ -610,12 +780,14 @@ function TurnView({
   onAsk,
   onInvestigate,
   onApplyResolve,
+  onApplyBulk,
 }: {
   turn: Turn;
   onResolve: (i: AttentionItem, s: "done" | "snoozed") => void;
   onAsk: (q: string) => void;
   onInvestigate: (item: AttentionItem) => void;
   onApplyResolve: (item: AttentionItem, request: ResolveRequest) => void;
+  onApplyBulk: (items: AttentionItem[], request: ResolveRequest) => void;
 }) {
   if (turn.role === "user") {
     return (
@@ -754,20 +926,72 @@ function TurnView({
           </>
         )}
 
-        {/* Report: what was done, to what, and where the record is. */}
+        {/* P5: what was done, to what, and how Sentinel knows it landed -
+            read from the action row, never a hopeful sentence. */}
         {b.kind === "resolved" && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone="good">
-              {b.request.state === "snoozed"
-                ? `Snoozed ${SNOOZE_LABEL[b.request.hours ?? 24] ?? "for a while"}`
-                : b.request.state === "dismissed"
-                  ? "Dismissed"
-                  : "Marked done"}
-            </Badge>
-            <span className="min-w-0 truncate text-small text-ink-dim">{b.item.title}</span>
-            <Link to="/history" className="text-caption text-accent-text hover:underline">
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={b.outcome.ok ? (b.outcome.uncertain ? "warn" : "good") : "crit"}>
+                {b.outcome.ok
+                  ? b.request.state === "snoozed"
+                    ? `Snoozed ${SNOOZE_LABEL[b.request.hours ?? 24] ?? "for a while"}`
+                    : b.request.state === "dismissed"
+                      ? "Dismissed"
+                      : "Marked done"
+                  : "Failed"}
+              </Badge>
+              <span className="min-w-0 truncate text-small text-ink-dim">{b.item.title}</span>
+            </div>
+            <p className="mt-1 text-micro text-ink-faint">
+              {b.outcome.verification ?? b.outcome.headline}
+              {" · "}
+              <Link to="/history" className="text-accent-text hover:underline">
+                View activity
+              </Link>
+            </p>
+          </>
+        )}
+
+        {/* P6: the exact set, in full, waiting. Nothing has run yet. */}
+        {b.kind === "bulkPreview" && (
+          <BulkPreview block={b} onConfirm={() => onApplyBulk(b.items, b.request)} />
+        )}
+
+        {b.kind === "bulkResult" && (
+          <>
+            <p className="mb-2 text-small text-ink-dim">
+              {b.results.filter((r) => r.outcome.ok).length} of {b.results.length} applied and verified.
+            </p>
+            <ul className="flex flex-col gap-1">
+              {b.results.map((r) => (
+                <li key={r.item.id} className="flex items-start gap-2 text-caption">
+                  <Icon
+                    name={r.outcome.ok ? "check" : "alert"}
+                    size={12}
+                    className={`mt-0.5 flex-none ${r.outcome.ok ? "text-good" : "text-crit"}`}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-ink-dim">{r.item.title}</span>
+                    {!r.outcome.ok && <span className="block text-micro text-crit">{r.outcome.headline}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <Link to="/history" className="mt-2 inline-block text-caption text-accent-text hover:underline">
               View activity →
             </Link>
+          </>
+        )}
+
+        {/* P4: one question, for one field, keeping everything already said. */}
+        {b.kind === "needField" && (
+          <div className="rounded-md border border-border bg-surface px-3.5 py-3">
+            <p className="text-small text-ink">
+              What {b.field} should Sentinel use?
+            </p>
+            <p className="mt-1 text-micro text-ink-faint">
+              Everything else you said is kept — just answer this one part.
+            </p>
           </div>
         )}
 
@@ -903,6 +1127,60 @@ const GOAL_TONE: Record<Goal["health"], Tone> = {
   abandoned: "neutral",
   unknown: "neutral",
 };
+
+/**
+ * P6's confirmation gate.
+ *
+ * The complete set is listed, not summarised as a count: "snooze all
+ * low-priority items" is only safe to agree to if you can see exactly which
+ * items that turned out to mean. Nothing has been proposed or executed at
+ * this point - the buttons below are the first thing that reaches the
+ * registry.
+ */
+function BulkPreview({
+  block,
+  onConfirm,
+}: {
+  block: Extract<Block, { kind: "bulkPreview" }>;
+  onConfirm: () => void;
+}) {
+  const [sent, setSent] = useState(false);
+  const verb = RESOLVE_VERB[block.request.state];
+
+  return (
+    <div className="rounded-lg border border-accent/30 bg-accent/[0.05] p-4">
+      <p className="text-small text-ink">
+        {verb.charAt(0).toUpperCase() + verb.slice(1)} {block.items.length}{" "}
+        {block.label}?
+      </p>
+      <ul className="my-3 flex flex-col gap-1 rounded-md border border-border bg-surface p-3">
+        {block.items.map((i) => (
+          <li key={i.id} className="flex items-baseline justify-between gap-3 text-caption">
+            <span className="min-w-0 flex-1 truncate text-ink-dim">{i.title}</span>
+            <span className="flex-none font-mono text-micro uppercase tracking-wide text-ink-faint">
+              {priorityOf(i).label}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {sent ? (
+        <p className="text-caption text-ink-faint">Running…</p>
+      ) : (
+        <ActionGroup>
+          <Action
+            kind="confirm"
+            label={`${verb.charAt(0).toUpperCase() + verb.slice(1)} all ${block.items.length}`}
+            onClick={() => {
+              setSent(true);
+              onConfirm();
+            }}
+          />
+          <Action kind="cancel" onClick={() => setSent(true)} />
+        </ActionGroup>
+      )}
+    </div>
+  );
+}
 
 /**
  * A provider question, answered from the Core.

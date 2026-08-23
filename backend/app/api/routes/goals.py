@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, get_workspace_id, require_channel_role
 from app.models.commitment import Commitment
+from app.models.action import ActionStatus
 from app.models.goal import Goal
 from app.models.team import ChannelRole, Team
 from app.models.user import User
@@ -51,6 +52,8 @@ from app.services.goals import (
     reopen_goal,
     unlink_commitment,
 )
+from app.services.action_registry import ActionRejected
+from app.services.actions import execute_action, propose_action
 from app.services.investigation import (
     NotAuthorized as InvestigationNotAuthorized,
 )
@@ -209,6 +212,36 @@ def remove_link(
 # --- lifecycle -------------------------------------------------------------
 
 
+def _run_goal_action(session: Session, goal: Goal, action_type: str, user: User) -> GoalOut:
+    """Every goal lifecycle change leaves through the Action Registry.
+
+    The route still decides who may reach it (`_authorized`, unchanged); the
+    registry then validates, re-checks RBAC, executes, verifies by reading the
+    goal back, and records an auditable Action with an undo. These are LOW and
+    internal, so they execute in the same single gesture as before - what is
+    new is the record, not a confirmation step.
+    """
+    try:
+        action = propose_action(
+            session,
+            workspace_id=goal.workspace_id,
+            scope_key=goal.scope_key,
+            action_type=action_type,
+            params={"goal_id": str(goal.id)},
+            user_id=user.id,
+            reason=f"{action_type} from the goal surface",
+            source_kind="goal",
+            source_id=goal.id,
+        )
+        action = execute_action(session, action, user.id)
+    except ActionRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if action.status is ActionStatus.FAILED:
+        raise HTTPException(status_code=400, detail=action.error or "That change could not be applied")
+    session.refresh(goal)
+    return goal
+
+
 @router.post("/goals/{goal_id}/achieved", response_model=GoalOut)
 def mark_achieved(
     goal_id: uuid.UUID,
@@ -218,7 +251,8 @@ def mark_achieved(
     """A person's call, never Sentinel's - "done" is defined by whoever set
     the goal. Admin-only for a channel: declaring a team objective achieved
     is a statement about everyone's work."""
-    return close_goal(session, _authorized(session, goal_id, user, admin_for_channel=True), achieved=True)
+    goal = _authorized(session, goal_id, user, admin_for_channel=True)
+    return _run_goal_action(session, goal, "goal.achieve", user)
 
 
 @router.post("/goals/{goal_id}/abandoned", response_model=GoalOut)
@@ -227,7 +261,8 @@ def mark_abandoned(
     session: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> GoalOut:
-    return close_goal(session, _authorized(session, goal_id, user, admin_for_channel=True), achieved=False)
+    goal = _authorized(session, goal_id, user, admin_for_channel=True)
+    return _run_goal_action(session, goal, "goal.abandon", user)
 
 
 @router.post("/goals/{goal_id}/reopen", response_model=GoalOut)
@@ -236,7 +271,8 @@ def mark_reopened(
     session: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> GoalOut:
-    return reopen_goal(session, _authorized(session, goal_id, user, admin_for_channel=True))
+    goal = _authorized(session, goal_id, user, admin_for_channel=True)
+    return _run_goal_action(session, goal, "goal.reopen", user)
 
 
 # --- investigate -----------------------------------------------------------

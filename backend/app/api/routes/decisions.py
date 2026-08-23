@@ -17,10 +17,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, get_workspace_id, require_channel_role
+from app.models.action import ActionStatus
 from app.models.decision import Decision, DecisionStatus
 from app.models.team import ChannelRole
 from app.models.user import User
 from app.services.decision_engine import list_decisions, set_decision_status
+from app.services.action_registry import ActionRejected
+from app.services.actions import execute_action, propose_action
 from app.services.investigation import channel_scope, personal_scope
 
 router = APIRouter(prefix="/decisions", tags=["decisions"])
@@ -85,6 +88,37 @@ def _resolve(session: Session, workspace_id: uuid.UUID, user: User, decision_id:
     return d
 
 
+def _run_decision_action(
+    session: Session, workspace_id: uuid.UUID, user: User, decision: Decision, action_type: str
+) -> dict:
+    """Confirm and dismiss leave through the Action Registry.
+
+    Confirming still records intent and nothing else - the registry does not
+    change that, it records who recorded it, verifies the status landed, and
+    makes it undoable. Execution of the underlying work remains confirm-first
+    on its own action path.
+    """
+    try:
+        action = propose_action(
+            session,
+            workspace_id=workspace_id,
+            scope_key=decision.scope_key,
+            action_type=action_type,
+            params={"decision_id": str(decision.id)},
+            user_id=user.id,
+            reason=f"{action_type} from the decisions surface",
+            source_kind="decision",
+            source_id=decision.id,
+        )
+        action = execute_action(session, action, user.id)
+    except ActionRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if action.status is ActionStatus.FAILED:
+        raise HTTPException(status_code=400, detail=action.error or "That proposal could not be updated")
+    session.refresh(decision)
+    return _out(decision)
+
+
 @router.post("/{decision_id}/confirm")
 def confirm(
     decision_id: uuid.UUID,
@@ -93,10 +127,8 @@ def confirm(
     user: User = Depends(get_current_user),
 ) -> dict:
     """Record approval only. Execution remains confirm-first, handled elsewhere."""
-    _resolve(session, workspace_id, user, decision_id)
-    d = set_decision_status(session, decision_id, DecisionStatus.CONFIRMED)
-    session.commit()
-    return _out(d)
+    decision = _resolve(session, workspace_id, user, decision_id)
+    return _run_decision_action(session, workspace_id, user, decision, "decision.confirm")
 
 
 @router.post("/{decision_id}/dismiss")
@@ -106,7 +138,5 @@ def dismiss(
     workspace_id: uuid.UUID = Depends(get_workspace_id),
     user: User = Depends(get_current_user),
 ) -> dict:
-    _resolve(session, workspace_id, user, decision_id)
-    d = set_decision_status(session, decision_id, DecisionStatus.DISMISSED)
-    session.commit()
-    return _out(d)
+    decision = _resolve(session, workspace_id, user, decision_id)
+    return _run_decision_action(session, workspace_id, user, decision, "decision.dismiss")

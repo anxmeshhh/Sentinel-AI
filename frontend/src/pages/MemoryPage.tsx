@@ -2,28 +2,54 @@ import { useEffect, useState } from "react";
 
 import { api } from "../api/client";
 import type { MemoryRow } from "../api/types";
-import { relativeTime } from "../components/situations";
+import { BackNav } from "../components/BackNav";
+import { relativeTime, severityOf } from "../components/situations";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { Action, ActionGroup, Badge, EmptyState, ItemList, ItemRow, PageHeader, SkeletonRows } from "../components/ui";
+import {
+  Action,
+  ActionGroup,
+  Badge,
+  ButtonLink,
+  EmptyState,
+  ItemList,
+  ItemRow,
+  SkeletonRows,
+  TabBar,
+  type TabBarItem,
+} from "../components/ui";
+
+type TabKey = "active" | "forgotten";
 
 /**
- * What Sentinel has learned.
+ * What Sentinel has learned - same shell as Attention, Situations and
+ * Findings: a BackNav, a compact header, an underline TabBar for state
+ * (Active/Forgotten) instead of two stacked sections.
  *
- * This page existed only as a destination other screens linked to - "View
- * memory" and the dashboard rail both pointed at /memory, which had no route
- * and 404'd. It reads the Memory Engine's own output through GET /memory and
- * forgets through POST /memory/{id}/forget; nothing here writes a memory,
- * because nothing in the product may.
+ * It reads the Memory Engine's own output through GET /memory and forgets
+ * through POST /memory/{id}/forget; nothing here writes a memory, because
+ * nothing in the product may. Severity comes from `evidence.severity` (the
+ * recurring situation's own tier, via the same `severityOf` map Situations
+ * and Attention already use) rather than a hardcoded "Insight" badge, and
+ * `evidence.situation_id` links back to the situation the pattern was
+ * learned from - both fields the API already returned, just not shown here.
  *
  * A memory forms deterministically, when a situation recurs. That is why the
  * empty state explains the mechanism rather than apologising: "none yet" is
  * the correct state for a workspace where nothing has happened twice.
  */
+function evidenceOf(m: MemoryRow): { severity: string | null; situationId: string | null } {
+  const e = m.evidence ?? {};
+  const severity = typeof e.severity === "string" ? e.severity : null;
+  const situationId = typeof e.situation_id === "string" ? e.situation_id : null;
+  return { severity, situationId };
+}
+
 export function MemoryPage() {
   const { active } = useWorkspace();
   const [rows, setRows] = useState<MemoryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabKey>("active");
 
   async function load() {
     try {
@@ -51,62 +77,77 @@ export function MemoryPage() {
 
   const activeRows = (rows ?? []).filter((m) => m.status === "active");
   const forgotten = (rows ?? []).filter((m) => m.status === "forgotten");
+  const visible = tab === "active" ? activeRows : forgotten;
+
+  const tabs: TabBarItem<TabKey>[] = [
+    { key: "active", label: "Active", count: activeRows.length },
+    { key: "forgotten", label: "Forgotten", count: forgotten.length },
+  ];
 
   return (
     <div>
-      <PageHeader
-        title="Memory"
-        description="Patterns Sentinel has seen more than once. These raise the priority of anything that matches them."
-      />
+      <BackNav back={{ to: "/", label: "Dashboard" }} />
+
+      <header className="mb-5">
+        <h1 className="text-h2 font-semibold tracking-tight text-ink">Memory</h1>
+        <p className="mt-1 text-small text-ink-dim">
+          Patterns Sentinel has seen more than once. These raise the priority of anything that matches them.
+        </p>
+      </header>
+
+      <TabBar items={tabs} value={tab} onChange={setTab} />
 
       {error && <p className="mb-4 text-caption text-crit">{error}</p>}
 
       {rows === null ? (
         <SkeletonRows rows={4} />
-      ) : activeRows.length === 0 ? (
+      ) : visible.length === 0 ? (
         <EmptyState
-          title="Nothing remembered yet."
-          description="Memory forms on its own when the same situation happens more than once."
+          title={tab === "active" ? "Nothing remembered yet." : "Nothing forgotten."}
+          description={
+            tab === "active"
+              ? "Memory forms on its own when the same situation happens more than once."
+              : "Memories you forget stay listed here, never deleted outright."
+          }
         />
       ) : (
         <ItemList>
-          {activeRows.map((m) => (
-            <ItemRow
-              key={m.id}
-              tone="good"
-              icon="brain"
-              title={m.summary}
-              meta={[
-                `Seen ${m.observation_count} time${m.observation_count === 1 ? "" : "s"}`,
-                m.last_observed_at ? `last ${relativeTime(m.last_observed_at)}` : null,
-              ]}
-              badge={<Badge tone="good">Insight</Badge>}
-              actions={
-                <ActionGroup>
-                  <Action
-                    kind="dismiss"
-                    label="Forget"
-                    loading={busy === m.id}
-                    onClick={() => void forget(m.id)}
-                  />
-                </ActionGroup>
-              }
-            />
-          ))}
+          {visible.map((m) => {
+            const { severity, situationId } = evidenceOf(m);
+            const sev = severityOf(severity);
+            return (
+              <ItemRow
+                key={m.id}
+                tone={tab === "forgotten" ? "neutral" : sev.tone}
+                muted={tab === "forgotten"}
+                icon="brain"
+                title={m.summary}
+                meta={[
+                  `Seen ${m.observation_count} time${m.observation_count === 1 ? "" : "s"}`,
+                  m.last_observed_at ? `last ${relativeTime(m.last_observed_at)}` : null,
+                ]}
+                badge={tab === "active" ? <Badge tone={sev.tone}>{sev.label}</Badge> : undefined}
+                actions={
+                  <ActionGroup>
+                    {situationId && (
+                      <ButtonLink to={`/situations/${situationId}`} variant="ghost" size="sm">
+                        View Situation
+                      </ButtonLink>
+                    )}
+                    {tab === "active" && (
+                      <Action
+                        kind="dismiss"
+                        label="Forget"
+                        loading={busy === m.id}
+                        onClick={() => void forget(m.id)}
+                      />
+                    )}
+                  </ActionGroup>
+                }
+              />
+            );
+          })}
         </ItemList>
-      )}
-
-      {forgotten.length > 0 && (
-        <section className="mt-8">
-          <h2 className="mb-2 text-micro font-semibold uppercase tracking-wide text-ink-faint">
-            Forgotten
-          </h2>
-          <ItemList>
-            {forgotten.map((m) => (
-              <ItemRow key={m.id} tone="neutral" muted title={m.summary} meta={["No longer applied"]} />
-            ))}
-          </ItemList>
-        </section>
       )}
     </div>
   );

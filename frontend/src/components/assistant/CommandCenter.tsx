@@ -48,10 +48,14 @@ export function Greeting({
   name,
   subtitle,
   onSearchFocus,
+  actions,
 }: {
   name?: string | null;
   subtitle: string;
   onSearchFocus?: () => void;
+  /** The header's right-hand action slot - e.g. Sync Now. Always visible,
+   *  unlike the search box below, which is a wide-viewport convenience. */
+  actions?: ReactNode;
 }) {
   return (
     <header className="mb-4 flex flex-wrap items-start justify-between gap-4">
@@ -63,17 +67,20 @@ export function Greeting({
         <p className="mt-1 text-small text-ink-dim">{subtitle}</p>
       </div>
 
-      {onSearchFocus && (
-        <button
-          type="button"
-          onClick={onSearchFocus}
-          className="hidden min-w-[280px] items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-caption text-ink-faint transition-colors hover:border-border-strong lg:flex"
-        >
-          <Icon name="search" size={14} />
-          <span className="flex-1 text-left">Ask Sentinel anything…</span>
-          <kbd className="rounded border border-border px-1.5 py-0.5 text-micro text-ink-faint">⌘K</kbd>
-        </button>
-      )}
+      <div className="flex flex-none items-center gap-2">
+        {onSearchFocus && (
+          <button
+            type="button"
+            onClick={onSearchFocus}
+            className="hidden min-w-[280px] items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-caption text-ink-faint transition-colors hover:border-border-strong lg:flex"
+          >
+            <Icon name="search" size={14} />
+            <span className="flex-1 text-left">Ask Sentinel anything…</span>
+            <kbd className="rounded border border-border px-1.5 py-0.5 text-micro text-ink-faint">⌘K</kbd>
+          </button>
+        )}
+        {actions}
+      </div>
     </header>
   );
 }

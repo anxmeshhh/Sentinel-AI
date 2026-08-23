@@ -38,6 +38,7 @@ from app.api.routes import (
     meeting_prep,
     onboarding,
     runs,
+    sync,
     teams,
     workspaces,
     workspace,
@@ -108,6 +109,7 @@ app.include_router(meeting_prep.router)
 app.include_router(onboarding.router)
 app.include_router(connections.router)
 app.include_router(runs.router)
+app.include_router(sync.router)
 app.include_router(briefs.router)
 app.include_router(findings.router)
 app.include_router(admin.router)

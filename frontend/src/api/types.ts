@@ -699,6 +699,17 @@ export interface SentinelStatus {
   errors: string[];
 }
 
+/** POST /sync - a real, synchronous full refresh: provider pull through the
+ *  Intelligence Core, for every one of the caller's own connections. */
+export interface SyncResult {
+  status: "success" | "partial" | "failed" | "no_connections";
+  connections_checked: number;
+  connections_failed: number;
+  signals_ingested: number;
+  synced_at: string;
+  errors: string[];
+}
+
 export interface CatchUp {
   since: string;
   gap_hours: number;

@@ -11,6 +11,7 @@ import {
   SignalCards,
   StatChips,
 } from "../components/assistant/CommandCenter";
+import { SyncButton } from "../components/SyncButton";
 import { WorkspaceOverview } from "../components/WorkspaceOverview";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/WorkspaceContext";
@@ -43,6 +44,11 @@ import { EmptyState, SkeletonRows } from "../components/ui";
  * from here. The rail's Quick Actions still hand a specific question to
  * /assistant via `handOff`, same as before; that is a navigation shortcut,
  * not a second place to type.
+ *
+ * The greeting's Sync Now button is the one place a person manually asks for
+ * everything above to be recomputed from fresh provider data - see
+ * SyncButton.tsx and POST /sync for why that is a real, synchronous run of
+ * the same pipeline the scheduled sync uses, not a second implementation.
  */
 export function BriefPage() {
   const { user } = useAuth();
@@ -119,7 +125,11 @@ export function BriefPage() {
         )}
 
         <div className="flex-1">
-          <Greeting name={user?.name} subtitle={subtitle} />
+          <Greeting
+            name={user?.name}
+            subtitle={subtitle}
+            actions={<SyncButton onSynced={() => void intel.reload()} />}
+          />
           <StatChips intel={intel} />
 
           {intel.loading ? (

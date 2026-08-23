@@ -31,6 +31,10 @@ from app.services.grants import provision_grant
 from app.services.ingestion import _INGEST_HANDLERS
 
 NOW = datetime.now(timezone.utc)
+# The latest moment still on today's UTC date. Used wherever a test needs a
+# timestamp that is both in the future and "today", which an offset from NOW
+# cannot guarantee near midnight.
+LATER_TODAY = NOW.replace(hour=23, minute=59, second=0, microsecond=0)
 
 
 @pytest.fixture
@@ -161,7 +165,12 @@ def _todo_conn(env):
 def test_overdue_and_due_today_are_detected_completed_are_not(session, env):
     conn = _todo_conn(env)
     _task(env, conn, task_id="t-over", title="Ship release", due=NOW - timedelta(days=3))
-    _task(env, conn, task_id="t-today", title="Review PR", due=NOW + timedelta(hours=3))
+    # Anchored to the end of the UTC day, not a fixed offset from now. The
+    # detector requires due >= now AND due.date() == now.date(), so
+    # "NOW + 3 hours" stopped being "today" whenever the suite ran within
+    # three hours of UTC midnight - the test failed every evening and passed
+    # every morning, on unchanged code.
+    _task(env, conn, task_id="t-today", title="Review PR", due=LATER_TODAY)
     _task(env, conn, task_id="t-future", title="Plan Q4", due=NOW + timedelta(days=10))
     _task(env, conn, task_id="t-done", title="Already done", due=NOW - timedelta(days=5), completed=True)
     _task(env, conn, task_id="t-none", title="No due date", due=None)

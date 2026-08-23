@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import type { AttentionItem, DecisionRow, MemoryRow } from "../../api/types";
 import type { Intelligence } from "../../hooks/useIntelligence";
+import { PROVIDER_GLYPH } from "../ProviderIcons";
 import { SituationCard } from "../SituationCard";
 import {
   ATTENTION_ICON,
@@ -548,9 +549,6 @@ const QUICK_ACTIONS: { label: string; ask: string; icon: IconName }[] = [
  *  the rail carries state, not explanation. */
 export function ContextRail({ intel, onAsk }: { intel: Intelligence; onAsk: (q: string) => void }) {
   const situation = intel.situations[0];
-  const memory = intel.memories[0];
-  const errors = intel.status?.errors.length ?? 0;
-  const onTrack = intel.goals.filter((g) => g.health === "on_track").length;
 
   return (
     <aside className="hidden w-[268px] flex-none flex-col gap-3 self-start xl:flex">
@@ -563,47 +561,8 @@ export function ContextRail({ intel, onAsk }: { intel: Intelligence; onAsk: (q: 
           </RailPanel>
         )}
 
-        {memory && (
-          <RailPanel title="Memory" to="/memory">
-            <div className="flex gap-2.5 p-3">
-              <span
-                className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-accent/15 text-accent-text"
-                aria-hidden="true"
-              >
-                <Icon name="brain" size={14} />
-              </span>
-              <div className="min-w-0">
-                <p className="line-clamp-3 text-caption leading-relaxed text-ink-dim">{memory.summary}</p>
-                <p className="mt-1 text-micro text-ink-faint">
-                  Last seen {relativeTime(memory.last_observed_at)}
-                </p>
-              </div>
-            </div>
-          </RailPanel>
-        )}
-
-        {/* Only when there is something real to watch - a rail entry for
-            zero connections would just be an empty state wearing a heading. */}
-        {intel.connections.length > 0 && (
-          <RailPanel title="Watching" to="/settings">
-            <div className="flex flex-col gap-2.5 p-3">
-              <RailStat
-                tone={errors > 0 ? "crit" : "good"}
-                icon="check"
-                value={`${intel.connections.length} connection${intel.connections.length === 1 ? "" : "s"}`}
-                note={errors > 0 ? `${errors} need attention` : "All healthy"}
-              />
-              {intel.goals.length > 0 && (
-                <RailStat
-                  tone="good"
-                  icon="target"
-                  value={`${intel.goals.length} goal${intel.goals.length === 1 ? "" : "s"}`}
-                  note={`${onTrack} on track`}
-                />
-              )}
-            </div>
-          </RailPanel>
-        )}
+        <MemoryRailPanel memory={intel.memories[0]} />
+        <WatchingRailPanel intel={intel} />
 
         {/* Each is a real capability, phrased the way the Assistant's router
             recognises it - the buttons and the parser cannot drift apart. */}
@@ -627,7 +586,110 @@ export function ContextRail({ intel, onAsk }: { intel: Intelligence; onAsk: (q: 
   );
 }
 
-function RailPanel({
+/** The rail's Memory block - one function, so the Command Center and
+ *  Situations rails can never show a memory summary differently. */
+function MemoryRailPanel({ memory }: { memory: MemoryRow | undefined }) {
+  if (!memory) return null;
+  return (
+    <RailPanel title="Memory" to="/memory">
+      <div className="flex gap-2.5 p-3">
+        <span
+          className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-accent/15 text-accent-text"
+          aria-hidden="true"
+        >
+          <Icon name="brain" size={14} />
+        </span>
+        <div className="min-w-0">
+          <p className="line-clamp-3 text-caption leading-relaxed text-ink-dim">{memory.summary}</p>
+          <p className="mt-1 text-micro text-ink-faint">Last seen {relativeTime(memory.last_observed_at)}</p>
+        </div>
+      </div>
+    </RailPanel>
+  );
+}
+
+/** The rail's Watching block - connection health and goal progress. Renders
+ *  nothing for zero connections rather than an empty state wearing a
+ *  heading. */
+function WatchingRailPanel({ intel }: { intel: Intelligence }) {
+  if (intel.connections.length === 0) return null;
+  const errors = intel.status?.errors.length ?? 0;
+  const onTrack = intel.goals.filter((g) => g.health === "on_track").length;
+
+  return (
+    <RailPanel title="Watching" to="/settings">
+      <div className="flex flex-col gap-2.5 p-3">
+        <RailStat
+          tone={errors > 0 ? "crit" : "good"}
+          icon="check"
+          value={`${intel.connections.length} connection${intel.connections.length === 1 ? "" : "s"}`}
+          note={errors > 0 ? `${errors} need attention` : "All healthy"}
+        />
+        {intel.goals.length > 0 && (
+          <RailStat
+            tone="good"
+            icon="target"
+            value={`${intel.goals.length} goal${intel.goals.length === 1 ? "" : "s"}`}
+            note={`${onTrack} on track`}
+          />
+        )}
+      </div>
+    </RailPanel>
+  );
+}
+
+/**
+ * The Situations page's rail: what the most pressing open situation
+ * concerns, which services it spans, what Sentinel remembers, and what it's
+ * watching. "What this concerns" and "Services involved" are the top open
+ * situation's own fields (the same one the list's first card describes) -
+ * there is no per-card rail on a list of several, so this names the one
+ * that would need you first. Each block renders only when it has something
+ * real to show.
+ */
+export function SituationsRail({ intel }: { intel: Intelligence }) {
+  const situation = intel.situations[0];
+
+  return (
+    <aside className="hidden w-[268px] flex-none flex-col gap-3 self-start xl:flex">
+      <div className="sticky top-0 flex flex-col gap-3">
+        {situation && (
+          <RailPanel title="What this concerns" to="/situations">
+            <div className="px-3 pb-3">
+              <p className="text-caption text-ink-dim">
+                <span className="text-micro text-ink-faint">{situation.entity_kind ?? "resource"}</span>{" "}
+                {situation.entity ?? situation.title}
+              </p>
+            </div>
+          </RailPanel>
+        )}
+
+        {situation && situation.providers.length > 0 && (
+          <RailPanel title="Services involved">
+            <ul className="flex flex-col gap-2 px-3 pb-3">
+              {situation.providers.map((p) => {
+                const Glyph = PROVIDER_GLYPH[p];
+                return (
+                  <li key={p} className="flex items-center gap-2 text-caption text-ink-dim">
+                    <span className="flex h-5 w-5 flex-none items-center justify-center rounded-sm" aria-hidden="true">
+                      {Glyph ? <Glyph /> : null}
+                    </span>
+                    {PROVIDER_LABEL[p] ?? p}
+                  </li>
+                );
+              })}
+            </ul>
+          </RailPanel>
+        )}
+
+        <MemoryRailPanel memory={intel.memories[0]} />
+        <WatchingRailPanel intel={intel} />
+      </div>
+    </aside>
+  );
+}
+
+export function RailPanel({
   title,
   to,
   icon,

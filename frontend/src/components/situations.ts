@@ -1,3 +1,6 @@
+import type { IconName } from "./ui/Icon";
+import type { Tone } from "./ui/Badge";
+
 /** Shared vocabulary for the Situation surfaces.
  *
  *  Kept in one module because the severity ladder and provider names have to
@@ -7,11 +10,28 @@
 
 /** The one severity ladder, expressed in the app's own Tailwind tokens rather
  *  than raw hex - `crit`/`warn`/`watch` already mean exactly this everywhere
- *  else, and a second colour source would be a second design system. */
-export const SEVERITY: Record<string, { label: string; dot: string; text: string; stripe: string }> = {
-  critical: { label: "Critical", dot: "bg-crit", text: "text-crit", stripe: "border-l-crit" },
-  review: { label: "Review", dot: "bg-warn", text: "text-warn", stripe: "border-l-warn" },
-  reminder: { label: "Reminder", dot: "bg-watch", text: "text-watch", stripe: "border-l-watch" },
+ *  else, and a second colour source would be a second design system.
+ *
+ *  Correlation only ever produces three real severities - there is no fourth
+ *  "medium" step to invent for it, unlike the four-step attention priority
+ *  scale (`priorityOf`) below. `tone` and `icon` let a card or badge consume
+ *  this ladder directly instead of re-deriving classes per page. */
+export const SEVERITY: Record<
+  string,
+  { label: string; tone: Tone; icon: IconName; dot: string; text: string; bg: string; stripe: string }
+> = {
+  critical: {
+    label: "Critical", tone: "crit", icon: "alert",
+    dot: "bg-crit", text: "text-crit", bg: "bg-crit/10", stripe: "border-l-crit",
+  },
+  review: {
+    label: "Review", tone: "warn", icon: "clock",
+    dot: "bg-warn", text: "text-warn", bg: "bg-warn/10", stripe: "border-l-warn",
+  },
+  reminder: {
+    label: "Reminder", tone: "watch", icon: "activity",
+    dot: "bg-watch", text: "text-watch", bg: "bg-watch/10", stripe: "border-l-watch",
+  },
 };
 
 export function severityOf(raw: string | null | undefined) {

@@ -92,3 +92,22 @@ export function DriveIcon() {
     </svg>
   );
 }
+
+/** Provider id -> its icon, for the compact icon rows on Situation cards.
+ *  Falls back to the family mark for a Microsoft/Google sub-service that has
+ *  no icon of its own yet, rather than a second, duplicate glyph. */
+export const PROVIDER_GLYPH: Record<string, () => ReturnType<typeof GoogleIcon>> = {
+  gmail: MailIcon,
+  google_calendar: CalendarIcon,
+  google_drive: DriveIcon,
+  github: GitHubIcon,
+  slack: SlackIcon,
+  zoom: ZoomIcon,
+  notion: NotionIcon,
+  microsoft_outlook_mail: MicrosoftIcon,
+  microsoft_outlook_calendar: MicrosoftIcon,
+  microsoft_todo: MicrosoftIcon,
+  microsoft_onedrive: MicrosoftIcon,
+  microsoft_onenote: MicrosoftIcon,
+  microsoft_teams: MicrosoftIcon,
+};

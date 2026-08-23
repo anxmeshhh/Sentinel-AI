@@ -4,9 +4,12 @@
     GET  /memory/announcements   newly learned memories, surfaced once each
     POST /memory/{id}/forget     forget a memory
 
-Scope is derived server-side (personal), never accepted as a parameter, so one
-person's memory is never read into another's - the same rule as every other
-scoped surface.
+    GET  /teams/{id}/memory      what Sentinel remembers for one channel
+
+Scope is derived server-side, never accepted as a parameter, so one person's
+memory is never read into another's - the same rule as every other scoped
+surface. The channel read takes its scope from the channel and gates on
+membership, so the Individual -> never -> Collective boundary is unchanged.
 """
 
 import uuid
@@ -14,13 +17,20 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, get_workspace_id
+from app.api.deps import get_current_user, get_db, get_workspace_id, require_channel_role
 from app.models.memory import Memory
+from app.models.team import ChannelRole
 from app.models.user import User
-from app.services.investigation import personal_scope
+from app.services.investigation import channel_scope, personal_scope
 from app.services.memory_engine import forget_memory, list_memories, pending_announcements
 
 router = APIRouter(prefix="/memory", tags=["memory"])
+
+# Channel-scoped read on a second, un-prefixed router - its path is /teams/...,
+# not /memory/... Same shape goals.py uses; both are registered in main.py.
+channel_router = APIRouter(tags=["memory"])
+
+_ANY_MEMBER = [ChannelRole.CHANNEL_ADMIN, ChannelRole.CHANNEL_MEMBER]
 
 
 def _out(m: Memory) -> dict:
@@ -46,6 +56,26 @@ def get_memories(
 ) -> list[dict]:
     scope = personal_scope(session, workspace_id, user.id)
     return [_out(m) for m in list_memories(session, scope)]
+
+
+@channel_router.get("/teams/{team_id}/memory")
+def get_channel_memories(
+    team_id: uuid.UUID,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    """What Sentinel has learned about this channel.
+
+    The Memory Engine already writes these: refresh_memory runs for every
+    active scope on each sync, channels included - there was simply no route
+    to read a channel's, so the rows existed and were unreachable. This adds
+    the read and nothing else: no new recurrence rule, no new decay, no new
+    threshold. Forgetting stays personal-only on purpose - a channel memory is
+    shared state, and who may retire it is a separate decision from who may
+    read it.
+    """
+    require_channel_role(session, user, team_id, allowed=_ANY_MEMBER)
+    return [_out(m) for m in list_memories(session, channel_scope(session, team_id))]
 
 
 @router.get("/announcements")

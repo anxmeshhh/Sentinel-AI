@@ -54,9 +54,12 @@ export function MailPage() {
   const [summaryOpen, setSummaryOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    api.get<Connection[]>("/connections").then((conns) => {
-      setConnected(conns.some((c) => c.provider === "gmail"));
-    });
+    api
+      .get<Connection[]>("/connections")
+      .then((conns) => setConnected(conns.some((c) => c.provider === "gmail")))
+      // See CalendarPage: an unhandled rejection here leaves `connected`
+      // null and the page stuck in its loading state.
+      .catch(() => setConnected(false));
   }, []);
 
   useEffect(() => {

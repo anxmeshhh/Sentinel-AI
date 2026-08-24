@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -131,7 +131,11 @@ def weekly_trends(
     critical (how much was urgent). Read together they separate "a quieter
     week" from "the same week, noticed less".
     """
-    now = now or datetime.now(tz=None).astimezone()
+    # UTC, like every other now() in the codebase. UTCDateTime converts an
+    # aware value on bind so a local-aware default would still have compared
+    # correctly, but the window arithmetic below happens before that
+    # conversion and there is no reason for it to run in local time.
+    now = now or datetime.now(timezone.utc)
     this_start = now - WEEK
     last_start = now - (WEEK * 2)
 

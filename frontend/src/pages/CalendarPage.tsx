@@ -41,9 +41,14 @@ export function CalendarPage() {
   );
 
   useEffect(() => {
-    api.get<Connection[]>("/connections").then((conns) => {
-      setConnected(conns.some((c) => c.provider === "google_calendar"));
-    });
+    api
+      .get<Connection[]>("/connections")
+      .then((conns) => setConnected(conns.some((c) => c.provider === "google_calendar")))
+      // Without this the promise rejects unhandled and `connected` stays
+      // null forever, so the page sits in its loading state with nothing to
+      // click. Treating "could not check" as "not connected" at least renders
+      // the connect prompt, which is recoverable.
+      .catch(() => setConnected(false));
   }, []);
 
   useEffect(() => {

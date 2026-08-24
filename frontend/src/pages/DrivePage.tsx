@@ -35,7 +35,10 @@ export function DrivePage() {
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
 
   useEffect(() => {
-    api.get<Connection[]>("/connections").then((conns) => setConnected(conns.some((c) => c.provider === "google_drive")));
+    api
+      .get<Connection[]>("/connections")
+      .then((conns) => setConnected(conns.some((c) => c.provider === "google_drive")))
+      .catch(() => setConnected(false));
   }, []);
 
   useEffect(() => {

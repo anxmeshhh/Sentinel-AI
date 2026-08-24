@@ -29,15 +29,25 @@ export function AdminPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [error, setError] = useState<string | null>(null);
+
   async function loadAll() {
-    const [s, r, l] = await Promise.all([
-      api.get<SystemStats>("/admin/stats"),
-      api.get<AgentRun[]>("/admin/runs?limit=50"),
-      api.get<LogLine[]>("/admin/logs?limit=200"),
-    ]);
-    setStats(s);
-    setRuns(r);
-    setLogs(l);
+    // Guarded because this also runs on a 5-second timer: an unguarded
+    // rejection here was not one error, it was one every five seconds, and
+    // the page showed nothing either way.
+    try {
+      const [s, r, l] = await Promise.all([
+        api.get<SystemStats>("/admin/stats"),
+        api.get<AgentRun[]>("/admin/runs?limit=50"),
+        api.get<LogLine[]>("/admin/logs?limit=200"),
+      ]);
+      setStats(s);
+      setRuns(r);
+      setLogs(l);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't load operator data");
+    }
   }
 
   useEffect(() => {
@@ -72,6 +82,8 @@ export function AdminPage() {
         </div>
         }
       />
+
+      {error && <p className="mb-4 text-caption text-crit">{error}</p>}
 
       {stats && <StatsRow stats={stats} />}
 

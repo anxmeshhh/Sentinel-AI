@@ -38,9 +38,12 @@ export function MeetPage() {
   const brief = useMeetingBrief();
 
   useEffect(() => {
-    api.get<Connection[]>("/connections").then((conns) => {
-      setConnected(conns.some((c) => c.provider === "google_calendar"));
-    });
+    api
+      .get<Connection[]>("/connections")
+      .then((conns) => setConnected(conns.some((c) => c.provider === "google_calendar")))
+      // See CalendarPage: an unhandled rejection here leaves `connected`
+      // null and the page stuck in its loading state.
+      .catch(() => setConnected(false));
   }, []);
 
   useEffect(() => {

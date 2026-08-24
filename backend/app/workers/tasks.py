@@ -97,6 +97,12 @@ def ingest_connection(self, connection_id: str, triggered_by: str = TriggeredBy.
         try:
             refresh_attention(session, connection.workspace_id)
         except Exception:
+            # Roll back before the next stage. A stage that dies mid-transaction
+            # leaves the session unable to execute anything, so without this a
+            # single failure here silently took proactive, intelligence,
+            # commitments and goals down with it - on every scheduled sync, with
+            # no 500 to notice it by. Same fix as services/sync_now.py.
+            session.rollback()
             logger.exception("attention_refresh_failed", workspace_id=str(connection.workspace_id))
         # Proactive detection rides the same sync, for the same reason:
         # fresh signals are exactly when a situation might have emerged,
@@ -106,6 +112,7 @@ def ingest_connection(self, connection_id: str, triggered_by: str = TriggeredBy.
         try:
             refresh_proactive_for_workspace(session, connection.workspace_id)
         except Exception:
+            session.rollback()
             logger.exception("proactive_refresh_failed", workspace_id=str(connection.workspace_id))
         # Intelligence Core (Phases 2 & 3) rides the same sync: derive entities
         # from the fresh findings and correlate them into cross-provider
@@ -114,12 +121,14 @@ def ingest_connection(self, connection_id: str, triggered_by: str = TriggeredBy.
         try:
             refresh_intelligence_for_workspace(session, connection.workspace_id)
         except Exception:
+            session.rollback()
             logger.exception("intelligence_refresh_failed", workspace_id=str(connection.workspace_id))
         # Commitments age on the same cycle. Purely deterministic - dates and
         # source state, no LLM - so this is milliseconds and costs nothing.
         try:
             refresh_commitments_for_workspace(session, connection.workspace_id)
         except Exception:
+            session.rollback()
             logger.exception("commitment_refresh_failed", workspace_id=str(connection.workspace_id))
         # Goals sit above the others, so they are reassessed last - by now
         # attention, situations and commitments all reflect this sync.
@@ -136,6 +145,7 @@ def ingest_connection(self, connection_id: str, triggered_by: str = TriggeredBy.
                 scope_keys=affected_scope_keys(session, connection.workspace_id),
             )
         except Exception:
+            session.rollback()
             logger.exception("goal_reassess_failed", workspace_id=str(connection.workspace_id))
         # The legacy LangGraph agent/Brief pipeline is the one part of this
         # cycle that is NOT change-gated internally, so it is gated here.

@@ -45,6 +45,15 @@ from app.api.routes import (
 )
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
+from app.integrations.github_auth import GitHubAuthError
+from app.integrations.github_client import GitHubClientError
+from app.integrations.google_auth import GoogleAuthError
+from app.integrations.graph_client import GraphError
+from app.integrations.microsoft_auth import MicrosoftAuthError
+from app.integrations.slack_auth import SlackAuthError
+from app.integrations.slack_client import SlackClientError
+from app.integrations.zoom_auth import ZoomAuthError
+from app.integrations.zoom_client import ZoomError
 
 logger = get_logger("sentinel.api")
 
@@ -58,6 +67,74 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Sentinel AI", version="0.1.0", lifespan=lifespan)
+
+
+# --- provider failures are not Sentinel failures ---------------------------
+#
+# A revoked token or a provider outage is the single most likely thing to go
+# wrong in production, and until now every one of them surfaced as a generic
+# 500: "Something went wrong on Sentinel's side - the details have been
+# logged." That is both wrong and useless. Nothing went wrong on Sentinel's
+# side, and the one thing the person could actually do about it - reconnect
+# the account - went unsaid.
+#
+# Registered once here rather than wrapped around ~10 call sites across
+# calendar, mail, drive, workspace and integrations, because the next route to
+# call a provider would otherwise have to remember, and would not.
+#
+# 502 rather than 500: the request was fine, an upstream dependency was not.
+_PROVIDER_AUTH_ERRORS: tuple[type[Exception], ...] = (
+    GoogleAuthError,
+    MicrosoftAuthError,
+    ZoomAuthError,
+    SlackAuthError,
+    GitHubAuthError,
+)
+_PROVIDER_API_ERRORS: tuple[type[Exception], ...] = (
+    GraphError,
+    SlackClientError,
+    GitHubClientError,
+    ZoomError,
+)
+
+
+async def handle_provider_auth_error(request, exc):
+    """The connection needs re-authorizing. Say so."""
+    logger.warning(
+        "provider_auth_failed", path=str(request.url.path), error=str(exc)[:200],
+        kind=type(exc).__name__,
+    )
+    return JSONResponse(
+        status_code=502,
+        content={
+            "detail": (
+                "That connection needs to be reconnected - its authorization has "
+                "expired or was revoked. Open Connections to reconnect it."
+            )
+        },
+    )
+
+
+async def handle_provider_api_error(request, exc):
+    """The provider refused or was unreachable. Not our bug, and not fatal."""
+    logger.warning(
+        "provider_call_failed", path=str(request.url.path), error=str(exc)[:200],
+        kind=type(exc).__name__,
+    )
+    return JSONResponse(
+        status_code=502,
+        content={"detail": "The provider could not be reached just now - please try again in a moment."},
+    )
+
+
+# Registered one class at a time, deliberately. Starlette resolves a handler by
+# walking type(exc).__mro__ and looking each class up as a dict key, so passing
+# a TUPLE registers the tuple itself as the key and the handler never fires -
+# silently, which is the worst way for error handling to be wrong.
+for _exc in _PROVIDER_AUTH_ERRORS:
+    app.add_exception_handler(_exc, handle_provider_auth_error)
+for _exc in _PROVIDER_API_ERRORS:
+    app.add_exception_handler(_exc, handle_provider_api_error)
 
 
 @app.middleware("http")

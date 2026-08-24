@@ -218,7 +218,7 @@ function ServiceHeader({
       <div className="flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-md bg-surface-2">{icon}</div>
         <div>
-          <h1 className="text-h2 font-medium leading-tight text-balance">{title}</h1>
+          <h1 className="text-h2 font-semibold tracking-tight text-ink">{title}</h1>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-caption text-ink-faint">
             <span className={`font-semibold ${tone}`}>{loading ? "…" : label}</span>
             {intel?.account && <span>· {intel.account}</span>}

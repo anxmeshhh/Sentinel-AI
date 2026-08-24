@@ -169,7 +169,7 @@ export function ConnectionWorkspacePage() {
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-md bg-surface-2">{meta.icon}</div>
               <div>
-                <h1 className="text-h2 font-medium text-balance">{meta.label}</h1>
+                <h1 className="text-h2 font-semibold tracking-tight text-ink">{meta.label}</h1>
                 {isRealFamily && !loading && familyProviders.length > 0 && (
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-caption text-ink-faint">
                     <span className={`font-semibold ${connectedCount > 0 ? "text-good" : "text-ink-faint"}`}>

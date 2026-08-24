@@ -134,6 +134,29 @@ export function Sidebar({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        {/* Which Sentinel these links lead to.
+            Personal and group intelligence are the same engines run with a
+            different Scope, so the nav under this label is identical either
+            way - which is exactly why the label has to be here. Without it
+            the only clue was the workspace name in the account footer, and
+            "whose findings am I looking at" is not a question a person should
+            have to answer by checking the bottom of the sidebar. */}
+        {!collapsed && (
+          <div className="mb-1.5 flex items-center gap-2 px-2.5">
+            <Icon
+              name={isPersonal ? "user" : "grid"}
+              size={12}
+              className="flex-none text-ink-faint"
+            />
+            <span
+              className="truncate text-micro font-semibold uppercase tracking-wide text-ink-faint"
+              title={isPersonal ? "Personal" : active?.name.trim()}
+            >
+              {isPersonal ? "Personal" : (active?.name.trim() || "Workspace")}
+            </span>
+          </div>
+        )}
+
         <nav className="flex flex-col gap-0.5">
           <Row to="/assistant" label="Assistant" icon="sparkle" collapsed={collapsed} primary />
           {PRIMARY.map((r) => (

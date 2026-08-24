@@ -17,7 +17,7 @@ import { MembersModule } from "../components/channel/MembersModule";
 import { NotBuiltModule } from "../components/channel/NotBuiltModule";
 import { SentinelModule } from "../components/channel/SentinelModule";
 import { SettingsModule } from "../components/channel/SettingsModule";
-import { LoadingBlock } from "../components/ui";
+import { Badge, LoadingBlock, PageHeader } from "../components/ui";
 
 const DEFAULT_MODULE: ChannelModuleKey = "sentinel";
 
@@ -96,27 +96,25 @@ export function ChannelWorkspacePage() {
     <div className="w-full">
       {path && <ChannelBreadcrumb path={path} />}
 
-      <div className="mb-7 flex flex-col gap-4 sm:mb-9 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-h2 font-medium text-balance">
-            {team.icon ? `${team.icon} ` : "#"}
-            {team.name}
-          </h1>
-          {team.description && <p className="mt-2 max-w-[54ch] text-body text-ink-dim">{team.description}</p>}
-        </div>
-        <div className="flex items-center gap-2">
-          {team.privacy !== "public" && (
-            <span className="rounded-full border border-border px-2 py-0.5 text-micro text-ink-faint">
-              {team.privacy === "private" ? "PRIVATE" : "INVITE ONLY"}
-            </span>
-          )}
-          {isAdmin && (
-            <span className="rounded-full border border-brand/35 bg-brand/10 px-2.5 py-0.5 label-sub text-brand">
-              CHANNEL ADMIN
-            </span>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        eyebrow={path?.workspace_name}
+        title={`${team.icon ? `${team.icon} ` : "#"}${team.name}`}
+        description={team.description || undefined}
+        actions={
+          <>
+            {/* Privacy and role, as the same Badge every other status in the
+                product uses. What a member may DO here is not guessable from
+                the modules on screen, so the role is stated rather than
+                discovered by clicking something that then refuses. */}
+            {team.privacy !== "public" && (
+              <Badge tone="outline">{team.privacy === "private" ? "Private" : "Invite only"}</Badge>
+            )}
+            <Badge tone={isAdmin ? "accent" : "neutral"}>
+              {isAdmin ? "Channel admin" : "Member"}
+            </Badge>
+          </>
+        }
+      />
 
       {team.is_archived && (
         <div className="mb-4 rounded-md border border-watch/40 bg-watch/5 px-4 py-3 text-small text-watch">

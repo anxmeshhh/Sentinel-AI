@@ -31,7 +31,7 @@ export function FindingDetailPage() {
       <BackNav back={{ to: "/", label: "Today's Brief" }} crumbs={[{ label: "Dashboard", to: "/" }, { label: "Finding" }]} />
       <div className="mb-1 flex flex-wrap items-center gap-2.5">
         <SeverityChip severity={severity} />
-        <h1 className="text-h2 font-medium text-balance">{finding.summary}</h1>
+        <h1 className="text-h2 font-semibold tracking-tight text-ink">{finding.summary}</h1>
       </div>
       <p className="mb-6 text-body text-ink-dim">
         {finding.agent} agent · {Math.round(finding.confidence * 100)}% confidence

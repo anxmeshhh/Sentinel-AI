@@ -110,7 +110,7 @@ export function SituationDetailPage() {
               {data.occurrence_count > 1 && <Badge tone="warn">Seen {data.occurrence_count} times</Badge>}
             </div>
 
-            <h1 className={`text-h2 font-semibold text-balance ${resolved ? "text-ink-dim" : "text-ink"}`}>
+            <h1 className={`text-h2 font-semibold tracking-tight ${resolved ? "text-ink-dim" : "text-ink"}`}>
               {data.entity ?? data.title}
             </h1>
             <p className="mt-1.5 text-caption text-ink-faint">

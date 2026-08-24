@@ -397,6 +397,7 @@ def refresh_attention(
         + _detect_bus_factor(session, workspace_id, now)
         + _detect_stale_issues(session, workspace_id, now)
         + _detect_stale_documents(session, workspace_id, now)
+        + _detect_thread_stalls(session, workspace_id, now)
     ):
         detected[candidate["dedupe_key"]] = candidate
 
@@ -1193,6 +1194,105 @@ def _detect_stale_documents(session: Session, workspace_id: uuid.UUID, now: date
             "priority": 0.35,
         })
         if len(candidates) >= DOC_STALE_CAP:
+            break
+    return candidates
+
+
+THREAD_STALL_DAYS = 3
+THREAD_STALL_CAP = 5
+THREAD_STALL_LOOKBACK_DAYS = 30
+
+
+def _mailbox_owner(connection: Connection) -> str | None:
+    """The address this mailbox belongs to, or None.
+
+    Direction is the whole detector: "waiting on you" and "waiting on them"
+    are opposite facts, and telling someone to reply to a thread they already
+    answered is exactly the false-urgent this module refuses to produce. So
+    the owner has to be established, not assumed - both fields are tried, and
+    a connection whose owner cannot be identified is skipped entirely rather
+    than guessed at.
+    """
+    for candidate in (connection.org, connection.github_login):
+        address = extract_address(candidate)
+        if address:
+            return address
+    return None
+
+
+def _detect_thread_stalls(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """A conversation where the other side spoke last and nobody replied.
+
+    Deliberately narrower than _detect_unanswered_mail, which aggregates
+    unread important mail per mailbox. This is about a real back-and-forth
+    that stopped: a thread needs at least two messages before it counts as a
+    conversation, so a single cold inbound email stays that detector's job and
+    the two never describe the same fact.
+
+    Bulk mail is excluded - a newsletter thread is not waiting on anyone.
+    """
+    since = now - timedelta(days=THREAD_STALL_LOOKBACK_DAYS)
+    cutoff = now - timedelta(days=THREAD_STALL_DAYS)
+
+    rows = session.execute(
+        select(Signal, Connection)
+        .join(Connection, Connection.id == Signal.connection_id)
+        .where(
+            Signal.workspace_id == workspace_id,
+            Signal.type == SignalType.EMAIL,
+            Signal.occurred_at >= since,
+            Connection.paused_at.is_(None),
+        )
+        .order_by(Signal.occurred_at.asc())
+    ).all()
+
+    # thread_id is per-mailbox, so the connection is part of the key - two
+    # mailboxes could otherwise collide on a provider's thread id.
+    threads: dict = {}
+    owners: dict = {}
+    for sig, conn in rows:
+        owner = owners.get(conn.id)
+        if owner is None:
+            owner = _mailbox_owner(conn)
+            if owner is None:
+                continue  # fail closed: direction is unknowable here
+            owners[conn.id] = owner
+
+        payload = sig.payload or {}
+        if payload.get("is_bulk"):
+            continue
+        thread_id = payload.get("thread_id")
+        if not thread_id:
+            continue
+        threads.setdefault((conn.id, thread_id), {"conn": conn, "owner": owner, "msgs": []})["msgs"].append(sig)
+
+    candidates: list[dict] = []
+    for (connection_id, thread_id), entry in threads.items():
+        msgs = entry["msgs"]
+        if len(msgs) < 2:
+            continue  # not a conversation yet - that is unanswered_mail's job
+
+        last = msgs[-1]
+        if last.occurred_at > cutoff:
+            continue  # still fresh; not stalled
+
+        sender = extract_address((last.payload or {}).get("from"))
+        if sender is None or sender == entry["owner"]:
+            continue  # we spoke last, so nothing is waiting on us
+
+        age = _age_days(now, last.occurred_at)
+        subject = (last.payload or {}).get("subject") or "(no subject)"
+        candidates.append({
+            "dedupe_key": f"thread_stall:{connection_id}:{thread_id}",
+            "connection_id": connection_id,
+            "type": AttentionType.THREAD_STALL,
+            "source_provider": entry["conn"].provider.value,
+            "title": subject,
+            "why": f"{sender} replied {age} days ago and the thread stopped - {len(msgs)} messages, waiting on you",
+            "evidence_url": (last.payload or {}).get("url"),
+            "priority": 0.62,
+        })
+        if len(candidates) >= THREAD_STALL_CAP:
             break
     return candidates
 

@@ -697,6 +697,23 @@ export interface SentinelStatus {
   last_synced_at: string | null;
   providers: ProviderStatus[];
   errors: string[];
+  /** Week-over-week movement, computed server-side from stored history.
+   *  The only part of this card that says whether things are getting better
+   *  or worse rather than what is true now. */
+  trends: TrendPoint[];
+  risk_direction: "rising" | "easing" | "steady";
+}
+
+/** One measure across two consecutive weeks. Mirrors services/trends.py.
+ *  `percent_change` is null when there is no baseline - a jump from zero is
+ *  not a percentage. */
+export interface TrendPoint {
+  label: string;
+  current: number;
+  previous: number;
+  delta: number;
+  direction: "up" | "down" | "flat";
+  percent_change: number | null;
 }
 
 /** POST /sync - a real, synchronous full refresh: provider pull through the

@@ -62,6 +62,11 @@ class SentinelStatusOut(BaseModel):
     last_synced_at: datetime | None
     providers: list[ProviderStatusOut]
     errors: list[str]  # every provider error, flattened, for the status banner
+    # Week-over-week movement, computed from stored history (services/trends.py).
+    # The only part of this card that answers "is it getting better or worse"
+    # rather than "what is true now". Deterministic counts, no LLM.
+    trends: list[dict] = []
+    risk_direction: str = "steady"  # rising | easing | steady
 
 
 class ChannelBriefingOut(BaseModel):

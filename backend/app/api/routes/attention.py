@@ -38,6 +38,7 @@ from app.services.action_registry import ActionRejected
 from app.services.actions import execute_action, propose_action
 from app.services.attention_engine import list_attention, owns_attention_item, refresh_attention
 from app.services.catchup import build_catchup
+from app.services.trends import risk_direction, weekly_trends
 
 router = APIRouter(prefix="/attention", tags=["attention"])
 
@@ -300,6 +301,9 @@ def sentinel_status(
     summary = _operational_summary(situations, detected)
     last_synced = max((c.last_synced_at for c in connections if c.last_synced_at is not None), default=None)
 
+    trends = weekly_trends(
+        session, workspace_id, {c.id for c in connections}, now=datetime.now(timezone.utc)
+    )
     return SentinelStatusOut(
         healthy=not errors,
         provider_count=len(providers),
@@ -316,6 +320,11 @@ def sentinel_status(
         last_synced_at=last_synced,
         providers=providers,
         errors=errors,
+        # Composed, not computed here: trends is a small deterministic reader
+        # over stored history, so the executive view gains a direction without
+        # gaining a second intelligence system.
+        trends=[t.to_dict() for t in trends],
+        risk_direction=risk_direction(trends),
     )
 
 

@@ -57,6 +57,15 @@ class CommunicationAgent(SpecialistAgent):
         emails = [s for s in signals if s.type == SignalType.EMAIL]
         events = [s for s in signals if s.type == SignalType.CALENDAR_EVENT]
 
+        # RETIRED, not deleted: calendar overload now has a deterministic
+        # equivalent in attention_engine (_detect_meeting_overload), which
+        # measures the same thing - hours booked in a week - from the same
+        # calendar signals, without an LLM call. Kept callable so the decision
+        # is reversible; simply no longer called.
+        #
+        # stale-flagged-mail and spam-surge still run: both read Gmail label
+        # state that the attention detectors deliberately treat differently
+        # (noise filtering rather than volume), so neither has an equivalent.
         candidates: list[dict] = []
         stale = self._detect_stale_flagged_mail(emails)
         if stale:
@@ -64,7 +73,6 @@ class CommunicationAgent(SpecialistAgent):
         surge = self._detect_spam_surge(emails)
         if surge:
             candidates.append(surge)
-        candidates.extend(self._detect_calendar_overload(events))
 
         if not candidates:
             return []

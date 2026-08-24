@@ -207,4 +207,16 @@ export const ATTENTION_ICON: Record<string, string> = {
   conversation_mention: "hash",
   conversation_blocker: "alert",
   conversation_urgent: "alert",
+  task_overdue: "clock",
+  task_due_today: "clock",
+  // Existing-data intelligence. Each reads as what it is before its words
+  // are read: a calendar problem, a code-review problem, a document problem.
+  meeting_conflict: "calendar",
+  meeting_overload: "calendar",
+  pr_slow_merge: "layers",
+  review_bottleneck: "layers",
+  bus_factor: "user",
+  issue_stale: "flag",
+  thread_stall: "mail",
+  doc_stale: "file",
 };

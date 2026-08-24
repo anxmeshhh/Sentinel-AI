@@ -387,6 +387,16 @@ def refresh_attention(
         + _detect_conversation_urgent(session, workspace_id, now)
         + _detect_overdue_tasks(session, workspace_id, now)
         + _detect_tasks_due_today(session, workspace_id, now)
+        # Existing-data intelligence. Deterministic, no LLM, and each one
+        # produces its own AttentionType so the Situation Engine can correlate
+        # by kind rather than lumping them into a generic "finding".
+        + _detect_meeting_conflicts(session, workspace_id, now)
+        + _detect_meeting_overload(session, workspace_id, now)
+        + _detect_slow_merges(session, workspace_id, now)
+        + _detect_review_bottleneck(session, workspace_id, now)
+        + _detect_bus_factor(session, workspace_id, now)
+        + _detect_stale_issues(session, workspace_id, now)
+        + _detect_stale_documents(session, workspace_id, now)
     ):
         detected[candidate["dedupe_key"]] = candidate
 
@@ -788,6 +798,403 @@ def _deadline_priority(now: datetime, due: datetime) -> float:
     if days <= 7:
         return 0.68
     return 0.58
+
+
+# --- existing-data intelligence -------------------------------------------
+#
+# Everything below is computed from signals Sentinel already ingests. No new
+# provider, no new field, and no LLM anywhere in this section: each detector
+# is arithmetic over stored payloads, so every item it produces traces back to
+# a real row. Caps and thresholds stay conservative for the same reason as the
+# rest of this module - a wrong "urgent" costs more than a missed one.
+
+MEETING_CONFLICT_CAP = 5
+MEETING_OVERLOAD_HOURS = 20  # per 7 days, before a calendar counts as crowded
+MEETING_CONFLICT_HORIZON_DAYS = 14
+
+
+def _event_window(payload: dict) -> tuple[datetime, datetime] | None:
+    """A calendar event's real span, or None when it is unusable or cancelled."""
+    if (payload.get("status") or "confirmed") == "cancelled":
+        return None
+    start_raw, end_raw = payload.get("start"), payload.get("end")
+    if not start_raw or not end_raw:
+        return None
+    # All-day events carry a date, not a time. They do not "conflict" with a
+    # 30-minute call in any way a person would recognise, so they are skipped
+    # rather than treated as a 24-hour block that collides with everything.
+    if "T" not in str(start_raw):
+        return None
+    try:
+        start = datetime.fromisoformat(str(start_raw).replace("Z", "+00:00"))
+        end = datetime.fromisoformat(str(end_raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    return (start, end) if end > start else None
+
+
+def _upcoming_events(session: Session, workspace_id: uuid.UUID, now: datetime, until: datetime):
+    return session.execute(
+        select(Signal, Connection)
+        .join(Connection, Connection.id == Signal.connection_id)
+        .where(
+            Signal.workspace_id == workspace_id,
+            Signal.type == SignalType.CALENDAR_EVENT,
+            Signal.occurred_at >= now,
+            Signal.occurred_at <= until,
+            Connection.paused_at.is_(None),
+        )
+        .order_by(Signal.occurred_at.asc())
+    ).all()
+
+
+def _detect_meeting_conflicts(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """Two upcoming meetings on the same calendar that overlap in time.
+
+    Double-booking is the clearest calendar fact there is: it needs no
+    inference, only arithmetic on start and end, and only the person holding
+    the calendar can resolve it. Grouped per connection deliberately - two
+    different people being busy at the same time is not a conflict, and
+    comparing across members would both invent one and cross the privacy
+    boundary the rest of the system enforces.
+    """
+    rows = _upcoming_events(
+        session, workspace_id, now, now + timedelta(days=MEETING_CONFLICT_HORIZON_DAYS)
+    )
+
+    by_connection: dict = {}
+    for sig, conn in rows:
+        window = _event_window(sig.payload or {})
+        if window is None:
+            continue
+        by_connection.setdefault(conn.id, []).append((sig, conn, window[0], window[1]))
+
+    candidates: list[dict] = []
+    for events in by_connection.values():
+        events.sort(key=lambda e: e[2])
+        for i in range(len(events) - 1):
+            sig_a, conn, start_a, end_a = events[i]
+            sig_b, _, start_b, end_b = events[i + 1]
+            if start_b >= end_a:
+                continue
+            overlap = int((min(end_a, end_b) - start_b).total_seconds() // 60)
+            if overlap < 1:
+                continue
+            title_a = (sig_a.payload or {}).get("title") or "(no title)"
+            title_b = (sig_b.payload or {}).get("title") or "(no title)"
+            # Keyed on both events, sorted, so the pair produces exactly one
+            # item and the key is stable whichever order they were read in.
+            pair = ":".join(sorted([sig_a.external_id, sig_b.external_id]))
+            candidates.append({
+                "dedupe_key": f"meeting_conflict:{pair}",
+                "connection_id": conn.id,
+                "type": AttentionType.MEETING_CONFLICT,
+                "source_provider": conn.provider.value,
+                "title": f"Double-booked: {title_a} overlaps {title_b}",
+                "why": f"{overlap} minute overlap on {start_b.strftime('%d %b')} - one of them needs moving",
+                "evidence_url": (sig_b.payload or {}).get("url"),
+                "priority": 0.72,
+                "due_at": start_b,
+            })
+            if len(candidates) >= MEETING_CONFLICT_CAP:
+                return candidates
+    return candidates
+
+
+def _detect_meeting_overload(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """A week that is mostly meetings.
+
+    Aggregated to ONE item per calendar, like unanswered mail: listing every
+    meeting would be exactly the noise this is meant to describe. Only the next
+    seven days count - a crowded week you can no longer change is history
+    rather than attention.
+    """
+    rows = _upcoming_events(session, workspace_id, now, now + timedelta(days=7))
+
+    minutes: dict = {}
+    counts: dict = {}
+    conns: dict = {}
+    for sig, conn in rows:
+        window = _event_window(sig.payload or {})
+        if window is None:
+            continue
+        start, end = window
+        minutes[conn.id] = minutes.get(conn.id, 0.0) + (end - start).total_seconds() / 60
+        counts[conn.id] = counts.get(conn.id, 0) + 1
+        conns[conn.id] = conn
+
+    candidates: list[dict] = []
+    for connection_id, total in sorted(minutes.items(), key=lambda kv: -kv[1]):
+        hours = total / 60
+        if hours < MEETING_OVERLOAD_HOURS:
+            continue
+        candidates.append({
+            "dedupe_key": f"meeting_overload:{connection_id}",
+            "connection_id": connection_id,
+            "type": AttentionType.MEETING_OVERLOAD,
+            "source_provider": conns[connection_id].provider.value,
+            "title": f"{round(hours)} hours of meetings in the next 7 days",
+            "why": f"{counts[connection_id]} meetings booked - little room left for focused work",
+            "evidence_url": None,
+            "priority": 0.5,
+        })
+    return candidates
+
+
+# --- engineering, deterministically ---------------------------------------
+#
+# These replace what the LangGraph engineering agent inferred behind an LLM
+# call. The underlying facts - merge timestamps, requested reviewers, PR
+# authors, changed directories - were always in the payloads; narrating them
+# through a model added cost and a fresh duplicate row per run without adding
+# information. See agents/engineering_agent.py for what is now retired.
+
+PR_SLOW_MERGE_DAYS = 7
+PR_SLOW_MERGE_CAP = 3
+REVIEW_BOTTLENECK_MIN = 4  # open PRs on one reviewer before it counts as a queue
+REVIEW_BOTTLENECK_CAP = 3
+BUS_FACTOR_MIN_PRS = 5  # a directory needs real activity before it counts
+BUS_FACTOR_CAP = 3
+ISSUE_STALE_DAYS = 21
+ISSUE_STALE_CAP = 5
+ENGINEERING_LOOKBACK_DAYS = 30
+DOC_STALE_DAYS = 90
+DOC_STALE_CAP = 3
+
+
+def _iso(value) -> datetime | None:
+    """Parse an ISO timestamp from a payload, or None. Payload values are
+    provider strings, so they are never trusted to parse."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _github_signals(session: Session, workspace_id: uuid.UUID, sig_type: SignalType, since: datetime):
+    return session.execute(
+        select(Signal, Connection)
+        .join(Connection, Connection.id == Signal.connection_id)
+        .where(
+            Signal.workspace_id == workspace_id,
+            Signal.type == sig_type,
+            Signal.occurred_at >= since,
+            Connection.provider == Provider.GITHUB,
+            Connection.paused_at.is_(None),
+        )
+        .order_by(Signal.occurred_at.desc())
+    ).all()
+
+
+def _detect_slow_merges(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """Pull requests that took a long time to merge.
+
+    Distinct from a stale PR, which is still open: this is about a repository
+    whose merged work sat for a week first. The fact it reports is that the
+    review pipeline is slow, not that any one PR needs action, so it is
+    aggregated to one item per repository and uses the median rather than the
+    worst case - one long-running PR is a story, not a pattern.
+    """
+    since = now - timedelta(days=ENGINEERING_LOOKBACK_DAYS)
+    by_repo: dict = {}
+
+    for sig, conn in _github_signals(session, workspace_id, SignalType.PR, since):
+        payload = sig.payload or {}
+        merged, created = _iso(payload.get("merged_at")), _iso(payload.get("created_at"))
+        if merged is None or created is None:
+            continue
+        days = (merged - created).total_seconds() / 86400
+        if days < 0:
+            continue
+        entry = by_repo.setdefault(conn.id, {"conn": conn, "days": [], "slow": 0})
+        entry["days"].append(days)
+        if days >= PR_SLOW_MERGE_DAYS:
+            entry["slow"] += 1
+
+    candidates: list[dict] = []
+    for connection_id, entry in sorted(by_repo.items(), key=lambda kv: -kv[1]["slow"]):
+        if not entry["days"] or entry["slow"] == 0:
+            continue
+        median = sorted(entry["days"])[len(entry["days"]) // 2]
+        if median < PR_SLOW_MERGE_DAYS:
+            continue
+        slow, total = entry["slow"], len(entry["days"])
+        candidates.append({
+            "dedupe_key": f"pr_slow_merge:{connection_id}",
+            "connection_id": connection_id,
+            "type": AttentionType.PR_SLOW_MERGE,
+            "source_provider": Provider.GITHUB.value,
+            "title": f"Pull requests in {entry['conn'].full_name} take {round(median)} days to merge",
+            "why": f"{slow} of {total} merged in the last {ENGINEERING_LOOKBACK_DAYS} days sat a week or more",
+            "evidence_url": None,
+            "priority": 0.5,
+        })
+        if len(candidates) >= PR_SLOW_MERGE_CAP:
+            break
+    return candidates
+
+
+def _detect_review_bottleneck(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """One person carrying an unreviewed queue.
+
+    Counts OPEN pull requests by requested reviewer. A queue is a fact about
+    the present, so merged and closed PRs are excluded - a reviewer who
+    cleared ten last week is not a bottleneck.
+    """
+    since = now - timedelta(days=ENGINEERING_LOOKBACK_DAYS)
+    queues: dict = {}
+
+    for sig, conn in _github_signals(session, workspace_id, SignalType.PR, since):
+        payload = sig.payload or {}
+        if payload.get("merged_at") or payload.get("closed_at"):
+            continue
+        for reviewer in payload.get("requested_reviewers") or []:
+            entry = queues.setdefault((conn.id, reviewer), {"conn": conn, "prs": []})
+            entry["prs"].append(payload)
+
+    candidates: list[dict] = []
+    for (connection_id, reviewer), entry in sorted(queues.items(), key=lambda kv: -len(kv[1]["prs"])):
+        waiting = len(entry["prs"])
+        if waiting < REVIEW_BOTTLENECK_MIN:
+            continue
+        candidates.append({
+            "dedupe_key": f"review_bottleneck:{connection_id}:{reviewer}",
+            "connection_id": connection_id,
+            "type": AttentionType.REVIEW_BOTTLENECK,
+            "source_provider": Provider.GITHUB.value,
+            "title": f"{waiting} pull requests waiting on {reviewer}",
+            "why": f"Review requests in {entry['conn'].full_name} are concentrated on one person",
+            "evidence_url": (entry["prs"][0] or {}).get("url"),
+            "priority": 0.6,
+        })
+        if len(candidates) >= REVIEW_BOTTLENECK_CAP:
+            break
+    return candidates
+
+
+def _detect_bus_factor(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """A part of the codebase only one person ever touches.
+
+    Built from the changed directories already recorded on each PR payload
+    (`changed_dirs`, fetched at ingest and until now unused for anything but
+    hotspot counting) crossed with PR authorship. Reported only where there
+    has been real activity, so a directory touched twice by one person is not
+    called a risk.
+    """
+    since = now - timedelta(days=ENGINEERING_LOOKBACK_DAYS)
+    dirs: dict = {}
+
+    for sig, conn in _github_signals(session, workspace_id, SignalType.PR, since):
+        payload = sig.payload or {}
+        author = payload.get("author") or sig.actor
+        if not author:
+            continue
+        for directory in payload.get("changed_dirs") or []:
+            entry = dirs.setdefault((conn.id, directory), {"conn": conn, "authors": {}})
+            entry["authors"][author] = entry["authors"].get(author, 0) + 1
+
+    candidates: list[dict] = []
+    ranked = sorted(dirs.items(), key=lambda kv: -sum(kv[1]["authors"].values()))
+    for (connection_id, directory), entry in ranked:
+        total = sum(entry["authors"].values())
+        if total < BUS_FACTOR_MIN_PRS or len(entry["authors"]) != 1:
+            continue
+        author = next(iter(entry["authors"]))
+        candidates.append({
+            "dedupe_key": f"bus_factor:{connection_id}:{directory}",
+            "connection_id": connection_id,
+            "type": AttentionType.BUS_FACTOR,
+            "source_provider": Provider.GITHUB.value,
+            "title": f"Only {author} has changed {directory}/ recently",
+            "why": f"{total} pull requests touched it in {entry['conn'].full_name}, all by the same person",
+            "evidence_url": None,
+            "priority": 0.45,
+        })
+        if len(candidates) >= BUS_FACTOR_CAP:
+            break
+    return candidates
+
+
+def _detect_stale_issues(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """Open issues nothing has happened to.
+
+    Issues have been ingested since the GitHub module shipped and had no
+    detector at all - the data was arriving, being stored, and never read.
+    """
+    cutoff = now - timedelta(days=ISSUE_STALE_DAYS)
+    candidates: list[dict] = []
+
+    for sig, conn in _github_signals(session, workspace_id, SignalType.ISSUE, now - timedelta(days=365)):
+        payload = sig.payload or {}
+        if payload.get("closed_at") or (payload.get("state") or "open") != "open":
+            continue
+        if sig.occurred_at > cutoff:
+            continue
+        age = _age_days(now, sig.occurred_at)
+        candidates.append({
+            "dedupe_key": f"issue_stale:{sig.external_id}",
+            "connection_id": conn.id,
+            "type": AttentionType.ISSUE_STALE,
+            "source_provider": Provider.GITHUB.value,
+            "title": payload.get("title") or f"Issue #{payload.get('number', '?')}",
+            "why": f"Open {age} days with no movement - opened by {payload.get('author') or sig.actor}",
+            "evidence_url": payload.get("url"),
+            "priority": 0.4,
+        })
+        if len(candidates) >= ISSUE_STALE_CAP:
+            break
+    return candidates
+
+
+def _detect_stale_documents(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:
+    """Shared documents that have gone cold.
+
+    Only SHARED files: a private working document going quiet is normal, while
+    a shared one is something a team may still be relying on. Ownership comes
+    from the signal's own `modified_by`, so the item names who last touched it
+    rather than inventing an owner.
+    """
+    cutoff = now - timedelta(days=DOC_STALE_DAYS)
+    rows = session.execute(
+        select(Signal, Connection)
+        .join(Connection, Connection.id == Signal.connection_id)
+        .where(
+            Signal.workspace_id == workspace_id,
+            Signal.type == SignalType.DRIVE_FILE,
+            Signal.occurred_at <= cutoff,
+            Connection.paused_at.is_(None),
+        )
+        .order_by(Signal.occurred_at.asc())
+    ).all()
+
+    candidates: list[dict] = []
+    for sig, conn in rows:
+        payload = sig.payload or {}
+        if not payload.get("shared"):
+            continue
+        age = _age_days(now, sig.occurred_at)
+        owner = payload.get("modified_by") or sig.actor or "someone"
+        name = payload.get("name") or "A shared document"
+        candidates.append({
+            "dedupe_key": f"doc_stale:{sig.external_id}",
+            "connection_id": conn.id,
+            "type": AttentionType.DOC_STALE,
+            "source_provider": conn.provider.value,
+            "title": f"{name} has not changed in {age} days",
+            "why": f"Shared document, last edited by {owner} - it may be out of date",
+            "evidence_url": payload.get("url"),
+            "priority": 0.35,
+        })
+        if len(candidates) >= DOC_STALE_CAP:
+            break
+    return candidates
 
 
 def _detect_findings(session: Session, workspace_id: uuid.UUID, now: datetime) -> list[dict]:

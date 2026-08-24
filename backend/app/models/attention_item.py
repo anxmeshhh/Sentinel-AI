@@ -49,6 +49,19 @@ class AttentionType(str, enum.Enum):
     # for the operational fact, not the provider, so Planner/Jira reuse them.
     TASK_OVERDUE = "task_overdue"
     TASK_DUE_TODAY = "task_due_today"
+    # Existing-data intelligence: every one of these is computed from signals
+    # Sentinel already ingests, deterministically and with no LLM. They exist
+    # as distinct types (rather than reusing FINDING) so the Situation Engine
+    # can correlate them by kind and the Reasoning Engine can recommend
+    # something specific to each.
+    MEETING_CONFLICT = "meeting_conflict"      # two events overlap in time
+    MEETING_OVERLOAD = "meeting_overload"      # a week is mostly meetings
+    PR_SLOW_MERGE = "pr_slow_merge"            # merge latency well above normal
+    REVIEW_BOTTLENECK = "review_bottleneck"    # review load concentrated on one person
+    BUS_FACTOR = "bus_factor"                  # a directory only one person touches
+    ISSUE_STALE = "issue_stale"                # open issue with no movement
+    THREAD_STALL = "thread_stall"              # inbound thread awaiting a reply
+    DOC_STALE = "doc_stale"                    # shared document gone cold
 
 
 class AttentionState(str, enum.Enum):

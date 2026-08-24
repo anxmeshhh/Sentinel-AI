@@ -53,6 +53,17 @@ _ACTION_BY_KIND = {
     "service_jeopardy": "Check the service and act before access lapses",
     "resource_stalled": "Check why the resource went quiet",
     "meeting_unprepared": "Prepare for the meeting and clear its open dependency",
+    # Existing-data intelligence. Each kind names a concrete next step, so a
+    # situation built from these produces a Decision that traces to evidence
+    # rather than a generic "review this".
+    "meeting_conflict": "Move or decline one of the overlapping meetings",
+    "meeting_overload": "Decline or delegate some of the week's meetings",
+    "pr_slow_merge": "Look at what is holding reviews up in this repository",
+    "review_bottleneck": "Spread the review load or reassign the queue",
+    "bus_factor": "Get a second person familiar with this part of the code",
+    "issue_stale": "Close, re-scope or reassign the stale issue",
+    "thread_stall": "Reply to the waiting thread or hand it over",
+    "doc_stale": "Refresh the shared document or mark it superseded",
 }
 
 _LLM_SYSTEM = (

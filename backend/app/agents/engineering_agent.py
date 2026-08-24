@@ -59,10 +59,18 @@ class EngineeringAgent(SpecialistAgent):
             if pr_number is not None:
                 reviews_by_pr[str(pr_number)].append(r)
 
+        # RETIRED, not deleted: review-bottleneck now has a deterministic
+        # equivalent in attention_engine (_detect_review_bottleneck), computed
+        # from the same requested_reviewers field without an LLM call and
+        # without minting a fresh AgentFinding row on every run. The method
+        # below is kept so the shape and its reasoning stay readable, and so
+        # this decision is reversible - it is simply no longer called.
+        #
+        # _detect_contributor_drops and _detect_risky_deploys have NO
+        # deterministic equivalent yet and still run: contributor drop needs a
+        # baseline this module has, and risky-deploy reads review coverage per
+        # PR. Both are narrated, both remain gated on having candidates.
         candidates: list[dict] = []
-        bottleneck = self._detect_review_bottleneck(prs, reviews_by_pr)
-        if bottleneck:
-            candidates.append(bottleneck)
         candidates.extend(self._detect_contributor_drops(prs, commits, reviews))
         candidates.extend(self._detect_risky_deploys(prs, reviews_by_pr))
 

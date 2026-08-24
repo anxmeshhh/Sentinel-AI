@@ -185,3 +185,66 @@ def test_successful_sync_runs_the_real_pipeline(session, env, monkeypatch):
 
     situations = session.execute(select(Situation).where(Situation.workspace_id == env["ws"].id)).scalars().all()
     assert len(situations) == 1  # the Intelligence Core actually ran, not a stub
+
+
+def test_a_connection_that_dies_mid_transaction_does_not_500_the_sync(session, env, monkeypatch):
+    """The real-world failure, which the plain-RuntimeError test above misses.
+
+    A provider fetch that blows up AFTER touching the database leaves the
+    transaction in a failed state, and SQLAlchemy then raises on every
+    subsequent statement until someone rolls back. Without a rollback in the
+    ingest loop, one dead connection did not degrade the sync - it destroyed
+    it: all five downstream stages failed instantly on their first query (the
+    production logs showed them failing at the same microsecond, which is what
+    gave it away) and the final commit raised out of the route as a 500.
+
+    Reproduced by violating a NOT NULL constraint, because "the session is
+    poisoned" is the actual precondition - a failure that never touched the
+    database, like the one above, cannot expose this.
+    """
+    from app.models.signal import Signal, SignalType
+
+    _connection(env)
+
+    def _boom_dirty(session, connection):
+        session.add(Signal(
+            workspace_id=env["ws"].id, connection_id=None,  # NOT NULL - poisons the transaction
+            type=SignalType.PR, external_id="x", actor="a",
+            occurred_at=datetime.now(timezone.utc), payload={},
+        ))
+        session.flush()
+
+    monkeypatch.setattr(ingestion, "ingest_connection", _boom_dirty)
+
+    # Must return an outcome rather than raising - the route turns an escape
+    # into a 500.
+    outcome = run_full_sync(session, env["ws"].id, env["user"].id)
+
+    assert outcome.status == "failed"
+    assert outcome.connections_failed == 1
+    # The session survives, which is the whole point: the stages after the
+    # failure could actually run.
+    assert session.query(Signal).count() == 0
+
+
+def test_a_failing_connection_leaves_the_session_usable(session, env, monkeypatch):
+    """The isolation promise, stated as a property rather than a status code:
+    after a connection dies mid-transaction, the session can still be read."""
+    from app.models.signal import Signal, SignalType
+    from app.models.attention_item import AttentionItem
+
+    _connection(env)
+
+    def _boom_dirty(session, connection):
+        session.add(Signal(
+            workspace_id=env["ws"].id, connection_id=None,
+            type=SignalType.PR, external_id="y", actor="a",
+            occurred_at=datetime.now(timezone.utc), payload={},
+        ))
+        session.flush()
+
+    monkeypatch.setattr(ingestion, "ingest_connection", _boom_dirty)
+    run_full_sync(session, env["ws"].id, env["user"].id)
+
+    # Would raise PendingRollbackError if the rollback were missing.
+    assert session.query(AttentionItem).count() >= 0

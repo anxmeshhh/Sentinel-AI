@@ -100,6 +100,14 @@ def run_full_sync(
         try:
             signals_ingested += ingestion.ingest_connection(session, connection)
         except Exception:
+            # Roll back before continuing. A provider failure can leave the
+            # transaction in a failed state, and SQLAlchemy then raises on
+            # EVERY subsequent statement until someone rolls back - so without
+            # this, one dead connection did not degrade the sync, it destroyed
+            # it: all five downstream stages failed instantly on their first
+            # query, and the final commit raised out of the route as a 500.
+            # The isolation this loop promises is only real with the rollback.
+            session.rollback()
             failed += 1
             errors.append(f"{connection.provider.value}: couldn't sync")
             logger.exception("sync_now_ingest_failed", connection_id=str(connection.id))
@@ -122,9 +130,22 @@ def run_full_sync(
         try:
             stage()
         except Exception:
+            # Same reasoning: a stage that dies mid-transaction must not take
+            # the stages after it down with it.
+            session.rollback()
             logger.exception(f"sync_now_{stage_name}_failed", workspace_id=str(workspace_id))
 
-    session.commit()
+    try:
+        session.commit()
+    except Exception:
+        # Nothing above is allowed to turn a partial sync into a 500. Each
+        # stage already committed its own work; this final commit only flushes
+        # whatever is still pending, and a failure here is worth reporting as a
+        # failed sync rather than an unhandled error.
+        session.rollback()
+        logger.exception("sync_now_commit_failed", workspace_id=str(workspace_id))
+        failed = max(failed, 1)
+        errors.append("Sentinel could not save everything from this sync")
 
     if failed == 0:
         status = "success"

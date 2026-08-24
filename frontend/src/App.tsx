@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { AssistantFab } from "./components/assistant/AssistantFab";
@@ -21,6 +21,10 @@ import { DrivePage } from "./pages/DrivePage";
 import { FindingDetailPage } from "./pages/FindingDetailPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { JoinInvitePage } from "./pages/JoinInvitePage";
+const LandingPage = lazy(() =>
+  import("./pages/LandingPage").then((m) => ({ default: m.LandingPage })),
+);
+
 import { LoginPage } from "./pages/LoginPage";
 import { MailPage } from "./pages/MailPage";
 import { MeetPage } from "./pages/MeetPage";
@@ -152,6 +156,18 @@ function OnboardingRoute() {
 export function App() {
   return (
     <Routes>
+      {/* Public. Lazy so the marketing page and its sections never load for
+          someone who is already signed in and heading straight to work - the
+          landing page is the one route in the app most people will see once. */}
+      <Route
+        path="/welcome"
+        element={
+          <Suspense fallback={<div className="min-h-screen bg-ground" />}>
+            <LandingPage />
+          </Suspense>
+        }
+      />
+
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/auth/callback" element={<OAuthCallbackPage />} />

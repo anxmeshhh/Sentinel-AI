@@ -291,3 +291,112 @@ textarea::placeholder {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Landing page only. Prefixed `lp-` so nothing here can reach the product UI,
+   which has its own, deliberately quieter motion language.
+
+   Every animation below moves transform and opacity and nothing else: those
+   two are composited, so they never trigger layout or paint and hold 60fps on
+   a phone. The reduced-motion block further up already flattens durations
+   globally, and the reveal hook additionally skips observing at all, so a
+   reader who asked for stillness gets a static page rather than a fast one.
+--------------------------------------------------------------------------- */
+
+.lp-reveal {
+  opacity: 0;
+  transform: translate3d(0, 14px, 0);
+  transition:
+    opacity 620ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.lp-in {
+  opacity: 1;
+  transform: none;
+  will-change: auto;
+}
+
+/* A signal travelling down the pipeline. One pass, then it rests - a dot
+   looping forever is movement the reader has to keep dismissing. */
+@keyframes lp-flow {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0) scale(0.8);
+  }
+  18%,
+  82% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.8);
+  }
+}
+
+/* The faint pulse under an active pipeline stage. */
+@keyframes lp-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A scattered signal drifting toward the Core. */
+@keyframes lp-converge {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--lp-x, 0), var(--lp-y, 0), 0);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) scale(0.55);
+  }
+}
+
+/* The caret on a typed line. */
+@keyframes lp-caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.lp-flow-dot {
+  animation: lp-flow 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.lp-pulse {
+  animation: lp-pulse 2.4s ease-in-out infinite;
+}
+.lp-converge {
+  animation: lp-converge 5.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.lp-caret {
+  animation: lp-caret 1.05s step-end infinite;
+}
+
+/* Belt and braces: the global reduce block flattens durations, this stops the
+   looping decorations from running at all. */
+@media (prefers-reduced-motion: reduce) {
+  .lp-flow-dot,
+  .lp-pulse,
+  .lp-converge,
+  .lp-caret {
+    animation: none !important;
+  }
+  .lp-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

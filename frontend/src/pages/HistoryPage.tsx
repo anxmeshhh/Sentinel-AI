@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { BriefSummary } from "../api/types";
 import { BackNav } from "../components/BackNav";
+import { PageHeader } from "../components/ui";
 
 export function HistoryPage() {
   const [briefs, setBriefs] = useState<BriefSummary[]>([]);
@@ -18,13 +19,11 @@ export function HistoryPage() {
   return (
     <div>
       <BackNav back={{ to: "/", label: "Dashboard" }} />
-      <p className="eyebrow mb-2.5">Personal</p>
-      <div className="section-head">
-        <h1>Brief History</h1>
-        <p>
-          Every brief Sentinel has generated for this repository.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Personal"
+        title="Brief History"
+        description={<>Every brief Sentinel has generated for this repository.</>}
+      />
 
       {error && <p className="text-crit">{error}</p>}
 

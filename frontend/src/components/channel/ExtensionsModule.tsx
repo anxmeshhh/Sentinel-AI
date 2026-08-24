@@ -333,7 +333,7 @@ function AssignedConnectionsSection({
                   placeholder="display name"
                   className="w-1/2 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
                 />
-                <button
+                <Button variant="primary"
                   onClick={async () => {
                     const form = resourceForm[c.id];
                     if (!form?.key.trim() || !form?.label.trim()) return;
@@ -344,10 +344,10 @@ function AssignedConnectionsSection({
                     setResourceForm((f) => ({ ...f, [c.id]: { key: "", label: "" } }));
                     await onChanged();
                   }}
-                  className="btn-primary flex-none"
+                  className="flex-none"
                 >
                   Add
-                </button>
+                </Button>
               </div>
             )}
           </div>

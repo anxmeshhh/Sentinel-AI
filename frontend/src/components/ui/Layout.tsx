@@ -2,11 +2,22 @@ import type { ReactNode } from "react";
 
 import { cn } from "./cn";
 
-/** Page header: heading left, supporting copy right, stacking on mobile.
+/**
+ * The page header. One of them, for every page.
  *
- *  Owns its own spacing. The audit found ten distinct `mb-*` values on
- *  section wrappers - that drift is what makes pages feel like different
- *  products, and it only stops if the spacing lives in one place. */
+ * There were three: a `.section-head` grid (Mail, Drive, Meet, History,
+ * Settings), a `text-h2 font-medium text-balance` variant with an eyebrow
+ * (Calendar, Admin, the detail pages), and the hand-rolled `<header
+ * className="mb-5">` the redesigned pages converged on. A `PageHeader`
+ * component also existed and was imported by nothing - a fourth design,
+ * dead in the file.
+ *
+ * This is the third one, because that is what Attention, Findings,
+ * Situations, Goals, Memory and the Assistant already use and what the
+ * product now reads as. Consolidating here means the spacing above a page's
+ * content is decided once: the drift between `mb-4` and `mb-5` and `mb-7`
+ * was invisible on any single page and obvious when moving between them.
+ */
 export function PageHeader({
   title,
   description,
@@ -16,23 +27,22 @@ export function PageHeader({
 }: {
   title: ReactNode;
   description?: ReactNode;
+  /** Right-aligned controls - a Sync Now, a "+ New Goal". Wraps below the
+   *  title on narrow screens rather than crushing it. */
   actions?: ReactNode;
+  /** Which context this page belongs to ("Personal", "Operator"). Only worth
+   *  showing where a page could otherwise be mistaken for another scope. */
   eyebrow?: ReactNode;
   className?: string;
 }) {
   return (
-    <header className={cn("mb-8 sm:mb-10", className)}>
-      {eyebrow && <p className="mb-2.5 text-caption font-medium text-ink-faint">{eyebrow}</p>}
-      <div className="grid gap-x-10 gap-y-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="flex items-start justify-between gap-4">
-          <h1 className="text-h2 font-semibold text-balance text-ink">{title}</h1>
-          {actions && <div className="flex flex-none items-center gap-2 lg:hidden">{actions}</div>}
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          {description && <p className="max-w-[54ch] text-body text-ink-dim lg:pt-1">{description}</p>}
-          {actions && <div className="hidden flex-none items-center gap-2 lg:flex">{actions}</div>}
-        </div>
+    <header className={cn("mb-5 flex flex-wrap items-start justify-between gap-3", className)}>
+      <div className="min-w-0">
+        {eyebrow && <p className="eyebrow mb-2">{eyebrow}</p>}
+        <h1 className="text-h2 font-semibold tracking-tight text-ink">{title}</h1>
+        {description && <p className="mt-1 max-w-[68ch] text-small text-ink-dim">{description}</p>}
       </div>
+      {actions && <div className="flex flex-none items-center gap-2">{actions}</div>}
     </header>
   );
 }

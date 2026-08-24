@@ -13,6 +13,7 @@ import {
   EmptyState,
   ItemList,
   ItemRow,
+  PageHeader,
   SkeletonRows,
   TabBar,
   type TabBarItem,
@@ -88,12 +89,10 @@ export function MemoryPage() {
     <div>
       <BackNav back={{ to: "/", label: "Dashboard" }} />
 
-      <header className="mb-5">
-        <h1 className="text-h2 font-semibold tracking-tight text-ink">Memory</h1>
-        <p className="mt-1 text-small text-ink-dim">
-          Patterns Sentinel has seen more than once. These raise the priority of anything that matches them.
-        </p>
-      </header>
+      <PageHeader
+        title="Memory"
+        description="Patterns Sentinel has seen more than once. These raise the priority of anything that matches them."
+      />
 
       <TabBar items={tabs} value={tab} onChange={setTab} />
 

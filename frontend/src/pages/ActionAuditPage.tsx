@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, ApiError } from "../api/client";
 import type { SentinelAction } from "../api/types";
-import { EmptyState, LoadingBlock } from "../components/ui";
+import { EmptyState, LoadingBlock, PageHeader } from "../components/ui";
 
 const STATUS_COPY: Record<string, { label: string; tone: string }> = {
   succeeded: { label: "Succeeded", tone: "text-good" },
@@ -61,12 +61,10 @@ export function ActionAuditPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-h2 font-semibold text-ink">Action history</h1>
-        <p className="mt-1 text-small leading-relaxed text-ink-dim">
-          Everything Sentinel has executed in this workspace. Credentials and message contents are never recorded.
-        </p>
-      </div>
+      <PageHeader
+        title="Action history"
+        description="Everything Sentinel has executed in this workspace. Credentials and message contents are never recorded."
+      />
 
       <div className="card divide-y divide-border">
         {actions.map((a) => {

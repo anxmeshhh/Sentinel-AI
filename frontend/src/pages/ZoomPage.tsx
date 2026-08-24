@@ -180,9 +180,9 @@ function ZoomConnect() {
             ? "Zoom didn't complete the authorization. You can try again."
             : "Connect your Zoom account to see your meetings, schedule and edit them from here, and read recordings where your plan allows."}
       </p>
-      <button onClick={connect} disabled={connecting} className="btn-primary mt-4">
+      <Button variant="primary" onClick={connect} disabled={connecting}  className="mt-4">
         {connecting ? "Opening Zoom…" : "Connect Zoom"}
-      </button>
+      </Button>
     </div>
   );
 }

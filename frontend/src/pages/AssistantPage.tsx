@@ -48,6 +48,7 @@ import {
   Icon,
   Overflow,
   OverflowItem,
+  PageHeader,
   Spinner,
 } from "../components/ui";
 import type { Tone } from "../components/ui";
@@ -643,15 +644,11 @@ export function AssistantPage() {
   return (
     <div className="flex gap-6">
       <div className="flex min-h-[calc(100vh-9rem)] min-w-0 flex-1 flex-col">
-        <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-h2 font-semibold tracking-tight text-ink">Assistant</h1>
-            <p className="mt-1 text-small text-ink-dim">
-              Everything Sentinel watches, in one place.
-            </p>
-          </div>
-          <ScopeChip scope={scope} teams={teams} onChange={changeScope} />
-        </header>
+        <PageHeader
+          title="Assistant"
+          description="Everything Sentinel watches, in one place."
+          actions={<ScopeChip scope={scope} teams={teams} onChange={changeScope} />}
+        />
 
         <div className="flex-1 pb-4">
           {started ? (

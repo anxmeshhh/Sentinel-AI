@@ -17,6 +17,7 @@ import {
   Input,
   ItemList,
   ItemRow,
+  PageHeader,
   SkeletonRows,
   TabBar,
   Textarea,
@@ -92,15 +93,11 @@ export function GoalsPage() {
     <div>
       <BackNav back={{ to: "/", label: "Dashboard" }} />
 
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-h2 font-semibold tracking-tight text-ink">Goals</h1>
-          <p className="mt-1 text-small text-ink-dim">
-            What you're working towards, and how Sentinel currently reads each one.
-          </p>
-        </div>
-        {newGoalButton}
-      </header>
+      <PageHeader
+        title="Goals"
+        description="What you're working towards, and how Sentinel currently reads each one."
+        actions={newGoalButton}
+      />
 
       <TabBar items={tabs} value={tab} onChange={setTab} />
 

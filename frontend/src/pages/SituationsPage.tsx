@@ -6,7 +6,7 @@ import { SituationsRail } from "../components/assistant/CommandCenter";
 import { BackNav } from "../components/BackNav";
 import { SEVERITY } from "../components/situations";
 import { SituationCard } from "../components/SituationCard";
-import { EmptyState, Icon, Overflow, OverflowItem, SkeletonRows } from "../components/ui";
+import { EmptyState, PageHeader, SeverityFilter, SkeletonRows } from "../components/ui";
 import { useIntelligence } from "../hooks/useIntelligence";
 
 const STATUS_TABS = [
@@ -20,49 +20,6 @@ type StatusFilter = (typeof STATUS_TABS)[number]["key"];
 /** Severity as a filter, in ladder order - not object key order, which would
  *  put Reminder before Review. */
 const SEVERITY_FILTERS = ["critical", "review", "reminder"] as const;
-
-/** A compact dropdown rather than a permanent chip row - severity only ever
- *  narrows the list already on screen, so it earns one click, not a whole
- *  second row of controls next to the tabs. */
-function SeverityFilter({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
-  return (
-    <Overflow
-      label="Filter by severity"
-      align="right"
-      trigger={
-        <>
-          <Icon name="sliders" size={13} /> Filter
-        </>
-      }
-      triggerClassName="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border px-3 text-caption font-medium text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
-    >
-      {(close) => (
-        <>
-          <OverflowItem
-            onClick={() => {
-              onChange(null);
-              close();
-            }}
-          >
-            {value === null ? "✓ " : ""}All severities
-          </OverflowItem>
-          {SEVERITY_FILTERS.map((s) => (
-            <OverflowItem
-              key={s}
-              onClick={() => {
-                onChange(s);
-                close();
-              }}
-            >
-              {value === s ? "✓ " : ""}
-              {SEVERITY[s]!.label}
-            </OverflowItem>
-          ))}
-        </>
-      )}
-    </Overflow>
-  );
-}
 
 /**
  * Situations - the Intelligence Core's most synthesised output.
@@ -110,13 +67,10 @@ export function SituationsPage() {
           crumbs={[{ label: "Dashboard", to: "/" }, { label: "Situations" }]}
         />
 
-        <header className="mb-5">
-          <h1 className="text-h2 font-semibold tracking-tight text-ink">Situations</h1>
-          <p className="mt-1 text-small text-ink-dim">
-            When several things across your tools turn out to be about the same repository, channel or
-            service, Sentinel groups them here.
-          </p>
-        </header>
+        <PageHeader
+          title="Situations"
+          description="When several things across your tools turn out to be about the same repository, channel or service, Sentinel groups them here."
+        />
 
         <div className="mb-5 flex flex-wrap items-center justify-between gap-2 border-b border-border">
           <div role="tablist" aria-label="Situation status" className="flex gap-1">
@@ -138,7 +92,11 @@ export function SituationsPage() {
             ))}
           </div>
           <div className="pb-1.5">
-            <SeverityFilter value={severity} onChange={setSeverity} />
+            <SeverityFilter
+              value={severity}
+              options={SEVERITY_FILTERS.map((s) => ({ value: s, label: SEVERITY[s]!.label }))}
+              onChange={setSeverity}
+            />
           </div>
         </div>
 

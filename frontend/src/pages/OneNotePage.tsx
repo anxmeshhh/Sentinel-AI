@@ -73,14 +73,13 @@ export function OneNotePage() {
       assistant={MICROSOFT_ASSISTANT}
       activitySources={["OneNote"]}
       quickActions={
-        <button
+        <Button variant="primary"
           onClick={() => setComposing((v) => !v)}
           disabled={!sectionId}
           title={sectionId ? undefined : "Choose a section first"}
-          className="btn-primary disabled:opacity-50"
         >
           {composing ? "Close" : "New note"}
-        </button>
+        </Button>
       }
     >
       {composing && sectionId && <PageComposer sectionId={sectionId} onDone={afterWrite} />}

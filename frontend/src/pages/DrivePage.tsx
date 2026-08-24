@@ -9,7 +9,7 @@ import { workspaceContext } from "../components/context";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { GOOGLE_ASSISTANT } from "../components/workspace/assistantConfigs";
 import { ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
-import { Button, LoadingBlock} from "../components/ui";
+import { Button, LoadingBlock, PageHeader } from "../components/ui";
 
 const MIME_FILTERS = [
   { key: "", label: "All" },
@@ -92,14 +92,12 @@ export function DrivePage() {
       assistant={GOOGLE_ASSISTANT}
       activitySources={[]}
     >
-      <p className="eyebrow mb-2.5">Personal</p>
-      <div className="section-head">
-        <h1>Drive</h1>
-        <p>
-          File name, type, and modified time only — opening a file always goes to Drive itself.
-        Asking about a file's content fetches it live, never stored.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Personal"
+        title="Drive"
+        description={<>File name, type, and modified time only — opening a file always goes to Drive itself.
+        Asking about a file's content fetches it live, never stored.</>}
+      />
 
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="min-w-0 flex-1">
@@ -164,12 +162,12 @@ export function DrivePage() {
               placeholder="Search Drive by name or content…"
               className="flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
             />
-            <button
+            <Button variant="secondary" size="sm"
               onClick={search}
-              className="card px-4 py-2.5 text-small font-semibold text-ink-dim hover:border-accent hover:text-ink"
+              
             >
               Search
-            </button>
+            </Button>
           </div>
 
           <div className="mb-5 flex flex-wrap items-center gap-1.5">

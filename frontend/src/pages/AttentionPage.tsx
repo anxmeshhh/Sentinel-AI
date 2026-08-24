@@ -34,6 +34,7 @@ import {
   LoadingBlock,
   Overflow,
   OverflowItem,
+  PageHeader,
 } from "../components/ui";
 import type { IconName } from "../components/ui";
 import {
@@ -540,15 +541,15 @@ export function AttentionPage() {
       <div className="flex min-w-0 flex-1 flex-col">
         <BackNav back={{ to: "/", label: "Dashboard" }} />
 
-        <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-h2 font-semibold tracking-tight text-ink">Attention</h1>
-            <p className="mt-1 text-small text-ink-dim">Here's what needs your immediate attention.</p>
-          </div>
-          <Button size="sm" variant="secondary" loading={refreshing} onClick={() => void refresh()}>
-            <Icon name="refresh" size={13} /> Sync now
-          </Button>
-        </header>
+        <PageHeader
+          title="Attention"
+          description="Here's what needs your immediate attention."
+          actions={
+            <Button size="sm" variant="secondary" loading={refreshing} onClick={() => void refresh()}>
+              <Icon name="refresh" size={13} /> Sync now
+            </Button>
+          }
+        />
 
         {/* The verdict card's numbers, as chips. Same source, a fraction of
             the height - this page is scanned, not read. */}

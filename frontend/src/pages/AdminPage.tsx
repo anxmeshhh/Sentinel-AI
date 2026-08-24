@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { AgentRun, LogLine, SystemStats } from "../api/types";
 import { BackNav } from "../components/BackNav";
+import { Button, Icon, PageHeader } from "../components/ui";
 
 const POLL_MS = 5000;
 
@@ -55,28 +56,22 @@ export function AdminPage() {
   return (
     <div>
       <BackNav back={{ to: "/", label: "Dashboard" }} />
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="eyebrow mb-2.5">Operator</p>
-          <h1 className="mb-1.5 text-h2 font-medium text-balance">Admin &amp; Observability</h1>
-          <p className="text-body text-ink-dim">
-            Operator view — agent run history, system counts, and live logs. Not part of the
-            customer-facing product.
-          </p>
-        </div>
+      <PageHeader
+        eyebrow="Operator"
+        title="Admin & Observability"
+        description="Operator view — agent run history, system counts, and live logs. Not part of the customer-facing product."
+        actions={
         <div className="flex items-center gap-2.5">
           <label className="flex items-center gap-1.5 text-caption text-ink-dim">
             <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
             auto-refresh (5s)
           </label>
-          <button
-            onClick={loadAll}
-            className="card px-3 py-1.5 text-caption text-ink-dim hover:border-accent hover:text-ink"
-          >
-            ↻ REFRESH
-          </button>
+          <Button size="sm" variant="secondary" onClick={loadAll}>
+            <Icon name="refresh" size={13} /> Refresh
+          </Button>
         </div>
-      </div>
+        }
+      />
 
       {stats && <StatsRow stats={stats} />}
 

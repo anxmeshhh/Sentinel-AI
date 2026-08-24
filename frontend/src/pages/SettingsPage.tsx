@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import type { Connection } from "../api/types";
 import { BackNav } from "../components/BackNav";
 import { PROVIDER_LABEL } from "../components/situations";
-import { Card, SkeletonRows } from "../components/ui";
+import { Card, PageHeader, SkeletonRows } from "../components/ui";
 
 /**
  * What Sentinel watches for.
@@ -95,14 +95,12 @@ export function SettingsPage() {
   return (
     <div className="max-w-2xl">
       <BackNav back={{ to: "/", label: "Dashboard" }} />
-      <p className="eyebrow mb-2.5">Personal</p>
-      <div className="section-head">
-        <h1>What Sentinel watches for</h1>
-        <p>
-          Each of these runs against the services you've connected. Connect or disconnect a service
-          on the <Link to="/" className="link">Dashboard</Link> to change what's checked.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Personal"
+        title="What Sentinel watches for"
+        description={<>Each of these runs against the services you've connected. Connect or disconnect a service
+          on the <Link to="/" className="link">Dashboard</Link> to change what's checked.</>}
+      />
 
       {connections === null ? (
         <SkeletonRows rows={6} />

@@ -7,7 +7,7 @@ import { MailIcon } from "../components/ProviderIcons";
 import { Markdown } from "../components/Markdown";
 import { GOOGLE_ASSISTANT } from "../components/workspace/assistantConfigs";
 import { ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
-import { Button, LoadingBlock } from "../components/ui";
+import { Button, Icon, LoadingBlock, PageHeader } from "../components/ui";
 
 type Tab = { key: string; label: string; filter: string; category?: string };
 
@@ -216,29 +216,21 @@ export function MailPage() {
       assistant={GOOGLE_ASSISTANT}
       activitySources={["Gmail"]}
     >
-      <p className="eyebrow mb-2.5">Personal</p>
-      <div className="section-head flex items-start justify-between gap-3">
-        <div>
-          <h1>Mail</h1>
-          <p>
-            Click an email to read it — original content only, no AI call. Summarize is optional, on demand.
-          </p>
-        </div>
-        {connected && (
+      <PageHeader
+        eyebrow="Personal"
+        title="Mail"
+        description="Click an email to read it — original content only, no AI call. Summarize is optional, on demand."
+        actions={connected ? (
           <div className="flex flex-none items-center gap-2 pt-1">
             <span className="text-micro text-ink-faint">
               {refreshing ? "Refreshing…" : syncedAt ? `Synced ${new Date(syncedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
             </span>
-            <button
-              onClick={() => void refresh()}
-              disabled={refreshing}
-              className="rounded-md border border-border px-2.5 py-1 text-caption text-ink-dim transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
-            >
-              ↻ Refresh
-            </button>
+            <Button size="sm" variant="secondary" onClick={() => void refresh()} disabled={refreshing}>
+              <Icon name="refresh" size={13} /> Refresh
+            </Button>
           </div>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       <div className="flex gap-4" style={{ height: "calc(100vh - 12rem)" }}>
         <div className={`w-full flex-none overflow-y-auto lg:block lg:w-[360px] ${mobileReaderOpen ? "hidden" : "block"}`}>
@@ -250,12 +242,12 @@ export function MailPage() {
               placeholder="Ask: what's in starred, top 10…"
               className="flex-1 rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
             />
-            <button
+            <Button variant="secondary" size="sm"
               onClick={handleAsk}
-              className="card px-3 py-2 text-caption font-semibold text-ink-dim hover:border-accent hover:text-ink"
+              
             >
               Ask
-            </button>
+            </Button>
           </div>
 
           <div className="mb-3 flex flex-wrap gap-1.5">

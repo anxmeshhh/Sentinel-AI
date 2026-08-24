@@ -1,5 +1,6 @@
 import { Modal } from "./Modal";
 import { ScopeBadge, scopeExplanation, type Scope } from "./ScopeBadge";
+import { Button } from "./ui";
 
 /** Shown BEFORE the OAuth redirect, never after.
  *
@@ -64,13 +65,13 @@ export function ConnectScopeDialog({
         >
           Cancel
         </button>
-        <button
+        <Button variant="primary"
           onClick={onConfirm}
           disabled={busy}
-          className="btn-primary flex-1"
-        >
+          
+         className="flex-1">
           {busy ? "Redirecting…" : "Continue"}
-        </button>
+        </Button>
       </div>
     </Modal>
   );

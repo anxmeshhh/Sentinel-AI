@@ -7,7 +7,7 @@ import { MeetIcon } from "../components/ProviderIcons";
 import { MeetingBriefPanel, useMeetingBrief } from "../components/MeetingBriefPanel";
 import { GOOGLE_ASSISTANT } from "../components/workspace/assistantConfigs";
 import { ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
-import { Button, LoadingBlock} from "../components/ui";
+import { Button, LoadingBlock, PageHeader } from "../components/ui";
 
 interface Meeting {
   id: string;
@@ -98,14 +98,12 @@ export function MeetPage() {
       assistant={GOOGLE_ASSISTANT}
       activitySources={["Google Calendar"]}
     >
-      <p className="eyebrow mb-2.5">Personal</p>
-      <div className="section-head">
-        <h1>Meet</h1>
-        <p>
-          Meeting history, built from your Calendar events — duration and attendees reflect what was
-        scheduled, not real call attendance (Google doesn't expose that for personal accounts).
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Personal"
+        title="Meet"
+        description={<>Meeting history, built from your Calendar events — duration and attendees reflect what was
+        scheduled, not real call attendance (Google doesn't expose that for personal accounts).</>}
+      />
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1.5">
@@ -129,9 +127,9 @@ export function MeetPage() {
             placeholder="Search meetings…"
             className="rounded-md border border-border bg-transparent px-3 py-2.5 text-small text-ink transition-colors duration-200 placeholder:text-ink-faint outline-none focus:border-border-strong focus:ring-2 focus:ring-ink/10 disabled:cursor-not-allowed disabled:opacity-50"
           />
-          <button onClick={load} className="card px-3 py-1.5 text-caption font-semibold text-ink-dim hover:border-accent hover:text-ink">
+          <Button variant="secondary" size="sm" onClick={load} >
             Search
-          </button>
+          </Button>
         </div>
       </div>
 

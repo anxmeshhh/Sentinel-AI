@@ -29,6 +29,8 @@ export type { ActionKind } from "./Action";
 export { Meta, MetaCount, MetaWrap } from "./Meta";
 export { ItemList, ItemRow } from "./ItemRow";
 export { FilterChips } from "./Filters";
+export { SeverityFilter } from "./SeverityFilter";
+export type { FilterOption } from "./SeverityFilter";
 export { Card, CardButton, CardGrid, CardHeader, CardLink } from "./Card";
 export { Badge, StatusDot } from "./Badge";
 export type { Tone } from "./Badge";

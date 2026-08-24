@@ -1117,9 +1117,9 @@ function SlackWorkspace({ connections }: { connections: Connection[] }) {
           and it only sees channels its bot is invited to.
         </p>
         {error && <p className="mt-3 text-small text-crit">{error}</p>}
-        <button onClick={connect} disabled={busy === "connect"} className="btn-primary mt-4">
+        <Button variant="primary" onClick={connect} disabled={busy === "connect"}  className="mt-4">
           {busy === "connect" ? "Starting…" : "Connect Slack"}
-        </button>
+        </Button>
       </div>
     );
   }

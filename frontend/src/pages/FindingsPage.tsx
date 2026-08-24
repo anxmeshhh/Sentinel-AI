@@ -6,7 +6,7 @@ import { AttentionRows } from "../components/assistant/CommandCenter";
 import { BackNav } from "../components/BackNav";
 import { priorityOf } from "../components/situations";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { EmptyState, Icon, Overflow, OverflowItem, SkeletonRows } from "../components/ui";
+import { EmptyState, PageHeader, SeverityFilter, SkeletonRows } from "../components/ui";
 
 /**
  * Findings - what Sentinel detected, as opposed to what you asked it to hold.
@@ -36,46 +36,6 @@ type FilterKey = (typeof FILTERS)[number]["key"];
 /** In ladder order, matching the four-step priority scale `priorityOf`
  *  derives from the engine's own priority float - nothing invented here. */
 const SEVERITY_FILTERS = ["Critical", "High", "Medium", "Low"] as const;
-
-function SeverityFilter({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
-  return (
-    <Overflow
-      label="Filter by severity"
-      align="right"
-      trigger={
-        <>
-          <Icon name="sliders" size={13} /> Filter
-        </>
-      }
-      triggerClassName="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border px-3 text-caption font-medium text-ink-dim transition-colors hover:border-border-strong hover:text-ink"
-    >
-      {(close) => (
-        <>
-          <OverflowItem
-            onClick={() => {
-              onChange(null);
-              close();
-            }}
-          >
-            {value === null ? "✓ " : ""}All severities
-          </OverflowItem>
-          {SEVERITY_FILTERS.map((s) => (
-            <OverflowItem
-              key={s}
-              onClick={() => {
-                onChange(s);
-                close();
-              }}
-            >
-              {value === s ? "✓ " : ""}
-              {s}
-            </OverflowItem>
-          ))}
-        </>
-      )}
-    </Overflow>
-  );
-}
 
 export function FindingsPage() {
   const { active } = useWorkspace();
@@ -115,12 +75,10 @@ export function FindingsPage() {
     <div>
       <BackNav back={{ to: "/", label: "Dashboard" }} />
 
-      <header className="mb-5">
-        <h1 className="text-h2 font-semibold tracking-tight text-ink">Findings</h1>
-        <p className="mt-1 text-small text-ink-dim">
-          Everything Sentinel detected on its own, across your connected services.
-        </p>
-      </header>
+      <PageHeader
+        title="Findings"
+        description="Everything Sentinel detected on its own, across your connected services."
+      />
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-2 border-b border-border">
         <div role="tablist" aria-label="Finding status" className="flex gap-1">
@@ -142,7 +100,11 @@ export function FindingsPage() {
           ))}
         </div>
         <div className="pb-1.5">
-          <SeverityFilter value={severity} onChange={setSeverity} />
+          <SeverityFilter
+            value={severity}
+            options={SEVERITY_FILTERS.map((s) => ({ value: s, label: s }))}
+            onChange={setSeverity}
+          />
         </div>
       </div>
 

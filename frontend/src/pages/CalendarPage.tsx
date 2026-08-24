@@ -7,7 +7,7 @@ import type { CalendarEvent, Connection, Holiday, HolidayCategory } from "../api
 import { CalendarIcon } from "../components/ProviderIcons";
 import { GOOGLE_ASSISTANT } from "../components/workspace/assistantConfigs";
 import { ProviderWorkspace } from "../components/workspace/ProviderWorkspace";
-import { Button, LoadingBlock } from "../components/ui";
+import { Button, LoadingBlock, PageHeader } from "../components/ui";
 
 type View = "month" | "week" | "day" | "agenda";
 
@@ -163,21 +163,16 @@ export function CalendarPage() {
       assistant={GOOGLE_ASSISTANT}
       activitySources={["Google Calendar"]}
     >
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <p className="eyebrow mb-2.5">Personal</p>
-          <h1 className="mb-1.5 text-h2 font-medium text-balance">Calendar</h1>
-          <p className="text-body text-ink-dim">
-            Your events, plus Indian holidays &amp; festivals from Sentinel's calendar layer — clearly separate from your own.
-          </p>
-        </div>
-        <button
-          onClick={() => setScheduleOpen((o) => !o)}
-          className="btn-primary flex-none"
-        >
+      <PageHeader
+        eyebrow="Personal"
+        title="Calendar"
+        description={<>Your events, plus Indian holidays &amp; festivals from Sentinel's calendar layer — clearly separate from your own.</>}
+        actions={
+          <Button variant="primary" onClick={() => setScheduleOpen((o) => !o)}>
           {scheduleOpen ? "Close" : "+ Schedule"}
-        </button>
-      </div>
+          </Button>
+        }
+      />
 
       {/* This used to open on a tab choice between a manual form and a
           generic "Ask AI" chat scoped to the whole calendar - the second of

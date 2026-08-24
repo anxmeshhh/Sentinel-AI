@@ -42,11 +42,13 @@ export function HierarchyTree() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-none border-b border-border px-3.5 py-4">
-        <div className="truncate text-small font-semibold text-ink" title={active.name}>
-          {active.name.trim()}
-        </div>
-        <div className="mt-1.5 flex items-center justify-between gap-2">
+      {/* The workspace's name is the section label the sidebar now prints
+          directly above this tree, so it is not repeated here. What remains is
+          the part the label cannot carry: the context identity chip - icon,
+          name and PRIVATE/SHARED - and the two actions that act on the
+          workspace itself. */}
+      <div className="flex-none px-2.5 pb-3">
+        <div className="flex items-center justify-between gap-2">
           {/* Replaces the raw workspace `kind` ("organization") with the
               context identity - icon, name and PRIVATE/SHARED - so the
               answer to "which world am I in" is stated, not inferred. */}

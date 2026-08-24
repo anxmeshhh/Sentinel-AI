@@ -134,25 +134,19 @@ export function Sidebar({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {/* Which Sentinel these links lead to.
-            Personal and group intelligence are the same engines run with a
-            different Scope, so the nav under this label is identical either
-            way - which is exactly why the label has to be here. Without it
-            the only clue was the workspace name in the account footer, and
-            "whose findings am I looking at" is not a question a person should
-            have to answer by checking the bottom of the sidebar. */}
+        {/* PERSONAL, always - including inside an organization workspace.
+            Every route below is personal-scoped on the server regardless of
+            which workspace is active: /attention narrows by viewer, and
+            /situations, /findings, /memory and /goals all resolve
+            personal_scope. Labelling this block with the active workspace's
+            name - which it did - said those pages showed the organization's
+            data when they showed the reader's own. Shared context has its own
+            section beneath, which is the separation this makes visible. */}
         {!collapsed && (
           <div className="mb-1.5 flex items-center gap-2 px-2.5">
-            <Icon
-              name={isPersonal ? "user" : "grid"}
-              size={12}
-              className="flex-none text-ink-faint"
-            />
-            <span
-              className="truncate text-micro font-semibold uppercase tracking-wide text-ink-faint"
-              title={isPersonal ? "Personal" : active?.name.trim()}
-            >
-              {isPersonal ? "Personal" : (active?.name.trim() || "Workspace")}
+            <Icon name="user" size={12} className="flex-none text-ink-faint" />
+            <span className="truncate text-micro font-semibold uppercase tracking-wide text-ink-faint">
+              Personal
             </span>
           </div>
         )}
@@ -202,7 +196,28 @@ export function Sidebar({
             </nav>
           </>
         ) : (
-          !collapsed && <HierarchyTree />
+          !collapsed && (
+            <>
+              {/* The seam. Everything above is the reader's own Sentinel;
+                  everything below is what a group has been authorized to
+                  see. The rule is the same on the server - a group scope
+                  structurally cannot read personal connections - so the
+                  divider states a boundary that already exists rather than
+                  suggesting one. */}
+              <div className="mt-5 border-t border-rule pt-3">
+                <div className="mb-1.5 flex items-center gap-2 px-2.5">
+                  <Icon name="grid" size={12} className="flex-none text-ink-faint" />
+                  <span
+                    className="truncate text-micro font-semibold uppercase tracking-wide text-ink-faint"
+                    title={active?.name.trim()}
+                  >
+                    {active?.name.trim() || "Workspace"}
+                  </span>
+                </div>
+                <HierarchyTree />
+              </div>
+            </>
+          )
         )}
 
         <nav className="mt-4 flex flex-col gap-0.5 border-t border-rule pt-3">

@@ -939,8 +939,16 @@ function TurnView({
               </Badge>
               <span className="min-w-0 truncate text-small text-ink-dim">{b.item.title}</span>
             </div>
+            {/* The registry's own verification string ("Read back as done")
+                is the audit record, not a sentence for a person - it stays on
+                the Action History page. Here the confirmation is one word,
+                because the badge above already said what happened. */}
             <p className="mt-1 text-micro text-ink-faint">
-              {b.outcome.verification ?? b.outcome.headline}
+              {b.outcome.ok
+                ? b.outcome.uncertain
+                  ? "Applied, but Sentinel couldn't confirm it"
+                  : "Verified"
+                : b.outcome.headline}
               {" · "}
               <Link to="/history" className="text-accent-text hover:underline">
                 View activity

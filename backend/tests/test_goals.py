@@ -143,7 +143,7 @@ def test_progress_is_a_ratio_of_real_commitments(session, env):
     reassess_goal(session, goal)
 
     assert goal.progress == 0.5
-    assert "1 of 2 linked commitments resolved" in " ".join(goal.health_reasons)
+    assert "1 of 2 commitments are done" in " ".join(goal.health_reasons)
 
 
 def test_an_overdue_commitment_blocks_the_goal(session, env):
@@ -496,7 +496,7 @@ def test_weights_let_one_commitment_carry_more_of_the_goal(session, env):
     reassess_goal(session, goal)
 
     assert goal.progress == 0.9  # not 0.5
-    assert "weighted work resolved" in " ".join(goal.health_reasons)
+    assert "Weighted by size" in " ".join(goal.health_reasons)
 
 
 def test_unweighted_goals_still_read_as_a_plain_count(session, env):
@@ -510,7 +510,7 @@ def test_unweighted_goals_still_read_as_a_plain_count(session, env):
     reassess_goal(session, goal)
 
     assert goal.progress == 0.5
-    assert "1 of 2 linked commitments resolved" in " ".join(goal.health_reasons)
+    assert "1 of 2 commitments are done" in " ".join(goal.health_reasons)
 
 
 def test_a_weight_cannot_be_set_on_an_unlinked_commitment(session, env):

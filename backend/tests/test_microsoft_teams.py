@@ -294,4 +294,8 @@ def test_teams_and_github_correlate_into_one_cross_provider_situation(session, e
     assert sit.member_count == 2
     assert sit.cross_provider is True
     assert sit.provider_count == 2
-    assert "github" in sit.title and "microsoft_teams" in sit.title
+    # The title names the providers the way a person does. It used to read
+    # "repo: 2 related findings across github, microsoft_teams" - a database
+    # row read aloud - and this asserts the raw ids stay out of it.
+    assert "GitHub" in sit.title and "Microsoft Teams" in sit.title
+    assert "microsoft_teams" not in sit.title

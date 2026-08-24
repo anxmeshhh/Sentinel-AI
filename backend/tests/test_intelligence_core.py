@@ -173,7 +173,12 @@ def test_cross_provider_correlation_via_text_bridge(session, env):
     assert repo_sit.member_count == 2
     assert repo_sit.cross_provider is True
     assert repo_sit.provider_count == 2
-    assert "across" in repo_sit.title
+    # A cross-provider situation names both services the way a person does.
+    # The title used to read "payments: 2 related findings across github,
+    # slack"; asserting the labels rather than the connecting word keeps the
+    # raw provider ids out of it.
+    assert "GitHub" in repo_sit.title and "Slack" in repo_sit.title
+    assert "github" not in repo_sit.title
 
 
 def test_person_alone_does_not_anchor_a_situation(session, env):

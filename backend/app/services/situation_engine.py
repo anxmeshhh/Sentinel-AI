@@ -50,13 +50,49 @@ def _worst_tier(members: list[Finding]) -> str:
     return min((m.tier.value for m in members), key=lambda t: _TIER_RANK.get(t, 99))
 
 
+def _provider_label(provider: str) -> str:
+    """The name a person uses, not the id the database stores.
+
+    Titles were being written as "heartbeat-harmony: 4 related findings across
+    gmail, google_calendar" - a database row read aloud. The registry has
+    carried a human label for every provider since it was written; this is the
+    read that was missing.
+    """
+    from app.models.connection import Provider
+    from app.providers.registry import spec_for
+
+    try:
+        return spec_for(Provider(provider)).label
+    except (ValueError, KeyError):
+        return provider.replace("_", " ")
+
+
+def _join(labels: list[str]) -> str:
+    """Oxford-free "a, b and c" - the way a sentence reads, not a CSV."""
+    if len(labels) <= 1:
+        return labels[0] if labels else ""
+    return f"{', '.join(labels[:-1])} and {labels[-1]}"
+
+
 def _title(entity: Entity | None, members: list[Finding]) -> str:
-    name = (entity.display_name if entity else None) or "resource"
+    """What this situation IS, in a sentence a person would say.
+
+    Deterministic still - it is a count and a list of names, nothing inferred
+    and no LLM. Only the phrasing changed: "4 related findings across gmail,
+    google_calendar" and "Calendar and Gmail activity around heartbeat-harmony
+    keeps coming up together" describe the same fact, and only one of them
+    reads like it was written for someone.
+    """
+    name = (entity.display_name if entity else None) or "this resource"
     n = len(members)
-    providers = sorted({m.provider for m in members if m.provider})
-    if len(providers) >= 2:
-        return f"{name}: {n} related findings across {', '.join(providers)}"
-    return f"{name}: {n} related findings"
+    labels = sorted({_provider_label(m.provider) for m in members if m.provider})
+    thing = "signal" if n == 1 else "signals"
+
+    if len(labels) >= 2:
+        return f"{_join(labels)} activity around {name} keeps coming up together"
+    if labels:
+        return f"{labels[0]}: {n} related {thing} about {name}"
+    return f"{n} related {thing} about {name}"
 
 
 def _upsert_situation(

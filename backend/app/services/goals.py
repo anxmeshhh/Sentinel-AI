@@ -388,21 +388,27 @@ def _assess(session: Session, goal: Goal, now: datetime) -> Assessment:
     progress = round(done_weight / total_weight, 2) if total_weight else None
 
     if not commitments:
-        reasons.append("Nothing linked yet, so progress cannot be determined.")
+        reasons.append("Nothing is linked yet, so there is no way to measure progress.")
     elif any(w != 1.0 for _, w in commitments):
-        reasons.append(f"{done_weight:g} of {total_weight:g} weighted work resolved.")
+        reasons.append(f"Weighted by size, {done_weight:g} of {total_weight:g} is done.")
     else:
-        reasons.append(f"{len(resolved)} of {len(resolved) + len(open_ones)} linked commitments resolved.")
+        total = len(resolved) + len(open_ones)
+        reasons.append(f"{len(resolved)} of {_plural(total, 'commitment')} {_is_are(total)} done.")
 
     for commitment in overdue:
         blockers.append(_commitment_ref(commitment, "overdue"))
     if overdue:
-        reasons.append(f"{len(overdue)} linked commitment{'s' if len(overdue) > 1 else ''} overdue.")
+        reasons.append(
+            f"{_plural(len(overdue), 'commitment')} {_is_are(len(overdue))} overdue "
+            f"and putting this goal at risk."
+        )
 
     for commitment in at_risk:
         risks.append(_commitment_ref(commitment, "at risk"))
     if at_risk:
-        reasons.append(f"{len(at_risk)} linked commitment{'s' if len(at_risk) > 1 else ''} showing no progress.")
+        reasons.append(
+            f"{_plural(len(at_risk), 'commitment')} {_has_have(len(at_risk))} shown no progress."
+        )
 
     # Only situations with an established relationship count, and the
     # relation decides how much. UNRELATED and RELATED are shown but move
@@ -417,9 +423,15 @@ def _assess(session: Session, goal: Goal, now: datetime) -> Assessment:
         risks.append(_situation_ref(situation, link, "risk"))
 
     if situation_blockers:
-        reasons.append(f"{len(situation_blockers)} situation(s) blocking this goal.")
+        reasons.append(
+            f"{_plural(len(situation_blockers), 'situation')} {_is_are(len(situation_blockers))} "
+            f"blocking this goal."
+        )
     if situation_risks:
-        reasons.append(f"{len(situation_risks)} related situation(s) putting this at risk.")
+        reasons.append(
+            f"{_plural(len(situation_risks), 'related situation')} "
+            f"{_is_are(len(situation_risks))} putting this at risk."
+        )
 
     due = _aware(goal.due_at)
     deadline_passed = due is not None and due < now
@@ -428,7 +440,10 @@ def _assess(session: Session, goal: Goal, now: datetime) -> Assessment:
         reasons.append("The deadline has passed with work still open.")
     elif deadline_near and open_ones:
         hours = max(1, int((due - now).total_seconds() // 3600))
-        reasons.append(f"Deadline in {hours}h with {len(open_ones)} commitment(s) still open.")
+        reasons.append(
+            f"The deadline is {hours} hours away and "
+            f"{_plural(len(open_ones), 'commitment')} {_is_are(len(open_ones))} still open."
+        )
 
     if overdue or situation_blockers:
         health = GoalHealth.BLOCKED
@@ -442,6 +457,27 @@ def _assess(session: Session, goal: Goal, now: datetime) -> Assessment:
         health = GoalHealth.UNKNOWN
 
     return Assessment(health=health, progress=progress, reasons=reasons, blockers=blockers, risks=risks)
+
+
+# --- phrasing --------------------------------------------------------------
+#
+# These reasons are the checkable half of a goal's health - the part a person
+# reads to decide whether they believe the verdict. "2 linked commitment(s)
+# overdue." is a template with a hole in it; "2 commitments are overdue and
+# putting this goal at risk." is the same fact, said. Nothing here changes
+# what is computed, only how the computed thing is written.
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _is_are(count: int) -> str:
+    return "is" if count == 1 else "are"
+
+
+def _has_have(count: int) -> str:
+    return "has" if count == 1 else "have"
 
 
 def _weighted_commitments(session: Session, goal: Goal) -> list[tuple[Commitment, float]]:

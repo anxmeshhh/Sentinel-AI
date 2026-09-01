@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <title>Sentinel — operations intelligence over the tools you already use</title>
+    <meta
+      name="description"
+      content="Sentinel reads the work already scattered across your mail, calendar, chat and files, surfaces what actually needs attention, and can act on it under scopes you set."
+    />
+    <meta name="theme-color" content="#080A0D" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Sentinel" />
+    <meta
+      property="og:description"
+      content="Operations intelligence over the tools you already use."
+    />
+
+    <!-- Painted before the bundle parses. Without it the first frame is the
+         browser's white default under a page that is almost black. -->
+    <style>
+      html,
+      body {
+        background: #080a0d;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/deploy-src/standalone.tsx"></script>
+  </body>
+</html>

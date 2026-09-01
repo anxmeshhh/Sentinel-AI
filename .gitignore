@@ -36,3 +36,8 @@ frontend/.output/
 frontend/.nitro/
 frontend/.wrangler/
 frontend/dev.log
+
+# Standalone landing build, produced by frontend/vite.landing.config.ts and
+# dragged onto Netlify by hand. Generated, so rebuilding it should not show
+# up as a diff.
+deploy/
